@@ -1,0 +1,197 @@
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0d0f14;
+  color: #e9ebf0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Smooth transitions for dark mode */
+* {
+  @apply transition-colors duration-200;
+}
+
+/* Remove transition from prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    @apply !transition-none;
+  }
+}
+
+/* ── Liquid glass background ─────────────────────────────────────────────── */
+
+.aurora-root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: linear-gradient(160deg, #07101f 0%, #050914 45%, #010204 100%);
+}
+
+.aurora-layer {
+  position: absolute;
+  inset: -30%;
+  filter: blur(58px);
+  animation: aurora-drift 40s ease-in-out infinite alternate;
+  background:
+    radial-gradient(1220px 1040px at 94% 8%, rgba(92,140,255,0.78), transparent 74%),
+    radial-gradient(980px 860px at 88% 18%, rgba(78,196,255,0.42), transparent 68%),
+    radial-gradient(900px 820px at 96% 72%, rgba(70,130,255,0.28), transparent 72%),
+    radial-gradient(620px 620px at 4% 94%, rgba(255,150,120,0.22), transparent 60%);
+}
+
+@keyframes aurora-drift {
+  0%   { transform: translate(-4%, -3%) rotate(-3deg) scale(1.12); }
+  100% { transform: translate(4%, 3%) rotate(3deg) scale(1.18); }
+}
+
+/* Login/loading gradient ring rotation */
+@keyframes ledger-ring-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-layer {
+    animation: none;
+  }
+}
+
+/* ── Glass surfaces ───────────────────────────────────────────────────────── */
+
+.glass-card {
+  background: linear-gradient(140deg,
+    rgba(255,255,255,0.24),
+    rgba(255,255,255,0.085) 34%,
+    rgba(255,255,255,0.06) 70%,
+    rgba(255,255,255,0.13));
+  border: 1px solid rgba(255,255,255,0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    inset 0 0 30px rgba(255,255,255,0.06),
+    0 20px 50px -28px rgba(10,10,40,0.55),
+    0 0 46px rgba(150,170,255,0.10);
+  border-radius: 22px;
+}
+
+.glass-overlay {
+  background: rgba(4, 6, 10, 0.42);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+}
+
+.glass-modal {
+  background: linear-gradient(180deg,
+    rgba(18, 21, 30, 0.94) 0%,
+    rgba(14, 17, 25, 0.92) 52%,
+    rgba(11, 14, 21, 0.94) 100%);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    inset 0 0 0 1px rgba(255,255,255,0.03),
+    0 30px 80px -34px rgba(0,0,0,0.82),
+    0 0 42px rgba(91,141,239,0.08);
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+  border-radius: 22px;
+}
+
+/* Smaller surfaces — inputs, dropdown chips, table headers, buttons/pills. Same fill, no shadow. */
+.glass-chip {
+  background: linear-gradient(140deg,
+    rgba(255,255,255,0.24),
+    rgba(255,255,255,0.085) 34%,
+    rgba(255,255,255,0.06) 70%,
+    rgba(255,255,255,0.13));
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 9px;
+}
+
+/* Sidebar — the one surface allowed real backdrop-filter blur (single, non-stacked layer). */
+.glass-sidebar {
+  border-radius: 26px;
+  border: 1px solid rgba(255,255,255,0.20);
+  background: linear-gradient(160deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 0 30px rgba(255,255,255,0.05),
+    0 24px 60px -22px rgba(0,0,0,0.75),
+    0 0 46px rgba(150,170,255,0.10);
+}
+
+/* Main content column — same rounding as the sidebar so both read as one floating composition. */
+.glass-shell {
+  border-radius: 26px;
+  border: 1px solid rgba(255,255,255,0.14);
+}
+
+/* Header — same glass fill as cards, but only a bottom border (full-bleed inside the shell). */
+.glass-header {
+  background: linear-gradient(140deg,
+    rgba(255,255,255,0.24),
+    rgba(255,255,255,0.085) 34%,
+    rgba(255,255,255,0.06) 70%,
+    rgba(255,255,255,0.13));
+  border-bottom: 1px solid rgba(255,255,255,0.16);
+}
+
+.soft-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.16) transparent;
+}
+
+.soft-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.soft-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.soft-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.soft-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.22);
+  background-clip: padding-box;
+}

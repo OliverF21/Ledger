@@ -1,0 +1,29 @@
+# Core Framework
+fastapi  # unpinned: fastmcp 3.4.2 requires a starlette too new for fastapi==0.104.1
+uvicorn[standard]
+pydantic>=2.11.7  # fastmcp 3.4.2 requires >=2.11.7; unpinned upper bound for a pydantic-core wheel matching the local Python version
+
+# Database
+sqlalchemy>=2.0.36  # 2.0.23 predates Python 3.14 typing support
+psycopg2-binary==2.9.9  # PostgreSQL driver; unused (but harmless) while DATABASE_URL points at SQLite
+
+# Security & Encryption
+cryptography==41.0.7
+python-multipart==0.0.26  # fastmcp 3.4.2 requires >=0.0.26
+
+# Scheduling
+APScheduler==3.10.4
+
+# Utilities
+python-dotenv==1.1.0  # fastmcp 3.4.2 requires >=1.1.0
+requests==2.31.0
+fastmcp==3.4.2
+
+# Development & Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.12.0
+flake8==6.1.0
+mypy==1.7.1
+types-requests==2.31.0.10
+ngrok>=1.5.0  # Official ngrok SDK + CLI (venv bin/ngrok). Plaid OAuth on localhost — docs/PLAID_SETUP.md

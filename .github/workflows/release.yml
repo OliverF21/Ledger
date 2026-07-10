@@ -1,0 +1,85 @@
+name: Release
+
+# Tagged releases: build + SIGN the desktop app on each platform, publish a
+# GitHub Release, and upload the update artifacts + `latest.json` manifest that
+# installed apps poll (see desktop/src-tauri/tauri.conf.json → plugins.updater).
+#
+# Requires two repo secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.ledger/updater.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the key's password ("" if none)
+#
+# Trigger: push a version tag, e.g.  git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest      # Apple Silicon (arm64)
+            args: ""
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: ${{ matrix.platform }}-cargo-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Bundle backend (PyInstaller)
+        working-directory: backend
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+          pyinstaller ledger.spec --noconfirm
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm install
+
+      - name: Build, sign, and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ledger ${{ github.ref_name }}"
+          releaseBody: "See the assets below to download and install. The app auto-updates on future releases."
+          releaseDraft: true
+          prerelease: false
+          # Enables createUpdaterArtifacts so the signed update bundle + latest.json
+          # are produced and uploaded alongside the installer.
+          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json

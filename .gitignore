@@ -1,0 +1,95 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+backend/.env
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+dist/
+.next/
+
+# Frontend build
+frontend/dist/
+frontend/build/
+
+# Database (including SQLite WAL/journal sidecars — they contain live data pages)
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+.temp/
+
+# Local DB/financial backups — never commit
+backend/backups/
+
+# PyInstaller build output
+backend/build/
+backend/dist/
+
+# Tauri build output
+desktop/src-tauri/target/
+desktop/node_modules/
+
+# Desktop build artifacts
+desktop/*.dmg
+desktop/frontend-placeholder/
+
+# Tauri generated ACL/capability schemas (regenerated each build)
+desktop/src-tauri/gen/
+
+# Development-driven planning docs (Superpowers plans/specs — internal, not shipped)
+docs/superpowers/

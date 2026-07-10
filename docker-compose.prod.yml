@@ -1,0 +1,76 @@
+version: '3.9'
+
+# Self-contained production stack for self-hosted / private-network deployment.
+# Use INSTEAD of docker-compose.yml, not alongside it:
+#   docker-compose -f docker-compose.prod.yml up -d --build
+#
+# Differences from the dev stack: no bind mounts, no --reload, Postgres port
+# not published to the host, Caddy fronts everything with HTTPS and serves
+# the built frontend. Requires ENCRYPTION_KEY and POSTGRES_PASSWORD to be set
+# in .env -- see docs/PRODUCTION_CHECKLIST.md before using this file.
+# Auth is now username/password (created on first run); no build-time key is
+# baked into the frontend bundle. API_KEY is optional (legacy/automation only).
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ledger-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ledger}
+      POSTGRES_USER: ${POSTGRES_USER:-ledger_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ledger_user} -d ${POSTGRES_DB:-ledger}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ledger-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ledger_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ledger}
+      PLAID_CLIENT_ID: ${PLAID_CLIENT_ID}
+      PLAID_SANDBOX_SECRET: ${PLAID_SANDBOX_SECRET}
+      PLAID_PROD_SECRET: ${PLAID_PROD_SECRET}
+      PLAID_ENV: ${PLAID_ENV:-sandbox}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+      API_KEY: ${API_KEY:-}
+      AUTH_TOKEN_KEY: ${AUTH_TOKEN_KEY:-}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-6}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  caddy:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: ledger-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ledger",
+  "version": "0.1.0",
+  "identifier": "com.ledger.desktop",
+  "build": {
+    "frontendDist": "../frontend-placeholder"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDExODI1Q0ZERUI1MUE4NDkKUldSSnFGSHIvVnlDRWNKTUlnT1JPRFoxbmYzMHBKTWdkWUtwL0gxMUY1NDMvazRUdzFUeE55YjcK",
+      "endpoints": [
+        "https://github.com/OliverF21/Ledger/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../backend/dist/ledger-backend": "backend"
+    }
+  }
+}
