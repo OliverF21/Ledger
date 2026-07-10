@@ -18,6 +18,15 @@ Ledger ships **unsigned** (open-source freeware). The OS will warn on first open
 - **macOS 15+**: the first double-click is blocked. Open it once via
   **System Settings → Privacy & Security → “Open Anyway”**. (The old
   right-click → Open shortcut no longer works for unsigned apps.)
+- **macOS, downloaded via browser**: instead of the prompt above, you may see
+  **“Ledger” is damaged and can’t be opened. You should move it to the Trash.**
+  This is misleading — the app isn’t actually corrupted. Browsers quarantine
+  downloaded files, and Gatekeeper refuses to run an unsigned, quarantined app
+  with this message instead of the usual “unidentified developer” prompt. Fix
+  it by stripping the quarantine flag, then open normally:
+  ```bash
+  xattr -cr /Applications/Ledger.app
+  ```
 - **Windows**: SmartScreen shows “Windows protected your PC”. Click
   **More info → Run anyway**.
 
