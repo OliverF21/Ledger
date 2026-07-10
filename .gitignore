@@ -86,7 +86,6 @@ desktop/node_modules/
 
 # Desktop build artifacts
 desktop/*.dmg
-desktop/frontend-placeholder/
 
 # Tauri generated ACL/capability schemas (regenerated each build)
 desktop/src-tauri/gen/
