@@ -500,6 +500,7 @@ export default function Budgets() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [editing, setEditing] = useState<BudgetItem | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const fetchBudgets = (checkOnboarding = false) => {
@@ -519,7 +520,6 @@ export default function Budgets() {
   useEffect(() => { fetchBudgets(true) }, [selectedMonth])
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Remove this budget?')) return
     setDeletingId(id)
     setDeleteError(null)
     try {
@@ -528,6 +528,7 @@ export default function Budgets() {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.detail || 'Failed to remove budget')
       }
+      setConfirmingDeleteId(null)
       setData(prev => {
         if (!prev) return prev
         const remaining = prev.budgets.filter(b => b.id !== id)
@@ -538,9 +539,9 @@ export default function Budgets() {
           total_spent: remaining.reduce((sum, b) => sum + b.spent, 0),
         }
       })
-      fetchBudgets()
     } catch (e: any) {
       setDeleteError(e.message || 'Failed to remove budget')
+      fetchBudgets()
     } finally {
       setDeletingId(null)
     }
@@ -651,36 +652,60 @@ export default function Budgets() {
             const isOver = budget.spent > budget.limit
 
             return (
-              <div key={budget.id} className="glass-card p-[18px] group">
+              <div key={budget.id} className="glass-card p-[18px]">
                 <div className="flex items-center gap-[10px] mb-[12px]">
                   <span className="w-[10px] h-[10px] rounded-[3px] flex-shrink-0" style={{ backgroundColor: budget.color }} />
                   <span className="text-[13px] font-semibold flex-1 truncate">{formatCategory(budget.category)}</span>
-                  <div className="ml-auto shrink-0 relative flex items-center justify-end min-w-[58px] h-[22px]">
-                    {isOver
-                      ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(231,112,95,0.1)] transition-opacity group-hover:opacity-0">Over</span>
-                      : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(78,195,138,0.1)] transition-opacity group-hover:opacity-0">On track</span>
-                    }
-                    <div className="absolute right-0 inset-y-0 flex items-center gap-[6px] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                  {isOver
+                    ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(231,112,95,0.1)] shrink-0">Over</span>
+                    : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(78,195,138,0.1)] shrink-0">On track</span>
+                  }
+                  <div className="flex items-center gap-[6px] shrink-0">
+                    <button
+                      type="button"
+                      title="Edit budget"
+                      onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
+                      className="p-[4px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
+                    >
+                      <Pencil className="w-[13px] h-[13px]" strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Remove budget"
+                      onClick={() => {
+                        setDeleteError(null)
+                        setConfirmingDeleteId(prev => prev === budget.id ? null : budget.id)
+                      }}
+                      disabled={deletingId === budget.id}
+                      className="p-[4px] text-ledger-text-faint hover:text-ledger-negative transition-colors disabled:opacity-40"
+                    >
+                      <Trash2 className="w-[13px] h-[13px]" strokeWidth={2} />
+                    </button>
+                  </div>
+                </div>
+
+                {confirmingDeleteId === budget.id && (
+                  <div className="flex items-center justify-between gap-[10px] mb-[12px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
+                    <span className="text-[12px] text-ledger-text-secondary">Remove this budget?</span>
+                    <div className="flex items-center gap-[8px] shrink-0">
                       <button
                         type="button"
-                        title="Edit budget"
-                        onClick={() => setEditing(budget)}
-                        className="text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
+                        onClick={() => setConfirmingDeleteId(null)}
+                        className="text-[12px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
                       >
-                        <Pencil className="w-[13px] h-[13px]" strokeWidth={2} />
+                        Cancel
                       </button>
                       <button
                         type="button"
-                        title="Remove budget"
                         onClick={() => handleDelete(budget.id)}
                         disabled={deletingId === budget.id}
-                        className="text-ledger-text-faint hover:text-ledger-negative transition-colors disabled:opacity-40"
+                        className="text-[12px] font-semibold text-ledger-negative hover:opacity-80 transition-opacity disabled:opacity-40"
                       >
-                        <Trash2 className="w-[13px] h-[13px]" strokeWidth={2} />
+                        {deletingId === budget.id ? 'Removing…' : 'Remove'}
                       </button>
                     </div>
                   </div>
-                </div>
+                )}
 
                 <div className="text-[14px] font-bold mb-[8px] tabular-nums">
                   ${fmt(budget.spent)} <span className="text-ledger-text-faint font-normal">/ ${fmt(budget.limit)}</span>
