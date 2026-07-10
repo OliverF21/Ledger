@@ -348,7 +348,7 @@ Then open **[http://localhost:5173](http://localhost:5173)** (it forwards data r
 ### Always-on home server
 
 - **Windows:** `scripts/install_ledger_service.ps1` registers Ledger as a service that starts at boot and restarts on crash. This is the recommended path if you also use the AI Advisor.
-- **Docker (Postgres + HTTPS):** see **[docs/PRODUCTION_CHECKLIST.md](docs/PRODUCTION_CHECKLIST.md)** for the `docker-compose.prod.yml` stack.
+- **macOS/Windows:** the [desktop app](desktop/README.md) runs Ledger as a native app with no terminal required.
 - For remote access from your phone, use a private VPN like [Tailscale](https://tailscale.com/) rather than exposing the app to the public internet.
 
 ---

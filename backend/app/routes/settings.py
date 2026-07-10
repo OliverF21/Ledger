@@ -237,7 +237,7 @@ def _plaid_config_response(db: Session) -> PlaidConfigResponse:
         has_secret=bool(cfg["secret"]),
         # Mirrors the resolution used by the 409 guard on Plaid endpoints
         # (app_config table, falling back to PLAID_CLIENT_ID/PLAID_*_SECRET
-        # env vars) so a dev/Docker user with creds only in .env isn't
+        # env vars) so a dev user with creds only in .env isn't
         # incorrectly dropped into the first-run setup wizard.
         configured=PlaidService.is_configured(),
         wizard_done=(app_config.get(db, app_config.WIZARD_DONE) == "1"),

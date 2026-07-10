@@ -126,8 +126,8 @@ This document describes the threat model, security practices, and hardening guid
 - The `CORS_ORIGINS` env var (comma-separated) adds extra allowed origins on
   top of the localhost dev defaults in `backend/main.py` — set it to your
   production domain(s), never a wildcard
-- With the bundled `docker-compose.prod.yml` (Caddy fronting both frontend
-  and backend on one origin), `CORS_ORIGINS` usually isn't needed at all
+- The desktop app and single-port setups (backend serving the built frontend)
+  are same-origin, so `CORS_ORIGINS` usually isn't needed at all
 
 ### 6. Network Security
 

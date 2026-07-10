@@ -16,9 +16,7 @@ Thank you for your interest in contributing! Ledger is currently a personal proj
    ```
 
 3. **Follow the setup in README.md**:
-   - Copy `.env.example` to `.env` and fill in Plaid sandbox credentials + `ENCRYPTION_KEY`
-   - For manual dev: `cd backend && cp .env.example .env` and use SQLite
-   - Or run `docker-compose up` for the Postgres dev stack
+   - `cd backend && cp .env.example .env` and fill in Plaid sandbox credentials + `ENCRYPTION_KEY`
    - Create a branch: `git checkout -b feature/your-feature-name`
 
 ---
@@ -111,7 +109,7 @@ Thank you for your interest in contributing! Ledger is currently a personal proj
    cd frontend && npm run lint
    ```
 
-4. **Test locally** — single-port (`npm run build` + `uvicorn`) or `docker-compose up`
+4. **Test locally** — single-port: `npm run build` (frontend) + `uvicorn` (backend)
 
 ### Release Checklist (Maintainers)
 

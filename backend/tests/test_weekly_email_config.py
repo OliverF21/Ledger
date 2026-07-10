@@ -105,7 +105,7 @@ def test_from_address_roundtrip(client, monkeypatch):
 
 
 def test_env_fallback_reports_configured_without_app_config(client, monkeypatch):
-    """A dev/Docker user with RESEND_API_KEY only in .env should still see
+    """A dev user with RESEND_API_KEY only in .env should still see
     transport_configured=True, matching email_sender.is_configured()."""
     monkeypatch.setenv("RESEND_API_KEY", "env_key")
     r = client.get("/api/settings/weekly-email")

@@ -38,8 +38,9 @@ This guide walks you through setting up a Plaid account and configuring Ledger t
 
 ## Step 3: Create `.env` File
 
-1. In the project root (same level as `docker-compose.yml`), create a file named `.env`:
+1. In `backend/`, create a file named `.env`:
    ```bash
+   cd backend
    cp .env.example .env
    ```
 
@@ -63,12 +64,10 @@ This guide walks you through setting up a Plaid account and configuring Ledger t
    `API_KEY` is **optional** — only needed for curl/automation via `X-API-Key`.
    Normal use relies on username/password login (no frontend `.env` required).
 
-5. For **manual backend dev** (running `uvicorn` from `backend/`), also set:
+5. Also set:
    ```
    DATABASE_URL=sqlite:///ledger.db
    ```
-   Copy env vars into `backend/.env` (or export them). For **Docker Compose**,
-   use the root `.env` — see `docker-compose.yml` / `docker-compose.prod.yml`.
 
 Your `.env` should now look like:
 ```
@@ -262,12 +261,15 @@ All test institutions use `user_good` / `pass_good`.
 
 ## Step 6: Run Ledger Locally
 
-1. Start the Docker stack:
+1. Start the backend and frontend (see README.md "Local Development"):
    ```bash
-   docker-compose up
+   # Terminal 1
+   cd backend && uvicorn main:app --reload --port 8000
+   # Terminal 2
+   cd frontend && npm run dev
    ```
 
-2. Wait for services to be ready (you'll see logs like `✅ Ledger backend started`)
+2. Wait for the backend to be ready (you'll see logs like `✅ Ledger backend started`)
 
 3. Open http://localhost:5173 in your browser
 
@@ -291,11 +293,7 @@ All test institutions use `user_good` / `pass_good`.
 
 ### Check Backend Logs
 
-```bash
-docker-compose logs backend
-```
-
-You should see:
+Check the terminal running `uvicorn`. You should see:
 ```
 ✅ Ledger backend started
 ...
@@ -306,11 +304,11 @@ You should see:
 ### Check Database
 
 ```bash
-# If using SQLite (local dev):
-sqlite3 ledger.db "SELECT * FROM items;" 
+# If using SQLite (default):
+sqlite3 ledger.db "SELECT * FROM items;"
 
-# If using PostgreSQL (via Docker):
-docker-compose exec postgres psql -U ledger_user -d ledger -c "SELECT * FROM items;"
+# If using PostgreSQL (DATABASE_URL points at it):
+psql "$DATABASE_URL" -c "SELECT * FROM items;"
 ```
 
 You should see a row with your linked account.
@@ -325,10 +323,7 @@ You should see a row with your linked account.
 
 ## Moving to Production (Later)
 
-See [docs/PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md) for the full
-step-by-step runbook (Postgres, HTTPS via the bundled `docker-compose.prod.yml`,
-secrets, cutover, verification). Short version, once you're ready to use
-**real** bank accounts:
+Once you're ready to use **real** bank accounts:
 
 1. **Request Production Access**:
    - Go to [plaid.com/dashboard](https://plaid.com/dashboard)
@@ -347,11 +342,7 @@ secrets, cutover, verification). Short version, once you're ready to use
    PLAID_ENV=production
    ```
 
-4. **Restart Ledger**:
-   ```bash
-   docker-compose down
-   docker-compose up
-   ```
+4. **Restart Ledger** so it picks up the new `.env` values.
 
 5. **Link Real Accounts**:
    - In Plaid Link, search for your actual bank
@@ -383,7 +374,7 @@ secrets, cutover, verification). Short version, once you're ready to use
 
 ### "Link token creation failed"
 
-- Check backend logs: `docker-compose logs backend`
+- Check the terminal running `uvicorn` for backend logs
 - Verify `PLAID_CLIENT_ID` and `PLAID_SANDBOX_SECRET`/`PLAID_PROD_SECRET` are in `.env`
 - Verify `PLAID_ENV` is set to `sandbox` or `production` (not misspelled)
 
@@ -452,7 +443,7 @@ Ledger syncs transactions every 6 hours by default, which is well within limits.
 
 Once Plaid is set up:
 
-1. Start the app (`uvicorn` with built frontend, or `docker-compose up`)
+1. Start the app (`uvicorn` with the built frontend, or the desktop app)
 2. **Create your account** on first visit (username + password)
 3. **Settings → Connect account** — link a Sandbox institution
 4. **Sync now** — pull transactions and balances

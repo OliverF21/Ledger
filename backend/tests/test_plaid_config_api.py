@@ -99,7 +99,7 @@ def test_get_plaid_config_empty(client, monkeypatch):
 
 def test_configured_true_from_env_only(client, monkeypatch):
     """Env-only creds (app_config empty) must still report configured=True,
-    matching PlaidService.is_configured()'s fallback so a dev/Docker user
+    matching PlaidService.is_configured()'s fallback so a dev user
     with .env Plaid creds doesn't get routed into the setup wizard."""
     monkeypatch.setenv("PLAID_CLIENT_ID", "envcid")
     monkeypatch.setenv("PLAID_SANDBOX_SECRET", "envsec")

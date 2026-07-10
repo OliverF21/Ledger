@@ -178,7 +178,7 @@ if __name__ == "__main__":
     import uvicorn
 
     # Desktop mode: bind loopback only so the local API is never reachable from
-    # other devices on the network. Docker/prod default stays 0.0.0.0.
+    # other devices on the network. Non-desktop default stays 0.0.0.0.
     _desktop = os.environ.get("LEDGER_DESKTOP", "").strip().lower() in {"1", "true", "yes"}
     _bind_host = os.environ.get("LEDGER_BIND_HOST") or ("127.0.0.1" if _desktop else "0.0.0.0")
     _port = int(os.environ.get("PORT", "8000"))

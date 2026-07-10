@@ -1,7 +1,7 @@
 """Desktop-mode bootstrap. MUST run before any module that reads env at
 import time (app.security, app.database, app.budgets_db).
 
-No-op unless LEDGER_DESKTOP is set, so dev/Docker behavior is unchanged.
+No-op unless LEDGER_DESKTOP is set, so non-desktop behavior is unchanged.
 """
 
 from __future__ import annotations

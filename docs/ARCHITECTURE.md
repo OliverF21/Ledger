@@ -253,12 +253,9 @@ Balance snapshots are taken during sync, not by a separate nightly job.
 
 | Mode | How | Database | Notes |
 |------|-----|----------|-------|
-| **Single-port** | `npm run build` + `uvicorn` on :8000 | SQLite | Same-origin SPA; recommended daily use |
+| **Desktop app** | native Tauri app, `desktop/` | SQLite | Bundled backend via PyInstaller; recommended for most users |
+| **Single-port** | `npm run build` + `uvicorn` on :8000 | SQLite | Same-origin SPA; always-on home server |
 | **Dev** | Vite :5173 + backend :8000 | SQLite | Vite proxies `/api` |
-| **Docker dev** | `docker-compose.yml` | PostgreSQL | Postgres + hot reload |
-| **Docker prod** | `docker-compose.prod.yml` | PostgreSQL | Caddy HTTPS, no bind mounts |
-
-See `docs/PRODUCTION_CHECKLIST.md` for sandbox → production cutover.
 
 ---
 

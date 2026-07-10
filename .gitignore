@@ -92,3 +92,10 @@ desktop/src-tauri/gen/
 
 # Development-driven planning docs (Superpowers plans/specs — internal, not shipped)
 docs/superpowers/
+
+# Internal/agent-facing dev notes — not meant for the public repo
+CLAUDE.md
+CHANGES.md
+AGENTS.md
+GEMINI.md
+.claude/
