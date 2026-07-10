@@ -6,6 +6,24 @@ Ledger is a private, self-hosted app that connects to your bank accounts and cre
 
 ---
 
+## 🚀 Quick start: download the desktop app
+
+The fastest way to run Ledger — no Python, Node, or terminal required. Grab
+the latest installer from **[Releases](https://github.com/OliverF21/Ledger/releases/latest)**:
+
+- **macOS**: download the `.dmg`, drag Ledger into Applications
+- **Windows**: download the `.exe` or `.msi` installer and run it
+
+The app is unsigned (no Apple/Microsoft developer certificate), so the OS
+will warn on first open — see [desktop/README.md](desktop/README.md#first-launch-unsigned-builds)
+for how to get past that (it's one extra click, or an `xattr` command on
+macOS if you see a "damaged" message).
+
+Prefer to run from source, self-host on a server, or contribute code? Keep
+reading below.
+
+---
+
 ## Table of contents
 
 1. [What Ledger can do](#1-what-ledger-can-do)
@@ -348,7 +366,7 @@ Then open **[http://localhost:5173](http://localhost:5173)** (it forwards data r
 ### Always-on home server
 
 - **Windows:** `scripts/install_ledger_service.ps1` registers Ledger as a service that starts at boot and restarts on crash. This is the recommended path if you also use the AI Advisor.
-- **macOS/Windows:** the [desktop app](desktop/README.md) runs Ledger as a native app with no terminal required.
+- **macOS/Windows:** the [desktop app](https://github.com/OliverF21/Ledger/releases/latest) runs Ledger as a native app with no terminal required — see [desktop/README.md](desktop/README.md) for first-launch notes.
 - For remote access from your phone, use a private VPN like [Tailscale](https://tailscale.com/) rather than exposing the app to the public internet.
 
 ---
