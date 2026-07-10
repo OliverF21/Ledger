@@ -15,9 +15,19 @@ the latest installer from **[Releases](https://github.com/OliverF21/Ledger/relea
 - **Windows**: download the `.exe` or `.msi` installer and run it
 
 The app is unsigned (no Apple/Microsoft developer certificate), so the OS
-will warn on first open — see [desktop/README.md](desktop/README.md#first-launch-unsigned-builds)
-for how to get past that (it's one extra click, or an `xattr` command on
-macOS if you see a "damaged" message).
+will warn on first open:
+
+- **Windows:** SmartScreen shows "Windows protected your PC" — click **More
+  info → Run anyway**.
+- **macOS:** open it once via **System Settings → Privacy & Security → “Open
+  Anyway”**. If instead you see **"Ledger" is damaged and can't be opened**,
+  that's a misleading Gatekeeper message for unsigned, browser-downloaded
+  apps — it isn't actually corrupted. Fix it with:
+  ```bash
+  xattr -cr /Applications/Ledger.app
+  ```
+
+See [desktop/README.md](desktop/README.md#first-launch-unsigned-builds) for more detail.
 
 Prefer to run from source, self-host on a server, or contribute code? Keep
 reading below.
