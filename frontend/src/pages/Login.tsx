@@ -327,9 +327,12 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   Back to sign in
                 </button>
 
-                <div className="text-[11.5px] text-ledger-text-faintest text-center mt-[2px]">
+                <div className="text-[11.5px] text-ledger-text-faintest text-center mt-[2px] leading-[1.5]">
                   No recovery code? There's no email-based recovery for this local app —
-                  the only fallback is wiping the app's local data and starting over.
+                  the only fallback is wiping the app's local data and starting over
+                  (delete <code className="font-mono">~/Library/Application Support/Ledger</code> on
+                  macOS, or <code className="font-mono">%APPDATA%\Ledger</code> on Windows, then
+                  relaunch). This permanently deletes all local transactions and settings.
                 </div>
               </form>
             )}

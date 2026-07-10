@@ -11,6 +11,23 @@ OS app-data directory, not inside the app bundle:
 The backend is bundled with PyInstaller (no Python install needed) and serves the
 built frontend — the window is a thin native shell around the local app.
 
+## Lost your password and recovery code
+
+There's no email-based account recovery for this local, single-user app — the
+one-time recovery code shown at registration is the *only* password reset
+path (Login screen → "Forgot password?"). If you've lost that too, the only
+way back in is to wipe local data and start fresh:
+
+1. Quit Ledger
+2. Delete the app-data directory:
+   - **macOS**: `rm -rf ~/"Library/Application Support/Ledger"`
+   - **Windows**: delete the `Ledger` folder inside `%APPDATA%`
+3. Relaunch — you'll land on the first-run setup screen and need to re-link
+   your accounts
+
+This permanently deletes all local transactions, budgets, and settings —
+there is no backup to fall back on unless you made one yourself.
+
 ## First launch (unsigned builds)
 
 Ledger ships **unsigned** (open-source freeware). The OS will warn on first open:
