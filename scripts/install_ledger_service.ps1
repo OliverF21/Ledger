@@ -7,10 +7,9 @@
   the FastAPI backend (which also serves the built SPA) on port 8000. The service
   starts at boot, runs without a logged-in user, and auto-restarts on crash.
 
-  Why NSSM and not Docker: the MCP server reads ledger.db directly
-  off this host's filesystem and Claude Desktop spawns it here; a true Windows
-  service (no login required) is the right fit, and Docker Desktop on Windows
-  needs a logged-in session.
+  Why NSSM: the MCP server reads ledger.db directly off this host's
+  filesystem and Claude Desktop spawns it here, so a true Windows service
+  (no login required) is the right fit.
 
 .PARAMETER Python
   Full path to the Python interpreter that has the backend deps installed
