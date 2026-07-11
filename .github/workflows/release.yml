@@ -77,12 +77,7 @@ jobs:
           projectPath: desktop
           tagName: ${{ github.ref_name }}
           releaseName: "Ledger ${{ github.ref_name }}"
-          releaseBody: |
-            ## Bug fixes
-            - **Budgets:** delete now works in the desktop app (replaced broken `window.confirm()` with inline confirmation)
-
-            ## Install
-            Download the installer for your platform below. Installed apps auto-update on future releases.
+          releaseBody: "See the assets below to download and install. The app auto-updates on future releases."
           releaseDraft: true
           prerelease: false
           # Enables createUpdaterArtifacts so the signed update bundle + latest.json
