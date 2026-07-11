@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch, setToken } from '../api/client'
+import { getResetOptions, requestResetCode, resetPasswordWithEmailCode, type ResetOptions } from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
 
 // The pie-chart Transportation blue (#5b8def). Rendered as a large glow that
@@ -27,21 +28,26 @@ interface SetupStatus {
   missing_plaid_vars: string[]
 }
 
-type Phase = 'checking' | 'blocked' | 'setup' | 'login' | 'reset' | 'reveal-code'
+type Phase = 'checking' | 'blocked' | 'setup' | 'login' | 'reset-choice' | 'reset' | 'reset-email-code' | 'reveal-code'
 
 export default function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [phase, setPhase] = useState<Phase>('checking')
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  // "Forgot password?" — reset via one-time recovery code (no email transport
-  // for a single-user local app).
+  // "Forgot password?" — reset via one-time recovery code, or (if a recovery
+  // email is on file and the operator configured email-based reset) a
+  // one-time code emailed to that address.
   const [recoveryCode, setRecoveryCode] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [resetOptions, setResetOptions] = useState<ResetOptions | null>(null)
+  const [emailCode, setEmailCode] = useState('')
+  const [requestingCode, setRequestingCode] = useState(false)
   // Shown exactly once after register/reset, before entering the app.
   const [revealedCode, setRevealedCode] = useState<string | null>(null)
   const [pendingToken, setPendingToken] = useState<string | null>(null)
@@ -76,7 +82,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
     try {
       const endpoint = phase === 'setup' ? '/api/auth/register' : '/api/auth/login'
       const body = phase === 'setup'
-        ? { username, password, name: name.trim() }
+        ? { username, password, name: name.trim(), email: email.trim() }
         : { username, password }
       const res = await apiFetch(endpoint, {
         method: 'POST',
@@ -181,7 +187,9 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
             <div className="text-[13px] text-ledger-text-faint mb-[24px]">
               {phase === 'blocked' ? 'Connection problem'
                 : phase === 'setup' ? 'Create your account'
+                : phase === 'reset-choice' ? 'Reset your password'
                 : phase === 'reset' ? 'Reset your password'
+                : phase === 'reset-email-code' ? 'Enter your reset code'
                 : phase === 'reveal-code' ? 'Save your recovery code'
                 : 'Welcome back'}
             </div>
@@ -227,6 +235,16 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   onChange={e => setUsername(e.target.value)}
                   className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
                 />
+                {phase === 'setup' && (
+                  <input
+                    type="email"
+                    placeholder="Email (optional, for password reset)"
+                    autoComplete="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  />
+                )}
                 <input
                   type="password"
                   placeholder="Password"
@@ -265,12 +283,139 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 {phase === 'login' && (
                   <button
                     type="button"
-                    onClick={() => { setError(null); setRecoveryCode(''); setNewPassword(''); setConfirmNewPassword(''); setPhase('reset') }}
+                    onClick={async () => {
+                      setError(null); setRecoveryCode(''); setNewPassword(''); setConfirmNewPassword(''); setEmailCode('')
+                      try {
+                        const opts = await getResetOptions()
+                        setResetOptions(opts)
+                        setPhase(opts.email_available ? 'reset-choice' : 'reset')
+                      } catch {
+                        setResetOptions(null)
+                        setPhase('reset')
+                      }
+                    }}
                     className="text-[12px] text-ledger-text-faint hover:text-ledger-accent transition-colors mt-[2px]"
                   >
                     Forgot password?
                   </button>
                 )}
+              </form>
+            )}
+
+            {/* Choice screen: email code vs recovery code, shown only when
+                an account email + the emergency Resend key are both set */}
+            {phase === 'reset-choice' && (
+              <div className="w-full flex flex-col gap-[12px]">
+                <div className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[2px]">
+                  How would you like to reset your password?
+                </div>
+                <button
+                  type="button"
+                  disabled={requestingCode}
+                  onClick={async () => {
+                    setError(null)
+                    setRequestingCode(true)
+                    try {
+                      await requestResetCode()
+                      setPhase('reset-email-code')
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : 'Failed to send the reset email.')
+                    } finally {
+                      setRequestingCode(false)
+                    }
+                  }}
+                  className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity"
+                >
+                  {requestingCode ? 'Sending…' : `Email me a code (${resetOptions?.masked_email})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setError(null); setPhase('reset') }}
+                  className="w-full glass-chip py-[11px] rounded-[10px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-inset transition-colors"
+                >
+                  I have a recovery code
+                </button>
+                {error && <div className="text-[12.5px] text-ledger-negative">{error}</div>}
+                <button
+                  type="button"
+                  onClick={() => { setError(null); setPhase('login') }}
+                  className="text-[12px] text-ledger-text-faint hover:text-ledger-accent transition-colors"
+                >
+                  Back to sign in
+                </button>
+              </div>
+            )}
+
+            {/* Reset via emailed one-time code */}
+            {phase === 'reset-email-code' && (
+              <form
+                className="w-full flex flex-col gap-[12px]"
+                onSubmit={async e => {
+                  e.preventDefault()
+                  if (submitting) return
+                  setError(null)
+                  if (newPassword.length < 8) { setError('Password must be at least 8 characters.'); return }
+                  if (newPassword !== confirmNewPassword) { setError('Passwords do not match.'); return }
+                  setSubmitting(true)
+                  try {
+                    const data = await resetPasswordWithEmailCode(emailCode, newPassword)
+                    setPendingToken(data.token)
+                    setRevealedCode(data.recovery_code)
+                    setPhase('reveal-code')
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Could not reset the password.')
+                  } finally {
+                    setSubmitting(false)
+                  }
+                }}
+              >
+                <div className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[2px]">
+                  Enter the code we emailed to {resetOptions?.masked_email}. It expires in 1 hour.
+                </div>
+                <input
+                  autoFocus
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="6-digit code"
+                  autoComplete="off"
+                  value={emailCode}
+                  onChange={e => setEmailCode(e.target.value)}
+                  className="glass-chip px-[14px] py-[11px] text-[14px] font-mono text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                />
+                <input
+                  type="password"
+                  placeholder="New password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm new password"
+                  autoComplete="new-password"
+                  value={confirmNewPassword}
+                  onChange={e => setConfirmNewPassword(e.target.value)}
+                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                />
+
+                {error && <div className="text-[12.5px] text-ledger-negative">{error}</div>}
+
+                <button
+                  type="submit"
+                  disabled={submitting || !emailCode || !newPassword}
+                  className="mt-[4px] w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                >
+                  {submitting ? 'Please wait…' : 'Reset password'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setError(null); setPhase('reset-choice') }}
+                  className="text-[12px] text-ledger-text-faint hover:text-ledger-accent transition-colors"
+                >
+                  Back
+                </button>
               </form>
             )}
 
@@ -321,19 +466,21 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
 
                 <button
                   type="button"
-                  onClick={() => { setError(null); setPhase('login') }}
+                  onClick={() => { setError(null); setPhase(resetOptions?.email_available ? 'reset-choice' : 'login') }}
                   className="text-[12px] text-ledger-text-faint hover:text-ledger-accent transition-colors"
                 >
-                  Back to sign in
+                  {resetOptions?.email_available ? 'Back' : 'Back to sign in'}
                 </button>
 
-                <div className="text-[11.5px] text-ledger-text-faintest text-center mt-[2px] leading-[1.5]">
-                  No recovery code? There's no email-based recovery for this local app —
-                  the only fallback is wiping the app's local data and starting over
-                  (delete <code className="font-mono">~/Library/Application Support/Ledger</code> on
-                  macOS, or <code className="font-mono">%APPDATA%\Ledger</code> on Windows, then
-                  relaunch). This permanently deletes all local transactions and settings.
-                </div>
+                {!resetOptions?.email_available && (
+                  <div className="text-[11.5px] text-ledger-text-faintest text-center mt-[2px] leading-[1.5]">
+                    No recovery code? There's no email-based recovery configured for this app —
+                    the only fallback is wiping the app's local data and starting over
+                    (delete <code className="font-mono">~/Library/Application Support/Ledger</code> on
+                    macOS, or <code className="font-mono">%APPDATA%\Ledger</code> on Windows, then
+                    relaunch). This permanently deletes all local transactions and settings.
+                  </div>
+                )}
               </form>
             )}
 

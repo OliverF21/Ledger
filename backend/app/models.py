@@ -26,6 +26,14 @@ class User(Base):
     # account created before this feature existed); "forgot password" then has
     # no path but wiping the local app-data dir. See routes/auth.py.
     recovery_code_hash = Column(Text, nullable=True)
+    # Account recovery email — separate from weekly_email_to (the weekly-digest
+    # recipient, which may legitimately differ or be unset). Optional; used only
+    # to receive a password-reset code, never to authenticate anything by itself.
+    email = Column(String(255), nullable=True)
+    # Hash of the currently outstanding email reset code (same scrypt format as
+    # recovery_code_hash), plus its expiry. Both NULL when no reset is pending.
+    reset_code_hash = Column(Text, nullable=True)
+    reset_code_expires_at = Column(DateTime, nullable=True)
     # Friendly display name captured at registration; personalizes the homepage
     # header and the weekly summary email. Falls back to username when unset.
     display_name = Column(String(255), nullable=True)

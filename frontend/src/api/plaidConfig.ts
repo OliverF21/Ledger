@@ -141,3 +141,54 @@ export async function generateRecoveryCode(): Promise<{ recovery_code: string }>
   if (!r.ok) throw new Error('Failed to generate a recovery code')
   return r.json()
 }
+
+// ── Email-based password reset ──────────────────────────────────────────────
+
+export type ResetOptions = {
+  email_available: boolean
+  masked_email: string | null
+}
+
+export async function getResetOptions(): Promise<ResetOptions> {
+  const r = await apiFetch('/api/auth/reset-options')
+  if (!r.ok) throw new Error('Failed to load reset options')
+  return r.json()
+}
+
+export async function requestResetCode(): Promise<{ sent: boolean }> {
+  const r = await apiFetch('/api/auth/forgot-password', { method: 'POST' })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || 'Failed to send the reset email')
+  return data
+}
+
+export async function resetPasswordWithEmailCode(code: string, new_password: string):
+  Promise<{ token: string; username: string; recovery_code: string | null }> {
+  const r = await apiFetch('/api/auth/reset-password-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, new_password }),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || 'Could not reset the password. Check your code.')
+  return data
+}
+
+// ── Recovery email (account security) ───────────────────────────────────────
+
+export async function getRecoveryEmailStatus(): Promise<{ email: string | null }> {
+  const r = await apiFetch('/api/settings/security/email')
+  if (!r.ok) throw new Error('Failed to load recovery email status')
+  return r.json()
+}
+
+export async function putRecoveryEmail(email: string): Promise<{ email: string | null }> {
+  const r = await apiFetch('/api/settings/security/email', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || 'Failed to save recovery email')
+  return data
+}

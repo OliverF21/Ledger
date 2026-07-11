@@ -164,6 +164,44 @@ def normalize_recovery_code(code: str) -> str:
     return "".join(code.split()).replace("-", "").upper()
 
 
+# ── Email reset code (one-time, sent via the emergency Resend key) ──────────
+#
+# Numeric rather than the recovery code's alphanumeric alphabet, since this
+# one is typically typed from a phone screen showing an email, not
+# hand-copied from a paper note. Hashed with the same hash_password() used
+# for both the account password and the recovery code.
+
+def generate_reset_code() -> str:
+    """A fresh 6-digit numeric email reset code, e.g. '042917'."""
+    import secrets
+    return "".join(secrets.choice("0123456789") for _ in range(6))
+
+
+def mask_email(email: str) -> str:
+    """'alice@example.com' -> 'a***@example.com'. Shared by routes/auth.py
+    (reset-options) and routes/settings.py (recovery-email status) so the
+    account email is never echoed back to the client in full."""
+    local, _, domain = email.partition("@")
+    masked_local = (local[0] + "***") if local else "***"
+    return f"{masked_local}@{domain}"
+
+
+def is_valid_email(email: str) -> bool:
+    """Basic shape validation (RFC-ish, via pydantic's email-validator
+    backend). Shared by routes/auth.py (register) and routes/settings.py
+    (recovery-email) so a malformed address can't be stored as the account's
+    password-reset destination. Callers are responsible for deciding whether
+    a blank string is acceptable (e.g. "clear the recovery email") — this
+    only judges non-blank input."""
+    from pydantic import EmailStr, TypeAdapter
+
+    try:
+        TypeAdapter(EmailStr).validate_python(email)
+        return True
+    except Exception:
+        return False
+
+
 # ── Request dependency ──────────────────────────────────────────────────────
 
 def require_auth(

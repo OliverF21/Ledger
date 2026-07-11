@@ -2,6 +2,7 @@
 fastapi  # unpinned: fastmcp 3.4.2 requires a starlette too new for fastapi==0.104.1
 uvicorn[standard]
 pydantic>=2.11.7  # fastmcp 3.4.2 requires >=2.11.7; unpinned upper bound for a pydantic-core wheel matching the local Python version
+email-validator>=2.0.0  # backs pydantic's EmailStr / TypeAdapter(EmailStr) used for register/recovery-email validation
 
 # Database
 sqlalchemy>=2.0.36  # 2.0.23 predates Python 3.14 typing support

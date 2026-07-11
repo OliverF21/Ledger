@@ -237,3 +237,21 @@ def test_recovery_code_settings_endpoints(client):
     assert r.status_code == 401
     r2 = client.post("/api/auth/reset-password", json={"recovery_code": new_code, "new_password": "x2y2z2a2"})
     assert r2.status_code == 200
+
+
+# ── Email reset code ─────────────────────────────────────────────────────────
+
+def test_generate_reset_code_is_six_digits():
+    code = auth.generate_reset_code()
+    assert len(code) == 6
+    assert code.isdigit()
+
+
+def test_generate_reset_code_varies():
+    codes = {auth.generate_reset_code() for _ in range(20)}
+    assert len(codes) > 1  # astronomically unlikely to collide 20x if random
+
+
+def test_mask_email():
+    assert auth.mask_email("alice@example.com") == "a***@example.com"
+    assert auth.mask_email("b@x.co") == "b***@x.co"

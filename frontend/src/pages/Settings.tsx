@@ -6,6 +6,7 @@ import {
   getPlaidConfig, putPlaidConfig, testPlaidConfig, getSyncConfig, putSyncConfig,
   getWeeklyEmailPrefs, putWeeklyEmailPrefs,
   getRecoveryCodeStatus, generateRecoveryCode,
+  getRecoveryEmailStatus, putRecoveryEmail,
 } from '../api/plaidConfig'
 import { type AccountItem } from '../hooks/useAccounts'
 import { useSync } from '../hooks/useSync'
@@ -126,6 +127,11 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const [freshRecoveryCode, setFreshRecoveryCode] = useState<string | null>(null)
   const [recoveryCodeCopied, setRecoveryCodeCopied] = useState(false)
   const [recoveryCodeError, setRecoveryCodeError] = useState<string | null>(null)
+  const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null)
+  const [recoveryEmailDraft, setRecoveryEmailDraft] = useState('')
+  const [savingRecoveryEmail, setSavingRecoveryEmail] = useState(false)
+  const [recoveryEmailError, setRecoveryEmailError] = useState<string | null>(null)
+  const [recoveryEmailSaved, setRecoveryEmailSaved] = useState(false)
 
   useEffect(() => {
     fetchRules()
@@ -135,6 +141,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
     fetchPlaidConfig()
     fetchSyncConfig()
     fetchRecoveryCodeStatus()
+    fetchRecoveryEmailStatus()
   }, [])
 
   const fetchRecoveryCodeStatus = async () => {
@@ -169,6 +176,32 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       setTimeout(() => setRecoveryCodeCopied(false), 1500)
     } catch {
       /* clipboard unavailable — ignore */
+    }
+  }
+
+  const fetchRecoveryEmailStatus = async () => {
+    try {
+      const status = await getRecoveryEmailStatus()
+      setRecoveryEmail(status.email)
+    } catch (error) {
+      console.error('Failed to fetch recovery email status:', error)
+    }
+  }
+
+  const handleSaveRecoveryEmail = async () => {
+    setSavingRecoveryEmail(true)
+    setRecoveryEmailError(null)
+    setRecoveryEmailSaved(false)
+    try {
+      const result = await putRecoveryEmail(recoveryEmailDraft.trim())
+      setRecoveryEmail(result.email)
+      setRecoveryEmailDraft('')
+      setRecoveryEmailSaved(true)
+      setTimeout(() => setRecoveryEmailSaved(false), 1500)
+    } catch (error) {
+      setRecoveryEmailError(error instanceof Error ? error.message : 'Failed to save recovery email')
+    } finally {
+      setSavingRecoveryEmail(false)
     }
   }
 
@@ -1230,6 +1263,47 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     ? 'Generate a new code (replaces the old one)'
                     : 'Generate recovery code'}
               </button>
+            </div>
+
+            {/* Account security: recovery email (enables emailed reset codes) */}
+            <div className="glass-card p-[22px]">
+              <div className="flex items-center gap-[8px] mb-[6px]">
+                <KeyRound className="w-[15px] h-[15px] text-ledger-accent" strokeWidth={2} />
+                <h3 className="text-[14px] font-semibold">Recovery email</h3>
+              </div>
+              <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[14px]">
+                Set an email to unlock "Email me a code" on the login screen, in addition to
+                the recovery code above. Requires the app operator to have configured a
+                password-reset email key.
+              </p>
+
+              <div className="flex items-center gap-[6px] text-[12px] text-ledger-text-secondary mb-[12px]">
+                <span
+                  className={`inline-block w-[7px] h-[7px] rounded-full ${recoveryEmail ? 'bg-ledger-positive' : 'bg-ledger-warning'}`}
+                />
+                {recoveryEmail ? `Recovery email set: ${recoveryEmail}` : 'No recovery email set yet.'}
+              </div>
+
+              {recoveryEmailError && (
+                <p className="text-[12px] text-ledger-negative mb-[10px]">{recoveryEmailError}</p>
+              )}
+
+              <div className="flex items-center gap-[8px]">
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={recoveryEmailDraft}
+                  onChange={e => setRecoveryEmailDraft(e.target.value)}
+                  className="glass-chip flex-1 px-[14px] py-[9px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                />
+                <button
+                  onClick={handleSaveRecoveryEmail}
+                  disabled={savingRecoveryEmail}
+                  className="glass-chip rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] text-ledger-text-primary hover:bg-ledger-inset transition-colors disabled:opacity-50"
+                >
+                  {savingRecoveryEmail ? 'Saving…' : recoveryEmailSaved ? 'Saved' : 'Save'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -11,6 +11,12 @@ Opt-in: send_email() no-ops (returns False) unless RESEND_API_KEY is set.
 BYOK: settings are resolved via app_config (desktop, encrypted at rest) first,
 os.getenv fallback second — mirrors PlaidService._setting so a packaged
 desktop build (no env vars available) can configure Resend from Settings.
+
+A second, fully independent Resend key (RESET_EMERGENCY_RESEND_API_KEY)
+exists for password-reset emails only — see get_emergency_resend_api_key()/
+send_password_reset_email(). It is env-only (never app_config) and is never
+used for the weekly digest; the weekly key is never used for password reset.
+send_email() accepts an optional api_key override to support this.
 """
 
 import logging
@@ -62,15 +68,36 @@ def is_configured() -> bool:
     return bool(get_resend_api_key())
 
 
-def send_email(to: str, subject: str, html: str) -> bool:
+def get_emergency_resend_api_key() -> str:
+    """Effective emergency Resend API key for password-reset emails ONLY.
+
+    Deliberately env-only (unlike get_resend_api_key(), which also checks
+    app_config for BYOK weekly-digest setup) — this is an operator/deploy-time
+    secret, not a per-instance user preference, and must never share config
+    surface with the weekly-digest key so one can't silently substitute for
+    the other."""
+    return (os.getenv("RESET_EMERGENCY_RESEND_API_KEY") or "").strip()
+
+
+def is_reset_email_configured() -> bool:
+    """True if the emergency key (password-reset transport) is set."""
+    return bool(get_emergency_resend_api_key())
+
+
+def send_email(to: str, subject: str, html: str, api_key: Optional[str] = None) -> bool:
     """
     Send one HTML email via Resend. Returns True on success, False if the
     transport is unconfigured or the request fails (never raises, so a mail
     failure can't break a scheduler cycle).
+
+    api_key overrides the resolved weekly-digest key — used by
+    send_password_reset_email() to route through the emergency key instead.
+    Callers outside this module should not pass api_key directly; use
+    send_password_reset_email() for reset emails.
     """
-    api_key = get_resend_api_key()
-    if not api_key:
-        logger.debug("send_email skipped: RESEND_API_KEY not set")
+    effective_key = api_key if api_key is not None else get_resend_api_key()
+    if not effective_key:
+        logger.debug("send_email skipped: no Resend API key available")
         return False
 
     sender = get_from_address() or DEFAULT_FROM
@@ -79,7 +106,7 @@ def send_email(to: str, subject: str, html: str) -> bool:
         resp = requests.post(
             RESEND_ENDPOINT,
             headers={
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {effective_key}",
                 "Content-Type": "application/json",
             },
             json={
@@ -96,3 +123,14 @@ def send_email(to: str, subject: str, html: str) -> bool:
         # Don't log the API key or full request; just the failure.
         logger.exception("Resend email delivery failed")
         return False
+
+
+def send_password_reset_email(to: str, subject: str, html: str) -> bool:
+    """Send a password-reset email through the emergency key ONLY — never
+    the weekly-digest RESEND_API_KEY. Returns False (no-op) if
+    RESET_EMERGENCY_RESEND_API_KEY isn't set."""
+    key = get_emergency_resend_api_key()
+    if not key:
+        logger.debug("send_password_reset_email skipped: RESET_EMERGENCY_RESEND_API_KEY not set")
+        return False
+    return send_email(to, subject, html, api_key=key)

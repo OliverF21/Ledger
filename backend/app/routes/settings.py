@@ -26,6 +26,8 @@ from app.auth import (
     _proposal_service_key,
     generate_recovery_code,
     hash_password,
+    is_valid_email,
+    mask_email,
     normalize_recovery_code,
 )
 from app.budgets_db import get_budgets_db
@@ -602,6 +604,45 @@ async def generate_new_recovery_code(db: Session = Depends(get_db)):
         user.recovery_code_hash = hash_password(normalize_recovery_code(code))
         db.commit()
         return RecoveryCodeResponse(recovery_code=code)
+    except Exception as e:
+        db.rollback()
+        log_and_raise(e, status_code=400)
+
+
+class RecoveryEmailStatus(BaseModel):
+    email: str | None = None
+
+
+@router.get("/security/email", response_model=RecoveryEmailStatus)
+async def get_recovery_email(db: Session = Depends(get_db)):
+    """Masked account recovery email (used by /api/auth/forgot-password),
+    or null if unset."""
+    try:
+        user = _get_user(db)
+        return RecoveryEmailStatus(email=mask_email(user.email) if user.email else None)
+    except Exception as e:
+        log_and_raise(e)
+
+
+class RecoveryEmailUpdate(BaseModel):
+    email: str
+
+
+@router.put("/security/email", response_model=RecoveryEmailStatus)
+async def put_recovery_email(body: RecoveryEmailUpdate, db: Session = Depends(get_db)):
+    """Set or clear (blank) the account recovery email. A blank string is a
+    deliberate "clear" signal, not a malformed address, so it skips
+    validation; any non-blank value must look like a real email."""
+    try:
+        user = _get_user(db)
+        email = body.email.strip()
+        if email and not is_valid_email(email):
+            raise HTTPException(status_code=400, detail="Invalid email address")
+        user.email = email or None
+        db.commit()
+        return RecoveryEmailStatus(email=mask_email(user.email) if user.email else None)
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         log_and_raise(e, status_code=400)

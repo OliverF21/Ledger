@@ -13,10 +13,12 @@ built frontend — the window is a thin native shell around the local app.
 
 ## Lost your password and recovery code
 
-There's no email-based account recovery for this local, single-user app — the
-one-time recovery code shown at registration is the *only* password reset
-path (Login screen → "Forgot password?"). If you've lost that too, the only
-way back in is to wipe local data and start fresh:
+The one-time recovery code shown at registration is always a valid password
+reset path (Login screen → "Forgot password?"). If you set a recovery email
+in Settings *and* the app operator configured `RESET_EMERGENCY_RESEND_API_KEY`,
+you can also request a one-time code by email instead. If you've lost the
+recovery code and have no recovery email configured, the only way back in is
+to wipe local data and start fresh:
 
 1. Quit Ledger
 2. Delete the app-data directory:
