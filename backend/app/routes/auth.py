@@ -214,8 +214,8 @@ class ResetOptions(BaseModel):
 @router.get("/auth/reset-options", response_model=ResetOptions)
 async def reset_options(db: Session = Depends(get_db)):
     """Whether the emailed one-time-code reset path is usable right now:
-    requires both an account email on file AND the operator-configured
-    emergency Resend key (RESET_EMERGENCY_RESEND_API_KEY, env-only — see
+    requires both an account email on file AND a BYOK password-reset Resend
+    key (RESET_EMERGENCY_RESEND_API_KEY, set via Settings/setup or env — see
     email_sender.is_reset_email_configured()). Never requires the
     weekly-digest RESEND_API_KEY."""
     try:

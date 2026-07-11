@@ -270,3 +270,54 @@ def test_put_recovery_email_malformed_rejected(client):
     client.post("/api/auth/register", json={"username": "alice", "password": "hunter2222"})
     r = client.put("/api/settings/security/email", json={"email": "not-an-email"})
     assert r.status_code == 400
+
+
+# ── Settings: BYOK reset-email Resend key ────────────────────────────────────
+
+def test_reset_email_key_status_initially_unconfigured(client):
+    client.post("/api/auth/register", json={"username": "alice", "password": "hunter2222"})
+    r = client.get("/api/settings/security/reset-email-key")
+    assert r.status_code == 200
+    assert r.json() == {"configured": False}
+
+
+def test_put_reset_email_key_then_status_shows_configured(client):
+    client.post("/api/auth/register", json={"username": "alice", "password": "hunter2222"})
+    r = client.put("/api/settings/security/reset-email-key", json={"resend_api_key": "re_abc123"})
+    assert r.status_code == 200
+    assert r.json() == {"configured": True}
+
+    g = client.get("/api/settings/security/reset-email-key")
+    assert g.json() == {"configured": True}
+
+
+def test_put_reset_email_key_blank_rejected(client):
+    client.post("/api/auth/register", json={"username": "alice", "password": "hunter2222"})
+    r = client.put("/api/settings/security/reset-email-key", json={"resend_api_key": ""})
+    assert r.status_code == 400
+
+
+def test_reset_email_key_byok_enables_reset_options_without_env(client):
+    """The whole point: a BYOK key (no env var at all) must be enough to
+    flip reset-options.email_available, same as the env-var path."""
+    client.post("/api/auth/register", json={
+        "username": "alice", "password": "hunter2222", "email": "alice@example.com",
+    })
+    before = client.get("/api/auth/reset-options")
+    assert before.json()["email_available"] is False
+
+    client.put("/api/settings/security/reset-email-key", json={"resend_api_key": "re_abc123"})
+    after = client.get("/api/auth/reset-options")
+    assert after.json()["email_available"] is True
+    assert after.json()["masked_email"] == "a***@example.com"
+
+
+def test_reset_email_key_byok_independent_of_weekly_key(client, monkeypatch):
+    """Setting the weekly-digest RESEND_API_KEY must never enable email-based
+    reset on its own — the two keys stay fully independent."""
+    monkeypatch.setenv("RESEND_API_KEY", "weekly_secret")
+    client.post("/api/auth/register", json={
+        "username": "alice", "password": "hunter2222", "email": "alice@example.com",
+    })
+    r = client.get("/api/auth/reset-options")
+    assert r.json()["email_available"] is False

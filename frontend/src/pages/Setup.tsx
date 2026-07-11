@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
-import { putPlaidConfig, testPlaidConfig, markWizardDone, importData } from '../api/plaidConfig'
+import {
+  putPlaidConfig, testPlaidConfig, markWizardDone, importData,
+  putRecoveryEmail, putResetEmailKey,
+} from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
 
 // The same Transportation blue used behind the Login card.
 const BLUE = '#5b8def'
 
-type Step = 'welcome' | 'plaid' | 'import'
+type Step = 'welcome' | 'byok' | 'plaid' | 'import'
 
 export default function Setup({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<Step>(window.location.hash === '#import' ? 'import' : 'welcome')
@@ -35,6 +38,30 @@ export default function Setup({ onDone }: { onDone: () => void }) {
       setImportError(error instanceof Error ? error.message : 'Import failed')
     } finally {
       setImporting(false)
+    }
+  }
+
+  // BYOK: recovery email + password-reset Resend key. Shown as a gate before
+  // "Import your data" — the point of importing years of history is exactly
+  // when losing account access would hurt most.
+  const [byokEmail, setByokEmail] = useState('')
+  const [byokResendKey, setByokResendKey] = useState('')
+  const [byokSaving, setByokSaving] = useState(false)
+  const [byokError, setByokError] = useState<string | null>(null)
+
+  const goToImport = () => { window.location.hash = 'import'; setStep('import') }
+
+  const handleByokContinue = async () => {
+    setByokSaving(true)
+    setByokError(null)
+    try {
+      if (byokEmail.trim()) await putRecoveryEmail(byokEmail.trim())
+      if (byokResendKey.trim()) await putResetEmailKey(byokResendKey.trim())
+      goToImport()
+    } catch (error) {
+      setByokError(error instanceof Error ? error.message : 'Failed to save')
+    } finally {
+      setByokSaving(false)
     }
   }
 
@@ -200,11 +227,73 @@ export default function Setup({ onDone }: { onDone: () => void }) {
             </button>
 
             <button
-              onClick={() => { window.location.hash = 'import' }}
+              onClick={() => { setByokError(null); setStep('byok') }}
               className="mt-[16px] text-[12px] text-ledger-text-faint hover:text-ledger-text-secondary transition-colors underline"
             >
               Already have a Ledger install? Import your data
             </button>
+          </div>
+        ) : step === 'byok' ? (
+          <div className="relative w-full flex flex-col items-center">
+            <div className="text-[22px] font-bold tracking-tight">Set up account recovery</div>
+            <div className="text-[13px] text-ledger-text-faint mb-[22px] text-center">
+              You're about to import years of financial history — worth setting up email-based
+              password recovery first, in case you ever lose your recovery code afterward.
+            </div>
+
+            <div className="w-full space-y-[12px]">
+              <div>
+                <label className="text-[12px] text-ledger-text-faint">Recovery email</label>
+                <input
+                  type="email"
+                  value={byokEmail}
+                  onChange={e => setByokEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                />
+              </div>
+
+              <div>
+                <label className="text-[12px] text-ledger-text-faint">Resend API key</label>
+                <input
+                  type="password"
+                  value={byokResendKey}
+                  onChange={e => setByokResendKey(e.target.value)}
+                  placeholder="re_..."
+                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                />
+                <div className="mt-[4px] text-[11px] text-ledger-text-faintest">
+                  Free at <span className="underline">resend.com/api-keys</span>. Used only for
+                  password-reset emails — never for anything else.
+                </div>
+              </div>
+
+              {byokError && <p className="text-[11.5px] text-ledger-negative">{byokError}</p>}
+
+              <div className="flex gap-[8px] mt-[6px]">
+                <button
+                  onClick={goToImport}
+                  disabled={byokSaving}
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                >
+                  Skip for now
+                </button>
+                <button
+                  onClick={handleByokContinue}
+                  disabled={byokSaving}
+                  className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {byokSaving ? 'Saving…' : 'Continue'}
+                </button>
+              </div>
+
+              <button
+                onClick={() => setStep('welcome')}
+                className="w-full text-[12px] text-ledger-text-faint hover:text-ledger-text-secondary transition-colors underline"
+              >
+                Back
+              </button>
+            </div>
           </div>
         ) : (
           <div className="relative w-full flex flex-col items-center">

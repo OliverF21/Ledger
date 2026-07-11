@@ -646,3 +646,40 @@ async def put_recovery_email(body: RecoveryEmailUpdate, db: Session = Depends(ge
     except Exception as e:
         db.rollback()
         log_and_raise(e, status_code=400)
+
+
+class ResetEmailKeyStatus(BaseModel):
+    configured: bool
+
+
+@router.get("/security/reset-email-key", response_model=ResetEmailKeyStatus)
+async def get_reset_email_key_status(db: Session = Depends(get_db)):
+    """Whether a password-reset Resend key is configured (app_config BYOK,
+    or env) — never returns the key itself."""
+    try:
+        return ResetEmailKeyStatus(configured=email_sender.is_reset_email_configured())
+    except Exception as e:
+        log_and_raise(e)
+
+
+class ResetEmailKeyUpdate(BaseModel):
+    resend_api_key: str
+
+
+@router.put("/security/reset-email-key", response_model=ResetEmailKeyStatus)
+async def put_reset_email_key(body: ResetEmailKeyUpdate, db: Session = Depends(get_db)):
+    """Store the BYOK password-reset Resend key, encrypted at rest. Separate
+    from /weekly-email's resend_api_key — this key is never used for the
+    weekly digest, and that key is never used for password reset."""
+    try:
+        key = body.resend_api_key.strip()
+        if not key:
+            raise HTTPException(status_code=400, detail="Resend API key is required")
+        app_config.set(db, app_config.RESET_EMERGENCY_RESEND_API_KEY, key, secret=True)
+        db.commit()
+        return ResetEmailKeyStatus(configured=email_sender.is_reset_email_configured())
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        log_and_raise(e, status_code=400)

@@ -22,6 +22,10 @@ WIZARD_DONE = "wizard_done"
 SYNC_FREQUENCY_HOURS = "SYNC_FREQUENCY_HOURS"
 RESEND_API_KEY = "RESEND_API_KEY"
 WEEKLY_EMAIL_FROM = "WEEKLY_EMAIL_FROM"
+# Separate BYOK key for password-reset emails only — never shared with, or
+# substitutable for, RESEND_API_KEY (the weekly-digest transport). See
+# app/email_sender.py.
+RESET_EMERGENCY_RESEND_API_KEY = "RESET_EMERGENCY_RESEND_API_KEY"
 PROPOSAL_SERVICE_KEY = "PROPOSAL_SERVICE_KEY"
 
 # Allowed values for SYNC_FREQUENCY_HOURS: 0 means manual (no auto-sync).

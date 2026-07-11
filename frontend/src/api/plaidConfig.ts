@@ -192,3 +192,22 @@ export async function putRecoveryEmail(email: string): Promise<{ email: string |
   if (!r.ok) throw new Error(data.detail || 'Failed to save recovery email')
   return data
 }
+
+// ── Password-reset email transport (BYOK Resend key, separate from weekly email) ──
+
+export async function getResetEmailKeyStatus(): Promise<{ configured: boolean }> {
+  const r = await apiFetch('/api/settings/security/reset-email-key')
+  if (!r.ok) throw new Error('Failed to load reset-email key status')
+  return r.json()
+}
+
+export async function putResetEmailKey(resend_api_key: string): Promise<{ configured: boolean }> {
+  const r = await apiFetch('/api/settings/security/reset-email-key', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resend_api_key }),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || 'Failed to save the Resend key')
+  return data
+}

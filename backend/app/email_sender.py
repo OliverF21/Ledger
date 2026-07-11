@@ -14,8 +14,10 @@ desktop build (no env vars available) can configure Resend from Settings.
 
 A second, fully independent Resend key (RESET_EMERGENCY_RESEND_API_KEY)
 exists for password-reset emails only — see get_emergency_resend_api_key()/
-send_password_reset_email(). It is env-only (never app_config) and is never
-used for the weekly digest; the weekly key is never used for password reset.
+send_password_reset_email(). Like the weekly-digest key, it's resolved via
+app_config (BYOK, encrypted at rest) first and os.getenv second — but it is
+never shared with, or substitutable for, RESEND_API_KEY: each is set and
+read independently, so one can never silently stand in for the other.
 send_email() accepts an optional api_key override to support this.
 """
 
@@ -69,14 +71,11 @@ def is_configured() -> bool:
 
 
 def get_emergency_resend_api_key() -> str:
-    """Effective emergency Resend API key for password-reset emails ONLY.
-
-    Deliberately env-only (unlike get_resend_api_key(), which also checks
-    app_config for BYOK weekly-digest setup) — this is an operator/deploy-time
-    secret, not a per-instance user preference, and must never share config
-    surface with the weekly-digest key so one can't silently substitute for
-    the other."""
-    return (os.getenv("RESET_EMERGENCY_RESEND_API_KEY") or "").strip()
+    """Effective emergency Resend API key for password-reset emails ONLY
+    (app_config BYOK, else env), stripped. Resolved via its own app_config
+    key (RESET_EMERGENCY_RESEND_API_KEY) — never reads or falls back to
+    RESEND_API_KEY, so the two can never silently substitute for each other."""
+    return (_setting("RESET_EMERGENCY_RESEND_API_KEY") or "").strip()
 
 
 def is_reset_email_configured() -> bool:
