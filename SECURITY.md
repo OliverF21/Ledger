@@ -320,8 +320,8 @@ If you discover a security vulnerability in Ledger:
    - Potential impact
    - Suggested fix (if any)
 3. Please allow a reasonable time for a response and a fix before any public
-   disclosure. Fixes are shipped as a new release and, where warranted, a published
-   security advisory.
+   disclosure. Fixes, when made, are shipped as a new release and, where warranted,
+   a published security advisory.
 
 > **Maintainer setup (one-time):** the "Report a vulnerability" button only appears
 > after enabling **Settings → Advanced Security → Private vulnerability reporting**
