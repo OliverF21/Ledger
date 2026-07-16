@@ -51,6 +51,11 @@ Ledger ships **unsigned** (open-source freeware). The OS will warn on first open
 
 After the first launch it opens normally.
 
+> ⚠️ **At your own risk.** Bypassing these OS warnings is your decision. Only download
+> Ledger from the official
+> [releases page](https://github.com/OliverF21/Ledger/releases) — never run a build
+> from anywhere else. See the [Disclaimer](../DISCLAIMER.md).
+
 **First launch is slow (~30s).** Because the build is unsigned, macOS validates
 every bundled Python library the first time the backend starts, so the window can
 take ~30 seconds to appear on the very first run. Subsequent launches are fast

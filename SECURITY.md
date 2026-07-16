@@ -2,6 +2,9 @@
 
 This document describes the threat model, security practices, and hardening guidelines for Ledger, a self-hosted personal finance dashboard.
 
+> Ledger is provided "as is", without warranty, and is self-hosted — you operate and
+> secure your own instance. See [DISCLAIMER.md](DISCLAIMER.md) and [TERMS.md](TERMS.md).
+
 ---
 
 ## Threat Model
@@ -307,14 +310,22 @@ Core dependencies (FastAPI, SQLAlchemy, `requests` for Plaid HTTP) are widely us
 ## Reporting Security Issues
 
 If you discover a security vulnerability in Ledger:
-1. **Do not** open a public GitHub issue
-2. Email a detailed report to [your email] with:
+
+1. **Do not** open a public GitHub issue.
+2. Report it privately through GitHub's
+   **[private vulnerability reporting](https://github.com/OliverF21/Ledger/security/advisories/new)**
+   (repository **Security** tab → **Report a vulnerability**). Include:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
    - Suggested fix (if any)
-3. Allow 48 hours for a response
-4. Vulnerabilities will be patched and a security advisory will be published
+3. Please allow a reasonable time for a response and a fix before any public
+   disclosure. Fixes, when made, are shipped as a new release and, where warranted,
+   a published security advisory.
+
+> **Maintainer setup (one-time):** the "Report a vulnerability" button only appears
+> after enabling **Settings → Advanced Security → Private vulnerability reporting**
+> on the GitHub repository. This cannot be enabled from the codebase.
 
 ---
 
@@ -329,5 +340,5 @@ If you discover a security vulnerability in Ledger:
 
 ---
 
-**Last Updated**: 2026-07-06  
+**Last Updated**: 2026-07-15  
 **Next Review**: Before any public deployment or auth model change
