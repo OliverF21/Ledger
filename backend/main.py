@@ -11,7 +11,7 @@ import os
 from app.bootstrap import bootstrap_desktop
 bootstrap_desktop()
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -140,7 +140,11 @@ if _SERVE_SPA:
 async def root():
     """Serve the SPA homepage when built; otherwise a small API status payload."""
     if _SERVE_SPA:
-        return FileResponse(_INDEX_HTML)
+        # index.html references hashed /assets/*.js filenames that change on every
+        # build; a cached index.html silently pins the webview to a stale JS
+        # bundle after an app update (WebKit's HTTP cache persists across desktop
+        # app reinstalls/updates, since it's keyed by bundle id, not app content).
+        return FileResponse(_INDEX_HTML, headers={"Cache-Control": "no-store"})
     return {
         "status": "ok",
         "service": "Ledger API",
@@ -150,8 +154,12 @@ async def root():
 
 
 @app.get("/health", tags=["root"])
-async def health():
+async def health(response: Response):
     """Detailed health check"""
+    # The frontend relies on the `desktop` flag below being current on every
+    # call (see openExternal.ts) — never let the webview's HTTP cache serve a
+    # stale copy of it.
+    response.headers["Cache-Control"] = "no-store"
     return {
         "status": "healthy",
         "database": "connected",  # TODO: Verify actual DB connection
@@ -175,7 +183,7 @@ if _SERVE_SPA:
         # Guard against path traversal escaping the dist directory.
         if candidate.startswith(os.path.normpath(_DIST_DIR)) and os.path.isfile(candidate):
             return FileResponse(candidate)
-        return FileResponse(_INDEX_HTML)
+        return FileResponse(_INDEX_HTML, headers={"Cache-Control": "no-store"})
 
 
 if __name__ == "__main__":
