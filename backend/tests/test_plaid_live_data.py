@@ -47,49 +47,40 @@ def test_is_login_required():
 def test_create_link_token_update_mode_includes_access_token(mock_post):
     mock_post.return_value = MagicMock(
         ok=True,
-        json=lambda: {"link_token": "link-sandbox-test"},
+        json=lambda: {"link_token": "link-sandbox-test", "hosted_link_url": "https://hosted.plaid.com/x"},
     )
-    token, oauth = PlaidService.create_link_token(1, access_token="access-sandbox-test")
+    token, hosted_url = PlaidService.create_link_token(1, access_token="access-sandbox-test")
     assert token == "link-sandbox-test"
-    assert oauth is False
+    assert hosted_url == "https://hosted.plaid.com/x"
     payload = mock_post.call_args.kwargs["json"]
     assert payload["access_token"] == "access-sandbox-test"
+    # Hosted Link is what removes the need for a client-side OAuth redirect URI.
+    assert payload["hosted_link"] == {}
+    assert "redirect_uri" not in payload
 
 
 @patch("app.plaid_service.requests.post")
 def test_create_link_token_new_link_omits_access_token(mock_post):
     mock_post.return_value = MagicMock(
         ok=True,
-        json=lambda: {"link_token": "link-sandbox-new"},
+        json=lambda: {"link_token": "link-sandbox-new", "hosted_link_url": "https://hosted.plaid.com/y"},
     )
-    token, oauth = PlaidService.create_link_token(1)
+    token, hosted_url = PlaidService.create_link_token(1)
     assert token == "link-sandbox-new"
-    assert oauth is False
+    assert hosted_url == "https://hosted.plaid.com/y"
     payload = mock_post.call_args.kwargs["json"]
     assert "access_token" not in payload
+    assert payload["hosted_link"] == {}
 
 
 @patch("app.plaid_service.requests.post")
-def test_create_link_token_retries_without_unregistered_redirect(mock_post, monkeypatch):
-    monkeypatch.setenv("PLAID_ENV", "production")
-    first = create_autospec(requests.Response, instance=True)
-    first.ok = False
-    first.json.return_value = {
-        "error_code": "INVALID_FIELD",
-        "error_message": "OAuth redirect URI must be configured in the developer dashboard.",
-    }
-    first.text = "error"
-    second = MagicMock(ok=True, json=lambda: {"link_token": "link-no-oauth"})
-    mock_post.side_effect = [first, second]
-
-    token, oauth = PlaidService.create_link_token(
-        1,
-        redirect_uri="https://example.ngrok-free.app/",
-    )
-    assert token == "link-no-oauth"
-    assert oauth is False
-    assert mock_post.call_count == 2
-    assert "redirect_uri" not in mock_post.call_args_list[1].kwargs["json"]
+def test_get_link_session_pending(mock_post):
+    """No completed session yet -> raw response passed through for the route to parse."""
+    mock_post.return_value = MagicMock(ok=True, json=lambda: {"link_sessions": []})
+    session = PlaidService.get_link_session("link-token-abc")
+    assert session == {"link_sessions": []}
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["link_token"] == "link-token-abc"
 
 
 @pytest.fixture()
@@ -208,7 +199,7 @@ def test_create_link_token_update_mode_route(mock_create, mock_decrypt, client):
     item_id = item.id
     db.close()
 
-    mock_create.return_value = ("link-update-token", True)
+    mock_create.return_value = ("link-update-token", "https://hosted.plaid.com/update")
 
     r = client.post(
         "/api/plaid/create_link_token",
@@ -218,6 +209,66 @@ def test_create_link_token_update_mode_route(mock_create, mock_decrypt, client):
     assert r.status_code == 200
     data = r.json()
     assert data["link_token"] == "link-update-token"
+    assert data["hosted_link_url"] == "https://hosted.plaid.com/update"
     assert data["update_mode"] is True
     mock_create.assert_called_once()
     assert mock_create.call_args.kwargs["access_token"] == "decrypted-access"
+
+
+@patch("app.routes.plaid.PlaidService.get_link_session")
+def test_link_session_pending(mock_session, client):
+    headers = _auth_headers(client)
+    mock_session.return_value = {"link_sessions": [{"link_session_id": "s1"}]}
+    r = client.get("/api/plaid/link_session?link_token=lt-1", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["status"] == "pending"
+
+
+@patch("app.routes.plaid.PlaidService.get_link_session")
+def test_link_session_error_on_exit(mock_session, client):
+    headers = _auth_headers(client)
+    mock_session.return_value = {
+        "link_sessions": [
+            {"on_exit": {"error": {"error_message": "user bailed"}}}
+        ]
+    }
+    r = client.get("/api/plaid/link_session?link_token=lt-2", headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "error"
+    assert body["message"] == "user bailed"
+
+
+@patch("app.routes.plaid.PlaidService.get_accounts_with_institution")
+@patch("app.routes.plaid.PlaidService.exchange_public_token")
+@patch("app.routes.plaid.PlaidService.get_link_session")
+def test_link_session_complete_exchanges_and_creates_item(
+    mock_session, mock_exchange, mock_accounts, client
+):
+    headers = _auth_headers(client)
+    mock_session.return_value = {
+        "link_sessions": [
+            {"results": {"item_add_results": [{"public_token": "pub-hosted-1"}]}}
+        ]
+    }
+    mock_exchange.return_value = ("acc-token", "item_plaid_hosted")
+    mock_accounts.return_value = ([{
+        "plaid_account_id": "acc_h1",
+        "name": "Checking",
+        "type": "depository",
+        "subtype": "checking",
+        "current_balance": 42.0,
+    }], {
+        "institution_id": "ins_h",
+        "name": "Hosted Bank",
+        "logo": None,
+        "primary_color": None,
+    })
+
+    r = client.get("/api/plaid/link_session?link_token=lt-3", headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "complete"
+    assert body["item_id"] == "item_plaid_hosted"
+    assert body["updated"] is False
+    mock_exchange.assert_called_once_with("pub-hosted-1")

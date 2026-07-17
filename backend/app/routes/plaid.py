@@ -27,13 +27,12 @@ router = APIRouter(prefix="/plaid", tags=["plaid"])
 class LinkTokenRequest(BaseModel):
     """Pass item_id (internal DB id) to open Plaid Link in update mode."""
     item_id: Optional[int] = None
-    redirect_uri: Optional[str] = None
 
 
 class LinkTokenResponse(BaseModel):
     link_token: str
+    hosted_link_url: str
     update_mode: bool = False
-    oauth_redirect_configured: bool = False
 
 
 class SetAccessTokenRequest(BaseModel):
@@ -44,6 +43,14 @@ class SetAccessTokenResponse(BaseModel):
     success: bool
     item_id: str
     updated: bool = False
+
+
+class LinkSessionResponse(BaseModel):
+    """Result of polling a Hosted Link session (GET /plaid/link_session)."""
+    status: str  # "pending" | "complete" | "error"
+    item_id: Optional[str] = None
+    updated: bool = False
+    message: Optional[str] = None
 
 
 class AccountInfo(BaseModel):
@@ -179,15 +186,14 @@ async def create_link_token(body: LinkTokenRequest, db: Session = Depends(get_db
             access_token = decrypt_token(item.access_token_encrypted)
             update_mode = True
 
-        link_token, oauth_redirect_configured = PlaidService.create_link_token(
+        link_token, hosted_link_url = PlaidService.create_link_token(
             user_id=1,
             access_token=access_token,
-            redirect_uri=body.redirect_uri,
         )
         return LinkTokenResponse(
             link_token=link_token,
+            hosted_link_url=hosted_link_url,
             update_mode=update_mode,
-            oauth_redirect_configured=oauth_redirect_configured,
         )
     except HTTPException:
         raise
@@ -195,6 +201,48 @@ async def create_link_token(body: LinkTokenRequest, db: Session = Depends(get_db
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         log_and_raise(e, status_code=500)
+
+
+def _finalize_link(db: Session, public_token: str) -> SetAccessTokenResponse:
+    """Exchange a public_token for an access_token and upsert the Item/accounts.
+
+    Shared by the (legacy) set_access_token route and the Hosted Link poll
+    endpoint. Creates a new Item, or updates the existing one when Link ran in
+    update mode (same plaid_item_id). Caller owns error handling/rollback.
+    """
+    access_token, plaid_item_id = PlaidService.exchange_public_token(public_token)
+    encrypted_token = encrypt_token(access_token)
+    accounts_data, institution_details = PlaidService.get_accounts_with_institution(access_token)
+
+    existing = db.query(Item).filter(
+        Item.user_id == 1,
+        Item.item_id == plaid_item_id,
+    ).first()
+
+    if existing:
+        existing.access_token_encrypted = encrypted_token
+        PlaidService.apply_institution_metadata(existing, institution_details)
+        existing.sync_status = "ok"
+        existing.last_sync_error = None
+        _upsert_accounts(db, existing, accounts_data)
+        db.commit()
+        return SetAccessTokenResponse(success=True, item_id=plaid_item_id, updated=True)
+
+    item = Item(
+        user_id=1,
+        item_id=plaid_item_id,
+        institution_name=institution_details.get('name'),
+        institution_id=institution_details.get('institution_id'),
+        institution_logo=institution_details.get('logo'),
+        institution_color=institution_details.get('primary_color'),
+        access_token_encrypted=encrypted_token,
+        sync_status="ok",
+    )
+    db.add(item)
+    db.flush()
+    _upsert_accounts(db, item, accounts_data)
+    db.commit()
+    return SetAccessTokenResponse(success=True, item_id=plaid_item_id, updated=False)
 
 
 @router.post("/set_access_token", response_model=SetAccessTokenResponse)
@@ -207,47 +255,76 @@ async def set_access_token(
     Creates a new Item or updates an existing one when Link ran in update mode.
     """
     try:
-        access_token, plaid_item_id = PlaidService.exchange_public_token(request.public_token)
-        encrypted_token = encrypt_token(access_token)
-        accounts_data, institution_details = PlaidService.get_accounts_with_institution(access_token)
-
-        existing = db.query(Item).filter(
-            Item.user_id == 1,
-            Item.item_id == plaid_item_id,
-        ).first()
-
-        if existing:
-            existing.access_token_encrypted = encrypted_token
-            PlaidService.apply_institution_metadata(existing, institution_details)
-            existing.sync_status = "ok"
-            existing.last_sync_error = None
-            _upsert_accounts(db, existing, accounts_data)
-            db.commit()
-            return SetAccessTokenResponse(
-                success=True,
-                item_id=plaid_item_id,
-                updated=True,
-            )
-
-        item = Item(
-            user_id=1,
-            item_id=plaid_item_id,
-            institution_name=institution_details.get('name'),
-            institution_id=institution_details.get('institution_id'),
-            institution_logo=institution_details.get('logo'),
-            institution_color=institution_details.get('primary_color'),
-            access_token_encrypted=encrypted_token,
-            sync_status="ok",
-        )
-        db.add(item)
-        db.flush()
-        _upsert_accounts(db, item, accounts_data)
-        db.commit()
-
-        return SetAccessTokenResponse(success=True, item_id=plaid_item_id, updated=False)
+        return _finalize_link(db, request.public_token)
     except Exception as e:
         db.rollback()
         log_and_raise(e, status_code=400)
+
+
+def _extract_hosted_public_token(session: dict) -> Optional[str]:
+    """Pull the completed public_token out of a /link/token/get response.
+
+    Prefers the current results.item_add_results[].public_token, falling back to
+    the deprecated on_success.public_token. Returns None if no session has
+    completed yet.
+    """
+    for sess in session.get("link_sessions") or []:
+        results = sess.get("results") or {}
+        for add_result in results.get("item_add_results") or []:
+            token = add_result.get("public_token")
+            if token:
+                return token
+        on_success = sess.get("on_success") or {}
+        if on_success.get("public_token"):
+            return on_success["public_token"]
+    return None
+
+
+def _hosted_exit_message(session: dict) -> Optional[str]:
+    """Return a user-facing message if a session recorded an exit, else None."""
+    for sess in session.get("link_sessions") or []:
+        on_exit = sess.get("on_exit")
+        if on_exit is not None:
+            error = on_exit.get("error") or {}
+            return error.get("error_message") or "Link was closed before finishing."
+    return None
+
+
+@router.get("/link_session", response_model=LinkSessionResponse)
+async def get_link_session(link_token: str, db: Session = Depends(get_db)):
+    """Poll a Hosted Link session for completion.
+
+    The frontend opens the hosted_link_url in the system browser, then polls
+    this endpoint. When Plaid reports a completed session we exchange the
+    public_token here (server-side) and report the item. No webhook needed.
+    """
+    if not PlaidService.is_configured():
+        raise HTTPException(status_code=409, detail="Plaid is not configured. Add your keys in Settings → Plaid.")
+    try:
+        session = PlaidService.get_link_session(link_token)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        log_and_raise(e, status_code=500)
+
+    public_token = _extract_hosted_public_token(session)
+    if public_token:
+        try:
+            result = _finalize_link(db, public_token)
+        except Exception as e:
+            db.rollback()
+            log_and_raise(e, status_code=400)
+        return LinkSessionResponse(
+            status="complete",
+            item_id=result.item_id,
+            updated=result.updated,
+        )
+
+    exit_message = _hosted_exit_message(session)
+    if exit_message:
+        return LinkSessionResponse(status="error", message=exit_message)
+
+    return LinkSessionResponse(status="pending")
 
 
 @router.get("/accounts", response_model=AccountsResponse)
