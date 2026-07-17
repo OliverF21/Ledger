@@ -10,15 +10,17 @@ use std::time::{Duration, Instant};
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
-/// Fixed loopback port — must match the OAuth redirect URI registered in Plaid.
+/// Fixed loopback port for the bundled backend.
 const PORT: u16 = 17384;
 const HOST: &str = "127.0.0.1";
 
 /// Hosts (and their subdomains) that should open in the user's real browser
 /// instead of navigating the app window. Everything NOT listed here stays
-/// in-webview — required for Plaid Link's cdn.plaid.com iframe and OAuth
-/// institution redirects (Chase, Robinhood) to work at all.
-const EXTERNAL_HOSTS: &[&str] = &["ko-fi.com", "dashboard.plaid.com"];
+/// in-webview — required for Plaid Link's cdn.plaid.com iframe to work at all.
+/// secure.plaid.com serves Plaid Hosted Link: the bank OAuth flow needs a real
+/// browser (not this http://127.0.0.1 webview, which Plaid production won't
+/// accept as an OAuth redirect target), so on_navigation below hands it off.
+const EXTERNAL_HOSTS: &[&str] = &["ko-fi.com", "dashboard.plaid.com", "secure.plaid.com"];
 
 /// Holds the spawned backend process so we can kill it on exit.
 struct Backend(Mutex<Option<Child>>);
@@ -65,15 +67,6 @@ fn backend_exe(app: &tauri::App) -> Result<std::path::PathBuf, String> {
     Err(format!("backend executable not found under {}", res.display()))
 }
 
-/// Open a URL in the user's default system browser. Invoked from the frontend
-/// for Plaid Hosted Link: bank OAuth must run in a real browser (Plaid hosts the
-/// redirect on its own HTTPS domain), not inside this app's http://127.0.0.1
-/// webview — which is exactly why the old in-webview OAuth flow could not work.
-#[tauri::command]
-fn open_external(url: String) -> Result<(), String> {
-    open::that(url).map_err(|e| e.to_string())
-}
-
 /// Best-effort background update check. No-op unless the build was configured
 /// with a release updater overlay (endpoints + pubkey) — otherwise `updater()`
 /// errors and we simply skip. Never blocks or crashes the app.
@@ -106,7 +99,6 @@ fn spawn_update_check(app: &tauri::App) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![open_external])
         .setup(|app| {
             let exe = backend_exe(app).map_err(|e| {
                 eprintln!("[ledger] {e}");

@@ -156,6 +156,10 @@ async def health():
         "status": "healthy",
         "database": "connected",  # TODO: Verify actual DB connection
         "scheduler": "running",   # TODO: Verify scheduler status
+        # Lets the frontend tell desktop and browser apart without depending on
+        # Tauri's JS bridge injection (unreliable for the External-URL window
+        # this app loads — see usePlaidHostedLink's use of this).
+        "desktop": os.environ.get("LEDGER_DESKTOP", "").strip().lower() in {"1", "true", "yes"},
     }
 
 
