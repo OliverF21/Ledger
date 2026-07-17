@@ -124,70 +124,25 @@ the Investments product enabled in addition to Transactions/Auth:
 without it). Do not put `investments` in the main `products` array — that blocks banks
 that don't offer brokerage accounts.
 
-### OAuth redirect (Chase and other OAuth banks)
+### OAuth banks (Chase, Robinhood, Capital One, …) — no setup required
 
-Institutions like **Chase** send you to their site to log in, then redirect back to
-your app. Ledger must resume Plaid Link at that point — this is handled automatically
-when you configure a redirect URI:
+Most major US banks (Chase, Bank of America, Wells Fargo, Capital One, Citi, Robinhood,
+SoFi, …) use **OAuth**: they send you to the bank's own site to log in, then redirect
+back. Ledger uses Plaid **Hosted Link** for this, so **you do not configure a redirect
+URI, and you do not need ngrok** — Plaid hosts the entire Link flow (including the OAuth
+redirect) on its own HTTPS domain.
 
-1. In [Plaid Dashboard → Team Settings → Allowed redirect URIs](https://dashboard.plaid.com/team/settings), add your app origin with a trailing slash, **no hash**:
-   - Local single-port: `http://localhost:8000/`
-   - Production: `https://your-domain.com/`
-2. Set the same value in `.env`:
-   ```
-   PLAID_REDIRECT_URI=http://localhost:8000/
-   ```
-3. Always open Ledger at the **same host** as the redirect URI (use `localhost`, not
-   `127.0.0.1`, if that is what you registered).
+What happens when you link or update a bank:
 
-After Chase login you should briefly see “Finishing bank connection…” and then land on
-Settings with the account linked. If the session expires, link again from Settings.
+1. Click **+ Link new account** (or **Update connection**) in Settings.
+2. A secure Plaid page opens in your **system browser**; log in / complete OAuth there.
+3. Ledger polls in the background and updates automatically when you finish — no
+   redirect back into the app is needed.
 
-#### ngrok (localhost + production Plaid keys)
-
-Production Plaid rejects `http://localhost` redirect URIs. To link **Robinhood** (and
-other full-page OAuth institutions) while running Ledger locally, use **ngrok** for a
-temporary HTTPS URL.
-
-1. **Install** — included in backend dependencies:
-   ```bash
-   cd backend
-   source venv/bin/activate
-   pip install ngrok   # or: pip install -r requirements.txt
-   ```
-   This installs the **official** ngrok Python SDK and puts the `ngrok` CLI in your
-   venv (`backend/venv/bin/ngrok`). Homebrew (`brew install ngrok`) also works if you
-   prefer a system-wide binary.
-
-2. **Sign up** (free) at [ngrok.com](https://ngrok.com) and copy your authtoken from
-   [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken).
-
-3. **Configure** — add to `backend/.env`:
-   ```
-   NGROK_AUTHTOKEN=your_ngrok_authtoken_here
-   ```
-
-4. **Start Ledger** on port 8000, then in a second terminal:
-   ```bash
-   cd backend && source venv/bin/activate
-   ngrok config add-authtoken $NGROK_AUTHTOKEN   # once
-   ngrok http 8000
-   ```
-
-5. Copy the **HTTPS** forwarding URL (e.g. `https://abc123.ngrok-free.app`).
-
-6. **Plaid Dashboard** → Allowed redirect URIs → add `https://abc123.ngrok-free.app/`
-
-7. **`.env`**:
-   ```
-   PLAID_REDIRECT_URI=https://abc123.ngrok-free.app/
-   ```
-
-8. **Open Ledger at the ngrok URL** (not `localhost:8000`), restart the backend if you
-   changed `.env`, and link Robinhood from Settings.
-
-The free ngrok URL changes when you restart the tunnel — update Plaid and `.env` each
-time. Do not use ngrok in production deployments; use your real domain instead.
+Hosted Link requires no special Plaid Dashboard enablement and no `PLAID_REDIRECT_URI`.
+This is what lets the packaged desktop app (served at `http://127.0.0.1`) link OAuth
+banks at all — Plaid rejects non-HTTPS redirect URIs in production, so the old
+in-webview redirect approach could never work there.
 
 ### Sandbox: custom user with brokerage holdings
 
@@ -209,18 +164,11 @@ Robinhood is a real institution on Plaid's network (OAuth-based Link flow), but 
    (US/Canada, up to 10 Production Items; Investments + Investments Refresh included)
 2. Trial uses **Production** API keys — set `PLAID_ENV=production` and fill in
    `PLAID_PROD_SECRET`
-3. **Robinhood always uses OAuth redirect** (unlike some banks that work in a popup).
-   On **localhost with production keys**, `http://localhost` redirect URIs are **not**
-   allowed — you need an **HTTPS** URL:
-   - **ngrok** (quick dev): `ngrok http 8000` → add `https://YOUR-ID.ngrok-free.app/` to
-     Plaid Dashboard → Allowed redirect URIs, set `PLAID_REDIRECT_URI` to the same value,
-     and open Ledger at that URL (not `127.0.0.1:8000`)
-   - **Deployed domain**: `https://your-domain.com/` in Dashboard + `.env`
-   - **Sandbox** (no real Robinhood data): `PLAID_ENV=sandbox` +
-     `PLAID_REDIRECT_URI=http://localhost:8000/` works for testing the OAuth resume flow
-4. Always use the **same host** for the whole flow (`localhost` vs `127.0.0.1` must not
-   change mid-link)
-5. If an account was linked *before* `investments` was added to the Link token's
+3. **Robinhood uses OAuth**, but Ledger links it via Plaid **Hosted Link** — the OAuth
+   flow opens in your system browser on Plaid's HTTPS domain, so **no redirect URI,
+   ngrok, or HTTPS setup is required** (see "OAuth banks" above). Just click **+ Link
+   new account** and finish in the browser tab that opens.
+4. If an account was linked *before* `investments` was added to the Link token's
    `products`, it must be **re-linked in Update Mode** (Plaid returns
    `ADDITIONAL_CONSENT_REQUIRED`) — re-open Plaid Link for that item to grant consent
 6. Cost basis may come back `null` for some Robinhood positions — the Investments tab
