@@ -65,6 +65,15 @@ fn backend_exe(app: &tauri::App) -> Result<std::path::PathBuf, String> {
     Err(format!("backend executable not found under {}", res.display()))
 }
 
+/// Open a URL in the user's default system browser. Invoked from the frontend
+/// for Plaid Hosted Link: bank OAuth must run in a real browser (Plaid hosts the
+/// redirect on its own HTTPS domain), not inside this app's http://127.0.0.1
+/// webview — which is exactly why the old in-webview OAuth flow could not work.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    open::that(url).map_err(|e| e.to_string())
+}
+
 /// Best-effort background update check. No-op unless the build was configured
 /// with a release updater overlay (endpoints + pubkey) — otherwise `updater()`
 /// errors and we simply skip. Never blocks or crashes the app.
@@ -97,6 +106,7 @@ fn spawn_update_check(app: &tauri::App) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![open_external])
         .setup(|app| {
             let exe = backend_exe(app).map_err(|e| {
                 eprintln!("[ledger] {e}");
