@@ -11,7 +11,6 @@ import Trends from './pages/Trends'
 import Subscriptions from './pages/Subscriptions'
 import Settings from './pages/Settings'
 import Advisor from './pages/Advisor'
-import PlaidOAuthResume from './components/PlaidOAuthResume'
 import Setup from './pages/Setup'
 import { useProposals } from './hooks/useAdvisor'
 import { useAccounts } from './hooks/useAccounts'
@@ -211,8 +210,6 @@ function App() {
       <div className="aurora-root">
         <div className="aurora-layer" />
       </div>
-
-      <PlaidOAuthResume />
 
       <div className="relative z-10 h-dvh text-ledger-text-primary flex p-2 short:p-3 tall:p-4 gap-2 short:gap-3 tall:gap-4 overflow-hidden">
         <Sidebar
