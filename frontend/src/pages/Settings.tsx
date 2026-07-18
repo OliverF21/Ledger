@@ -83,6 +83,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const [addingCrypto, setAddingCrypto] = useState(false)
   const [cryptoError, setCryptoError] = useState<string | null>(null)
   const [removingCryptoId, setRemovingCryptoId] = useState<number | null>(null)
+  const [confirmingCryptoRemoveId, setConfirmingCryptoRemoveId] = useState<number | null>(null)
   const [refreshingCrypto, setRefreshingCrypto] = useState(false)
   const [expandedCryptoId, setExpandedCryptoId] = useState<number | null>(null)
   const [alchemyKeyDraft, setAlchemyKeyDraft] = useState('')
@@ -90,6 +91,8 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const [savingAlchemyKey, setSavingAlchemyKey] = useState(false)
   const [alchemyKeySaveResult, setAlchemyKeySaveResult] = useState<string | null>(null)
   const [removingItemId, setRemovingItemId] = useState<number | null>(null)
+  const [confirmingRemoveItemId, setConfirmingRemoveItemId] = useState<number | null>(null)
+  const [removeItemError, setRemoveItemError] = useState<string | null>(null)
   const [rules, setRules] = useState<RuleItem[]>([])
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
   const [showRuleForm, setShowRuleForm] = useState(false)
@@ -504,18 +507,22 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
     }
   }
 
-  const handleRemoveItem = async (itemId: number, institutionName: string | null) => {
-    const label = institutionName || 'this institution'
-    if (!confirm(`Remove ${label}? This will permanently delete all associated accounts, transactions, and balance history.`)) return
+  const handleRemoveItem = async (itemId: number) => {
+    // Native window.confirm()/alert() are unreliable inside the desktop app's
+    // webview (silently no-op rather than showing a dialog), so confirmation
+    // is an inline two-click UI (confirmingRemoveItemId) and errors render
+    // inline (removeItemError) instead of alert().
     setRemovingItemId(itemId)
+    setRemoveItemError(null)
     try {
       const res = await apiFetch(`/api/plaid/item/${itemId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Delete failed')
+      setConfirmingRemoveItemId(null)
       await onAccountsChange()
       await fetchSyncStatus()
     } catch (error) {
       console.error('Failed to remove item:', error)
-      alert('Failed to remove account. Try again.')
+      setRemoveItemError('Failed to remove account. Try again.')
     } finally {
       setRemovingItemId(null)
     }
@@ -552,22 +559,21 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
     }
   }
 
-  const handleRemoveCryptoWallet = async (walletId: number, address: string) => {
-    if (
-      !confirm(
-        `Remove wallet ${address}? This permanently deletes this wallet and its balance history from Ledger.`,
-      )
-    ) {
-      return
-    }
+  const handleRemoveCryptoWallet = async (walletId: number) => {
+    // Native window.confirm()/alert() are unreliable inside the desktop app's
+    // webview (silently no-op rather than showing a dialog), so confirmation
+    // is an inline two-click UI (confirmingCryptoRemoveId) and errors render
+    // inline (cryptoError) instead of alert().
     setRemovingCryptoId(walletId)
+    setCryptoError(null)
     try {
       const res = await apiFetch(`/api/crypto/wallets/${walletId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Delete failed')
+      setConfirmingCryptoRemoveId(null)
       await refetchCrypto()
     } catch (error) {
       console.error('Failed to remove crypto wallet:', error)
-      alert('Failed to remove wallet. Try again.')
+      setCryptoError('Failed to remove wallet. Try again.')
     } finally {
       setRemovingCryptoId(null)
     }
@@ -811,6 +817,10 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
           <div className="glass-card p-[22px]">
             <h3 className="text-[14px] font-semibold mb-[16px]">Linked accounts</h3>
 
+            {removeItemError && (
+              <p className="text-[12px] text-ledger-negative mb-[12px]">{removeItemError}</p>
+            )}
+
             {loadingAccounts ? (
               <div className="text-center py-8 text-ledger-text-faint">Loading accounts...</div>
             ) : accounts.length === 0 ? (
@@ -841,7 +851,9 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                           onError={handleLinkError}
                         />
                         <button
-                          onClick={() => handleRemoveItem(itemId, itemAccounts[0].institution_name)}
+                          onClick={() =>
+                            setConfirmingRemoveItemId(prev => prev === itemId ? null : itemId)
+                          }
                           disabled={removingItemId === itemId}
                           className="text-[11.5px] text-ledger-negative hover:opacity-70 transition-opacity disabled:opacity-40"
                         >
@@ -849,6 +861,31 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                         </button>
                       </div>
                     </div>
+                    {confirmingRemoveItemId === itemId && (
+                      <div className="flex items-center justify-between gap-[10px] mb-[8px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
+                        <span className="text-[12px] text-ledger-text-secondary">
+                          Remove {itemAccounts[0].institution_name || 'this institution'}? This
+                          permanently deletes its accounts, transactions, and balance history.
+                        </span>
+                        <div className="flex items-center gap-[8px] shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingRemoveItemId(null)}
+                            className="text-[12px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(itemId)}
+                            disabled={removingItemId === itemId}
+                            className="text-[12px] font-semibold text-ledger-negative hover:opacity-80 transition-opacity disabled:opacity-40"
+                          >
+                            {removingItemId === itemId ? 'Removing…' : 'Remove'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {syncInfo?.last_sync_error && syncInfo.sync_status !== 'ok' && (
                       <p className="text-[11px] text-ledger-negative mb-[8px] leading-snug">
                         {syncInfo.last_sync_error}
@@ -993,13 +1030,39 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleRemoveCryptoWallet(wallet.id, wallet.address)}
+                        onClick={() =>
+                          setConfirmingCryptoRemoveId(prev => prev === wallet.id ? null : wallet.id)
+                        }
                         disabled={removingCryptoId === wallet.id}
                         className="text-[11.5px] text-ledger-negative hover:opacity-70 transition-opacity disabled:opacity-40 shrink-0"
                       >
                         {removingCryptoId === wallet.id ? 'Removing…' : 'Remove'}
                       </button>
                     </div>
+                    {confirmingCryptoRemoveId === wallet.id && (
+                      <div className="flex items-center justify-between gap-[10px] mt-[10px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
+                        <span className="text-[12px] text-ledger-text-secondary">
+                          Remove this wallet? This permanently deletes it and its balance history.
+                        </span>
+                        <div className="flex items-center gap-[8px] shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingCryptoRemoveId(null)}
+                            className="text-[12px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCryptoWallet(wallet.id)}
+                            disabled={removingCryptoId === wallet.id}
+                            className="text-[12px] font-semibold text-ledger-negative hover:opacity-80 transition-opacity disabled:opacity-40"
+                          >
+                            {removingCryptoId === wallet.id ? 'Removing…' : 'Remove'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {expandedCryptoId === wallet.id && wallet.holdings.length > 0 && (
                       <div className="mt-[10px] pt-[10px] border-t border-ledger-border-subtle space-y-[6px]">
                         {wallet.holdings.map((h) => (
