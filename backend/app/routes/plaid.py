@@ -181,7 +181,7 @@ async def create_link_token(body: LinkTokenRequest, db: Session = Depends(get_db
             item = db.query(Item).filter(Item.id == body.item_id, Item.user_id == 1).first()
             if not item:
                 raise HTTPException(status_code=404, detail="Item not found")
-            if item.item_id in ("manual_import", "test_item"):
+            if item.item_id in ("manual_import", "test_item", "crypto_wallets"):
                 raise HTTPException(status_code=400, detail="Cannot update a non-Plaid item")
             access_token = decrypt_token(item.access_token_encrypted)
             update_mode = True
@@ -333,7 +333,7 @@ async def get_accounts(db: Session = Depends(get_db)):
     try:
         accounts = db.query(Account).join(Item).filter(
             Item.user_id == 1,
-            Item.item_id != "manual_import",
+            Item.item_id.notin_(["manual_import", "crypto_wallets"]),
         ).all()
         items = {acc.item for acc in accounts}
         _refresh_institution_metadata(db, list(items))
@@ -425,6 +425,16 @@ async def sync_transactions(db: Session = Depends(get_db)):
             parts.append(f"backfilled enrichment on {total_backfilled} existing transactions")
         if failed_count:
             parts.append(f"{failed_count} institution{'s' if failed_count != 1 else ''} failed")
+
+        try:
+            from app.crypto_sync import sync_crypto_wallets
+            crypto_stats = sync_crypto_wallets(db)
+            if not crypto_stats.get("skipped") and crypto_stats.get("synced"):
+                parts.append(f"refreshed {crypto_stats['synced']} crypto wallet(s)")
+        except Exception:
+            import logging
+            logging.getLogger("ledger").exception("crypto wallet sync after plaid sync failed")
+
         message = ", ".join(parts)
 
         return SyncResponse(

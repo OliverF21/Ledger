@@ -7,8 +7,10 @@ import {
   getWeeklyEmailPrefs, putWeeklyEmailPrefs,
   getRecoveryCodeStatus, generateRecoveryCode,
   getRecoveryEmailStatus, putRecoveryEmail,
+  getAlchemyConfig, putAlchemyConfig,
 } from '../api/plaidConfig'
 import { type AccountItem } from '../hooks/useAccounts'
+import { useCryptoWallets } from '../hooks/useCryptoWallets'
 import { useSync } from '../hooks/useSync'
 import PlaidLink, { PlaidUpdateButton } from '../components/PlaidLink'
 import InstitutionAvatar from '../components/InstitutionAvatar'
@@ -71,6 +73,22 @@ interface SettingsProps {
 
 export default function Settings({ accounts, loadingAccounts, onAccountsChange }: SettingsProps) {
   const { syncing, sync } = useSync()
+  const {
+    data: cryptoData,
+    loading: loadingCrypto,
+    refetch: refetchCrypto,
+  } = useCryptoWallets()
+  const [cryptoAddress, setCryptoAddress] = useState('')
+  const [cryptoLabel, setCryptoLabel] = useState('')
+  const [addingCrypto, setAddingCrypto] = useState(false)
+  const [cryptoError, setCryptoError] = useState<string | null>(null)
+  const [removingCryptoId, setRemovingCryptoId] = useState<number | null>(null)
+  const [refreshingCrypto, setRefreshingCrypto] = useState(false)
+  const [expandedCryptoId, setExpandedCryptoId] = useState<number | null>(null)
+  const [alchemyKeyDraft, setAlchemyKeyDraft] = useState('')
+  const [alchemyConfigured, setAlchemyConfigured] = useState(false)
+  const [savingAlchemyKey, setSavingAlchemyKey] = useState(false)
+  const [alchemyKeySaveResult, setAlchemyKeySaveResult] = useState<string | null>(null)
   const [removingItemId, setRemovingItemId] = useState<number | null>(null)
   const [rules, setRules] = useState<RuleItem[]>([])
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
@@ -142,6 +160,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
     fetchSyncConfig()
     fetchRecoveryCodeStatus()
     fetchRecoveryEmailStatus()
+    fetchAlchemyConfig()
   }, [])
 
   const fetchRecoveryCodeStatus = async () => {
@@ -502,6 +521,104 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
     }
   }
 
+  const handleAddCryptoWallet = async () => {
+    const address = cryptoAddress.trim()
+    if (!address) {
+      setCryptoError('Paste a public wallet address (0x…)')
+      return
+    }
+    setAddingCrypto(true)
+    setCryptoError(null)
+    try {
+      const res = await apiFetch('/api/crypto/wallets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          label: cryptoLabel.trim() || null,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(typeof data.detail === 'string' ? data.detail : 'Failed to add wallet')
+      }
+      setCryptoAddress('')
+      setCryptoLabel('')
+      await refetchCrypto()
+    } catch (error) {
+      setCryptoError(error instanceof Error ? error.message : 'Failed to add wallet')
+    } finally {
+      setAddingCrypto(false)
+    }
+  }
+
+  const handleRemoveCryptoWallet = async (walletId: number, address: string) => {
+    if (
+      !confirm(
+        `Remove wallet ${address}? This permanently deletes this wallet and its balance history from Ledger.`,
+      )
+    ) {
+      return
+    }
+    setRemovingCryptoId(walletId)
+    try {
+      const res = await apiFetch(`/api/crypto/wallets/${walletId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Delete failed')
+      await refetchCrypto()
+    } catch (error) {
+      console.error('Failed to remove crypto wallet:', error)
+      alert('Failed to remove wallet. Try again.')
+    } finally {
+      setRemovingCryptoId(null)
+    }
+  }
+
+  const handleRefreshCrypto = async () => {
+    setRefreshingCrypto(true)
+    setCryptoError(null)
+    try {
+      const res = await apiFetch('/api/crypto/refresh', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(typeof data.detail === 'string' ? data.detail : 'Refresh failed')
+      }
+      await refetchCrypto()
+    } catch (error) {
+      setCryptoError(error instanceof Error ? error.message : 'Refresh failed')
+    } finally {
+      setRefreshingCrypto(false)
+    }
+  }
+
+  const fetchAlchemyConfig = async () => {
+    try {
+      const config = await getAlchemyConfig()
+      setAlchemyConfigured(config.configured)
+    } catch (error) {
+      console.error('Failed to load Alchemy config:', error)
+    }
+  }
+
+  const handleSaveAlchemyKey = async () => {
+    if (!alchemyKeyDraft.trim()) {
+      setAlchemyKeySaveResult('Paste an Alchemy API key first')
+      return
+    }
+    setSavingAlchemyKey(true)
+    setAlchemyKeySaveResult(null)
+    try {
+      const config = await putAlchemyConfig(alchemyKeyDraft.trim())
+      setAlchemyConfigured(config.configured)
+      setAlchemyKeyDraft('')
+      setAlchemyKeySaveResult('Alchemy key saved')
+      await refetchCrypto()
+    } catch (error) {
+      setAlchemyKeySaveResult(error instanceof Error ? error.message : 'Failed to save key')
+    } finally {
+      setSavingAlchemyKey(false)
+    }
+  }
+
   const fetchRules = async () => {
     try {
       const response = await apiFetch('/api/categorization-rules')
@@ -777,6 +894,165 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
             <p className="text-[11.5px] text-ledger-text-faint mt-[12px]">
               Investment accounts show position detail on the <span className="font-semibold text-ledger-text-secondary">Investments</span> tab.
+            </p>
+          </div>
+
+          {/* Crypto wallets */}
+          <div className="glass-card p-[22px]">
+            <div className="flex items-center justify-between gap-[12px] mb-[16px]">
+              <h3 className="text-[14px] font-semibold">Crypto wallets</h3>
+              {(cryptoData?.wallets.length ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={handleRefreshCrypto}
+                  disabled={refreshingCrypto || !(alchemyConfigured || cryptoData?.alchemy_configured)}
+                  className="text-[11.5px] text-ledger-accent hover:opacity-70 transition-opacity disabled:opacity-40"
+                >
+                  {refreshingCrypto ? 'Refreshing…' : 'Refresh'}
+                </button>
+              )}
+            </div>
+
+            <div className="mb-[16px] space-y-[8px]">
+              <label className="text-[12px] text-ledger-text-faint">
+                Alchemy API key{' '}
+                {(alchemyConfigured || cryptoData?.alchemy_configured) && (
+                  <span className="text-ledger-text-faint">(configured)</span>
+                )}
+              </label>
+              <input
+                type="password"
+                value={alchemyKeyDraft}
+                onChange={(e) => setAlchemyKeyDraft(e.target.value)}
+                placeholder={
+                  alchemyConfigured || cryptoData?.alchemy_configured
+                    ? '••••• (unchanged)'
+                    : 'Alchemy API key'
+                }
+                className="w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+              />
+              <p className="text-[11.5px] text-ledger-text-faint leading-snug">
+                Create a free Alchemy app with Robinhood Chain Mainnet, then paste the key here.
+                Free at dashboard.alchemy.com — stored encrypted on this device.
+              </p>
+              {alchemyKeySaveResult && (
+                <p className="text-[11.5px] text-ledger-text-faint">{alchemyKeySaveResult}</p>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveAlchemyKey}
+                disabled={savingAlchemyKey}
+                className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+              >
+                {savingAlchemyKey ? 'Saving…' : 'Save Alchemy key'}
+              </button>
+            </div>
+
+            {!(alchemyConfigured || cryptoData?.alchemy_configured) && (
+              <p className="text-[12px] text-ledger-warning mb-[12px] leading-snug">
+                Add an Alchemy API key above to read Robinhood Chain balances.
+              </p>
+            )}
+
+            {loadingCrypto ? (
+              <div className="text-center py-6 text-ledger-text-faint">Loading wallets…</div>
+            ) : (cryptoData?.wallets.length ?? 0) === 0 ? (
+              <div className="text-center py-6 text-ledger-text-faint mb-2">No crypto wallets yet</div>
+            ) : (
+              <div className="space-y-[10px] mb-[16px]">
+                {cryptoData!.wallets.map((wallet) => (
+                  <div
+                    key={wallet.id}
+                    className="p-[12px] border border-ledger-border-subtle rounded-[9px]"
+                  >
+                    <div className="flex items-start justify-between gap-[12px]">
+                      <button
+                        type="button"
+                        className="text-left min-w-0 flex-1"
+                        onClick={() =>
+                          setExpandedCryptoId(expandedCryptoId === wallet.id ? null : wallet.id)
+                        }
+                      >
+                        <div className="text-[13px] font-semibold truncate">
+                          {wallet.label || 'Wallet'}
+                        </div>
+                        <div className="text-[11.5px] text-ledger-text-faint font-mono break-all mt-[2px]">
+                          {wallet.address}
+                        </div>
+                        <div className="text-[12px] text-ledger-text-secondary mt-[6px]">
+                          ${wallet.usd_total.toFixed(2)}
+                          {wallet.last_synced_at
+                            ? ` · synced ${new Date(wallet.last_synced_at).toLocaleString()}`
+                            : ''}
+                        </div>
+                        {wallet.last_error && (
+                          <p className="text-[11px] text-ledger-negative mt-[4px] leading-snug">
+                            {wallet.last_error}
+                          </p>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCryptoWallet(wallet.id, wallet.address)}
+                        disabled={removingCryptoId === wallet.id}
+                        className="text-[11.5px] text-ledger-negative hover:opacity-70 transition-opacity disabled:opacity-40 shrink-0"
+                      >
+                        {removingCryptoId === wallet.id ? 'Removing…' : 'Remove'}
+                      </button>
+                    </div>
+                    {expandedCryptoId === wallet.id && wallet.holdings.length > 0 && (
+                      <div className="mt-[10px] pt-[10px] border-t border-ledger-border-subtle space-y-[6px]">
+                        {wallet.holdings.map((h) => (
+                          <div
+                            key={`${h.symbol}-${h.contract_address}`}
+                            className="flex justify-between text-[12px]"
+                          >
+                            <span className="text-ledger-text-secondary">
+                              {h.symbol}{' '}
+                              <span className="text-ledger-text-faint">
+                                {h.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                              </span>
+                            </span>
+                            <span className="font-medium">${h.usd_value.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-[8px]">
+              <input
+                type="text"
+                value={cryptoAddress}
+                onChange={(e) => setCryptoAddress(e.target.value)}
+                placeholder="Public wallet address (0x…)"
+                className="w-full glass-chip px-[10px] py-[7px] text-[13px] font-mono text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+              />
+              <input
+                type="text"
+                value={cryptoLabel}
+                onChange={(e) => setCryptoLabel(e.target.value)}
+                placeholder="Label (optional)"
+                className="w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+              />
+              {cryptoError && (
+                <p className="text-[12px] text-ledger-negative">{cryptoError}</p>
+              )}
+              <button
+                type="button"
+                onClick={handleAddCryptoWallet}
+                disabled={addingCrypto}
+                className="glass-chip px-[14px] py-[7px] text-[12.5px] font-medium text-ledger-text-primary hover:border-ledger-accent/50 transition-colors disabled:opacity-40"
+              >
+                {addingCrypto ? 'Adding…' : 'Add wallet'}
+              </button>
+            </div>
+
+            <p className="text-[11.5px] text-ledger-text-faint mt-[12px]">
+              Read-only. Robinhood Chain balances (USDG and curated majors) are added to net worth. Never paste a private key.
             </p>
           </div>
 

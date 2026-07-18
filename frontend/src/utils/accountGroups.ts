@@ -1,4 +1,4 @@
-export type AssetGroup = 'checking' | 'saving' | 'investing' | 'retirement' | 'other'
+export type AssetGroup = 'checking' | 'saving' | 'investing' | 'retirement' | 'crypto' | 'other'
 
 export interface AssetAccount {
   id: number
@@ -8,13 +8,21 @@ export interface AssetAccount {
   balance: number
 }
 
-export const ASSET_GROUP_ORDER: AssetGroup[] = ['checking', 'saving', 'investing', 'retirement', 'other']
+export const ASSET_GROUP_ORDER: AssetGroup[] = [
+  'checking',
+  'saving',
+  'investing',
+  'retirement',
+  'crypto',
+  'other',
+]
 
 export const ASSET_GROUP_LABELS: Record<AssetGroup, string> = {
   checking: 'Checking',
   saving: 'Saving',
   investing: 'Investing',
   retirement: 'Retirement',
+  crypto: 'Crypto',
   other: 'Other',
 }
 
@@ -55,6 +63,8 @@ export function classifyAssetAccount(account: AssetAccount): AssetGroup {
   }
 
   if (type === 'brokerage') return 'investing'
+
+  if (type === 'crypto') return 'crypto'
 
   return 'other'
 }

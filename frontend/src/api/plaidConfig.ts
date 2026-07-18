@@ -16,6 +16,22 @@ export type PlaidConfigUpdate = {
   redirect_uri?: string
 }
 
+export async function getAlchemyConfig(): Promise<{ configured: boolean }> {
+  const r = await apiFetch('/api/crypto/alchemy-config')
+  if (!r.ok) throw new Error('Failed to load Alchemy config')
+  return r.json()
+}
+
+export async function putAlchemyConfig(api_key: string): Promise<{ configured: boolean }> {
+  const r = await apiFetch('/api/crypto/alchemy-config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key }),
+  })
+  if (!r.ok) throw new Error('Failed to save Alchemy config')
+  return r.json()
+}
+
 export async function getPlaidConfig(): Promise<PlaidConfig> {
   const r = await apiFetch('/api/settings/plaid-config')
   if (!r.ok) throw new Error('Failed to load Plaid config')

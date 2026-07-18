@@ -419,9 +419,11 @@ def backfill_enrichment(
 
 
 def get_real_items(db: Session, user_id: int = 1) -> list[Item]:
-    """Items backed by a real Plaid connection (excludes manual/test items)."""
+    """Items backed by a real Plaid connection (excludes manual/test/crypto items)."""
+    from app.crypto_tokens import PLAID_SYNC_EXCLUDED_ITEMS
+
     return (
         db.query(Item)
-        .filter(Item.user_id == user_id, Item.item_id.notin_(["manual_import", "test_item"]))
+        .filter(Item.user_id == user_id, Item.item_id.notin_(list(PLAID_SYNC_EXCLUDED_ITEMS)))
         .all()
     )

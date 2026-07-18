@@ -32,12 +32,14 @@ router = APIRouter(prefix="/investments", tags=["investments"])
 
 
 def _investment_accounts(db: Session) -> list[Account]:
+    from app.crypto_tokens import PLAID_SYNC_EXCLUDED_ITEMS
+
     return (
         db.query(Account)
         .join(Item)
         .filter(
             Item.user_id == 1,
-            Item.item_id.notin_(["manual_import", "test_item"]),
+            Item.item_id.notin_(list(PLAID_SYNC_EXCLUDED_ITEMS)),
             Account.type == "investment",
         )
         .all()

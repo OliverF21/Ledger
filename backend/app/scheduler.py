@@ -39,6 +39,19 @@ def sync_all_items():
                     logger.error(f"Error syncing item {item.id}: {str(e)}")
                     continue
 
+            try:
+                from app.crypto_sync import sync_crypto_wallets
+                crypto_stats = sync_crypto_wallets(db)
+                if not crypto_stats.get("skipped"):
+                    logger.info(
+                        "Crypto wallets synced: %s ok, %s failed",
+                        crypto_stats.get("synced"),
+                        crypto_stats.get("failed"),
+                    )
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Crypto wallet sync failed: {str(e)}")
+
             # Freshly-synced data may have tripped a budget or large-transaction
             # alert; deliver any new ones to ALERT_WEBHOOK_URL (no-op if unset).
             bdb = BudgetsSessionLocal()
