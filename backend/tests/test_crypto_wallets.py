@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.alchemy_service import normalize_address
+from app.alchemy_service import fetch_vault_balances, normalize_address
 from app.crypto_sync import create_wallet, get_or_create_crypto_item, wipe_wallet
 from app.crypto_tokens import CRYPTO_ITEM_ID, PLAID_SYNC_EXCLUDED_ITEMS
 from app.models import Account, BalanceSnapshot, Base, CryptoHolding, CryptoWallet, Item, User
@@ -209,3 +209,99 @@ def test_alchemy_api_key_reads_app_config(db_session: Session, monkeypatch: pyte
     monkeypatch.setattr(database_mod, "SessionLocal", lambda: db_session)
     app_config.set(db_session, app_config.ALCHEMY_API_KEY, "byok-test-key", secret=True)
     assert alchemy_api_key() == "byok-test-key"
+
+
+# ── Robinhood Earn / ERC-4626 vault balances ────────────────────────────────
+# Numbers below are the live-verified shares/assets for the reference Earn
+# smart account from docs/superpowers/specs/2026-07-18-robinhood-earn-vault-balances-design.md
+
+VAULT_ADDRESS = "0xBeEff033F34C046626B8D0A041844C5d1A5409dd"
+EARN_SHARES_RAW = 1498236308799398943976  # ~1498.236309 steakUSDG (18dp)
+EARN_ASSETS_RAW = 1500694966  # ~1500.694966 USDG (6dp)
+
+
+def _fake_vault_rpc(shares_raw: int, assets_raw: int):
+    """Route balanceOf → shares_raw and convertToAssets → assets_raw."""
+    def _rpc(api_key, method, params):
+        data = params[0]["data"]
+        if data.startswith("0x70a08231"):  # balanceOf(address)
+            return hex(shares_raw)
+        if data.startswith("0x07a2d13a"):  # convertToAssets(uint256)
+            return hex(assets_raw)
+        raise AssertionError(f"unexpected eth_call data: {data}")
+    return _rpc
+
+
+def test_fetch_vault_balances_converts_shares_to_underlying_usdg():
+    with patch("app.alchemy_service._rpc_call", side_effect=_fake_vault_rpc(EARN_SHARES_RAW, EARN_ASSETS_RAW)):
+        rows = fetch_vault_balances("test-key", "0xE448e7E5a4f949D109b4A9c514965f5b7eBE15bB")
+
+    assert len(rows) == 1
+    row = rows[0]
+    expected_balance = Decimal(EARN_ASSETS_RAW) / Decimal(10 ** 6)
+    expected_usd = expected_balance.quantize(Decimal("0.0001"))
+    assert row["symbol"] == "steakUSDG"
+    assert row["contract_address"] == VAULT_ADDRESS.lower()
+    assert row["decimals"] == 6  # underlying (USDG) decimals, since balance is underlying-denominated
+    assert row["balance"] == expected_balance
+    assert row["usd_value"] == expected_usd
+
+
+def test_fetch_vault_balances_zero_shares_is_zero_row():
+    with patch("app.alchemy_service._rpc_call", side_effect=_fake_vault_rpc(0, 0)):
+        rows = fetch_vault_balances("test-key", "0x4e7a07f00641072aa888da54218e7a0246ed8fbf")
+
+    assert len(rows) == 1
+    assert rows[0]["balance"] == Decimal("0")
+    assert rows[0]["usd_value"] == Decimal("0")
+
+
+def test_sync_wallet_includes_vault_holding(db_session: Session, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ALCHEMY_API_KEY", "test-key")
+    vault_balance = Decimal(EARN_ASSETS_RAW) / Decimal(10 ** 6)
+    vault_usd = vault_balance.quantize(Decimal("0.0001"))
+    fake_rows = [
+        {
+            "symbol": "steakUSDG",
+            "contract_address": VAULT_ADDRESS.lower(),
+            "decimals": 6,
+            "raw_balance": EARN_ASSETS_RAW,
+            "balance": vault_balance,
+            "usd_price": Decimal("1"),
+            "usd_value": vault_usd,
+        },
+    ]
+    with patch("app.crypto_sync.fetch_allowlisted_balances", return_value=fake_rows):
+        wallet = create_wallet(db_session, address="0xE448e7E5a4f949D109b4A9c514965f5b7eBE15bB")
+
+    db_session.refresh(wallet)
+    account = db_session.query(Account).filter(Account.id == wallet.account_id).one()
+    assert account.current_balance == vault_usd
+
+    holdings = db_session.query(CryptoHolding).filter(CryptoHolding.wallet_id == wallet.id).all()
+    assert len(holdings) == 1
+    assert holdings[0].symbol == "steakUSDG"
+    assert holdings[0].usd_value == vault_usd
+
+
+def test_build_net_worth_includes_vault_balance(db_session: Session, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ALCHEMY_API_KEY", "test-key")
+    vault_balance = Decimal("1500.694966")
+    fake_rows = [
+        {
+            "symbol": "steakUSDG",
+            "contract_address": VAULT_ADDRESS.lower(),
+            "decimals": 6,
+            "raw_balance": EARN_ASSETS_RAW,
+            "balance": vault_balance,
+            "usd_price": Decimal("1"),
+            "usd_value": vault_balance.quantize(Decimal("0.0001")),
+        },
+    ]
+    with patch("app.crypto_sync.fetch_allowlisted_balances", return_value=fake_rows):
+        create_wallet(db_session, address="0xE448e7E5a4f949D109b4A9c514965f5b7eBE15bB")
+
+    result = build_net_worth(db_session, months=6)
+    # build_net_worth rounds to cents for display (see analytics_service.py).
+    assert result.current_net_worth == pytest.approx(1500.69, abs=1e-2)
+    assert any(a.type == "crypto" for a in result.accounts)

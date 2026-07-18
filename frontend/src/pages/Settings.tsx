@@ -1115,7 +1115,22 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
             </div>
 
             <p className="text-[11.5px] text-ledger-text-faint mt-[12px]">
-              Read-only. Robinhood Chain balances (USDG and curated majors) are added to net worth. Never paste a private key.
+              Read-only. Robinhood Chain balances (USDG, curated majors, and Earn/steakUSDG vault
+              deposits) are added to net worth. Never paste a private key.
+            </p>
+            <p className="text-[11.5px] text-ledger-text-faint mt-[6px]">
+              Robinhood Earn: paste the address that actually holds vault shares — often an
+              ERC-4337 smart account visible on{' '}
+              <a
+                href="https://robinhoodchain.blockscout.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-ledger-text-secondary"
+              >
+                Blockscout
+              </a>
+              , not the "public wallet key" shown in the Robinhood app if that address has no
+              balance.
             </p>
           </div>
 

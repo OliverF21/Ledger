@@ -14,13 +14,20 @@ from typing import Optional
 
 import requests
 
-from app.crypto_tokens import CHAIN_KEY, ROBINHOOD_TOKEN_ALLOWLIST, TokenSpec
+from app.crypto_tokens import (
+    CHAIN_KEY,
+    ROBINHOOD_TOKEN_ALLOWLIST,
+    ROBINHOOD_VAULT_ALLOWLIST,
+    TokenSpec,
+)
 
 logger = logging.getLogger("ledger")
 
 _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 # balanceOf(address) selector
 _BALANCE_OF_SELECTOR = "70a08231"
+# ERC-4626 convertToAssets(uint256) selector
+_CONVERT_TO_ASSETS_SELECTOR = "07a2d13a"
 
 
 class AlchemyConfigError(RuntimeError):
@@ -102,6 +109,15 @@ def erc20_balance_of(api_key: str, contract: str, wallet: str) -> int:
 
 def native_eth_balance(api_key: str, wallet: str) -> int:
     result = _rpc_call(api_key, "eth_getBalance", [wallet, "latest"])
+    if not result or result == "0x":
+        return 0
+    return int(result, 16)
+
+
+def erc4626_convert_to_assets(api_key: str, vault: str, shares: int) -> int:
+    """ERC-4626 convertToAssets(uint256 shares) -> uint256 assets (vault NAV)."""
+    data = "0x" + _CONVERT_TO_ASSETS_SELECTOR + hex(shares)[2:].zfill(64)
+    result = _rpc_call(api_key, "eth_call", [{"to": vault, "data": data}, "latest"])
     if not result or result == "0x":
         return 0
     return int(result, 16)
@@ -201,6 +217,45 @@ def fetch_allowlisted_balances(api_key: str, wallet: str) -> list[dict]:
                 "raw_balance": raw,
                 "balance": balance,
                 "usd_price": usd_price,
+                "usd_value": usd_value,
+            }
+        )
+    rows.extend(fetch_vault_balances(api_key, wallet))
+    return rows
+
+
+def fetch_vault_balances(api_key: str, wallet: str) -> list[dict]:
+    """
+    Return underlying-asset value of any ERC-4626 vault shares (e.g. Robinhood
+    Earn's steakUSDG) held by a wallet, in the same row shape as
+    fetch_allowlisted_balances so callers can treat them identically.
+
+    balance/usd_value are in underlying terms (e.g. USDG), not raw shares —
+    convertToAssets is the vault's own NAV conversion, so this is correct even
+    as the share:underlying exchange rate drifts from 1:1 over time.
+    """
+    wallet = normalize_address(wallet)
+    rows: list[dict] = []
+    for spec in ROBINHOOD_VAULT_ALLOWLIST:
+        shares = erc20_balance_of(api_key, spec.vault_address, wallet)
+        if shares == 0:
+            balance = Decimal("0")
+            usd_value = Decimal("0")
+            assets = 0
+        else:
+            assets = erc4626_convert_to_assets(api_key, spec.vault_address, shares)
+            balance = Decimal(assets) / (Decimal(10) ** spec.underlying_decimals)
+            usd_price = Decimal("1") if spec.pricing == "stable_usd" else Decimal("0")
+            usd_value = (balance * usd_price).quantize(Decimal("0.0001"))
+
+        rows.append(
+            {
+                "symbol": spec.symbol,
+                "contract_address": spec.vault_address.lower(),
+                "decimals": spec.underlying_decimals,
+                "raw_balance": assets,
+                "balance": balance,
+                "usd_price": Decimal("1") if shares and spec.pricing == "stable_usd" else Decimal("0"),
                 "usd_value": usd_value,
             }
         )

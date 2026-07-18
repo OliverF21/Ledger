@@ -24,6 +24,22 @@ class TokenSpec:
     pricing: PricingRule
 
 
+@dataclass(frozen=True)
+class VaultSpec:
+    """An ERC-4626 vault whose shares must be converted to underlying value.
+
+    Robinhood Earn deposits USDG into a Morpho vault instead of leaving it as
+    free ERC-20 USDG in the wallet — the wallet holds vault shares
+    (steakUSDG), so a plain balanceOf() on USDG shows $0 for Earn deposits.
+    """
+    symbol: str
+    vault_address: str
+    share_decimals: int
+    underlying_symbol: str
+    underlying_decimals: int
+    pricing: PricingRule
+
+
 # Official RH-chain contracts: https://docs.robinhood.com/chain/contracts/
 # USDG: https://docs.paxos.com/guides/stablecoin/usdg/mainnet
 ROBINHOOD_TOKEN_ALLOWLIST: tuple[TokenSpec, ...] = (
@@ -44,6 +60,19 @@ ROBINHOOD_TOKEN_ALLOWLIST: tuple[TokenSpec, ...] = (
         contract_address=None,
         decimals=18,
         pricing="native_eth",
+    ),
+)
+
+# Robinhood Earn: Steakhouse USDG Morpho vault. Verified 2026-07-18 — see
+# docs/superpowers/specs/2026-07-18-robinhood-earn-vault-balances-design.md
+ROBINHOOD_VAULT_ALLOWLIST: tuple[VaultSpec, ...] = (
+    VaultSpec(
+        symbol="steakUSDG",
+        vault_address="0xBeEff033F34C046626B8D0A041844C5d1A5409dd",
+        share_decimals=18,
+        underlying_symbol="USDG",
+        underlying_decimals=6,
+        pricing="stable_usd",
     ),
 )
 
