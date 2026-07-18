@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.analytics_shared import (
     CATEGORY_COLORS,
     category_key_for_income_rules,
+    display_rollup_category,
     is_excluded_from_income,
     is_excluded_from_spending,
     month_bounds,
@@ -550,12 +551,12 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
 
     income_buckets: dict[str, float] = {}
     for txn in income_pool:
-        category = _rollup_category(txn, "Other Income")
+        category = _display_rollup_category(txn, "Other Income")
         income_buckets[category] = income_buckets.get(category, 0.0) + abs(float(txn.amount))
 
     spend_buckets: dict[str, float] = {}
     for txn in spend_pool:
-        category = _rollup_category(txn, "Uncategorized")
+        category = _display_rollup_category(txn, "Uncategorized")
         spend_buckets[category] = spend_buckets.get(category, 0.0) + _effective_amount(txn)
 
     income_sources = [
@@ -862,6 +863,12 @@ def _rollup_category(txn: Transaction, default: str) -> str:
     return txn.rollup_category or default
 
 
+def _display_rollup_category(txn: Transaction, default: str) -> str:
+    return display_rollup_category(
+        txn.category_user, txn.category_plaid, txn.category_plaid_detailed, default
+    )
+
+
 def _income_category_key(txn: Transaction) -> str:
     return category_key_for_income_rules(
         txn.category_user,
@@ -875,7 +882,7 @@ def _effective_amount(txn: Transaction) -> float:
 
 
 def _top_income_txns(pool: list[Transaction], category: str, limit: int = 3) -> list[CashFlowTxnItem]:
-    matching = [txn for txn in pool if _rollup_category(txn, "Other Income") == category]
+    matching = [txn for txn in pool if _display_rollup_category(txn, "Other Income") == category]
     matching.sort(key=lambda txn: abs(float(txn.amount)), reverse=True)
     return [
         CashFlowTxnItem(
@@ -888,7 +895,7 @@ def _top_income_txns(pool: list[Transaction], category: str, limit: int = 3) -> 
 
 
 def _top_spending_txns(pool: list[Transaction], category: str, limit: int = 3) -> list[CashFlowTxnItem]:
-    matching = [txn for txn in pool if _rollup_category(txn, "Uncategorized") == category]
+    matching = [txn for txn in pool if _display_rollup_category(txn, "Uncategorized") == category]
     matching.sort(key=_effective_amount, reverse=True)
     return [
         CashFlowTxnItem(

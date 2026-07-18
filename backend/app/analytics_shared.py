@@ -199,6 +199,12 @@ def parent_from_pfc_detailed(detailed: str) -> str:
     """Strip Plaid PFC detailed suffix to primary (e.g. FOOD_AND_DRINK_FAST_FOOD → FOOD_AND_DRINK)."""
     if "." in detailed:
         return detailed.split(".")[0]
+    # Match against known primaries directly rather than guessing a word count —
+    # primaries range from 1 word (ENTERTAINMENT) to 3 (FOOD_AND_DRINK), and a
+    # fixed-length slice misreads e.g. ENTERTAINMENT_VIDEO_GAMES as ENTERTAINMENT_VIDEO.
+    for primary in sorted(PLAID_PFC_PRIMARIES, key=len, reverse=True):
+        if detailed == primary or detailed.startswith(f"{primary}_"):
+            return primary
     parts = detailed.split("_")
     for n in (3, 2, 1):
         if len(parts) > n:
@@ -281,3 +287,41 @@ def budget_parent_key(
         return normalize_category_key(resolved)
     parent = parent_from_pfc_detailed(resolved)
     return normalize_category_key(parent)
+
+
+def display_rollup_category(
+    category_user: str | None,
+    category_plaid: str | None,
+    category_plaid_detailed: str | None,
+    default: str = "Uncategorized",
+) -> str:
+    """Bucket for cash-flow charts.
+
+    `rollup_category_key` deliberately keeps a manual subcategory override
+    (e.g. "Gas") in its own bucket for budgets/MCP reporting, but that means
+    it never merges with the "Transportation" bucket Plaid-categorized
+    transactions land in, showing as a separate, confusing bar. When the
+    override resolves to a known PFC subcategory, roll it up to that
+    subcategory's primary so charts show one umbrella bucket; truly custom
+    labels (e.g. "Paycheck") that don't map to the PFC taxonomy have no
+    primary to roll up to, so they're kept as-is.
+    """
+    category = rollup_category_key(category_user, category_plaid, category_plaid_detailed, default)
+    if not category or category == default:
+        return default
+
+    resolved = resolve_category_to_pfc_key(category)
+    if resolved and (resolved in PLAID_PFC_PRIMARIES or resolved in KNOWN_CATEGORY_KEYS):
+        return normalize_category_key(resolved)
+
+    if category_user:
+        from mcp_server.category_labels import label_to_pfc_key
+
+        stripped = category_user.strip()
+        mapped = label_to_pfc_key(stripped)
+        if mapped and not stripped.isupper():
+            parent = parent_from_pfc_detailed(normalize_category_key(mapped).upper().replace(".", "_"))
+            if parent in PLAID_PFC_PRIMARIES or parent in KNOWN_CATEGORY_KEYS:
+                return normalize_category_key(parent)
+
+    return category

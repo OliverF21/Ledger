@@ -102,6 +102,9 @@ class Item(Base):
     accounts = relationship("Account", back_populates="item", cascade="all, delete-orphan")
 
 
+# ── Crypto wallets (read-only, non-Plaid) ─────────────────────────────────────
+
+
 class Account(Base):
     """
     Bank/credit account (checking, savings, credit card, etc.).
@@ -227,6 +230,50 @@ class BalanceSnapshot(Base):
 
     # Relationships
     account = relationship("Account", back_populates="balance_snapshots")
+
+
+class CryptoWallet(Base):
+    """Self-custody wallet address tracked read-only for net worth."""
+    __tablename__ = "crypto_wallets"
+    __table_args__ = (UniqueConstraint("user_id", "address", name="uq_crypto_wallet_user_address"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    address = Column(String(42), nullable=False)  # checksummed or lowercased 0x…
+    label = Column(String(255), nullable=True)
+    chain = Column(String(64), nullable=False, default="robinhood-mainnet")
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+    last_synced_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    account = relationship("Account")
+    holdings = relationship(
+        "CryptoHolding",
+        back_populates="wallet",
+        cascade="all, delete-orphan",
+    )
+
+
+class CryptoHolding(Base):
+    """Per-token balance for a crypto wallet (detail only; net worth uses Account.current_balance)."""
+    __tablename__ = "crypto_holdings"
+    __table_args__ = (
+        UniqueConstraint("wallet_id", "contract_address", name="uq_crypto_holding_wallet_contract"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    wallet_id = Column(Integer, ForeignKey("crypto_wallets.id"), nullable=False)
+    symbol = Column(String(32), nullable=False)
+    # Empty string for native ETH (UNIQUE treats NULLs as distinct on SQLite).
+    contract_address = Column(String(42), nullable=False, default="")
+    decimals = Column(Integer, nullable=False, default=18)
+    balance = Column(Numeric(36, 18), nullable=False, default=0)
+    usd_value = Column(Numeric(19, 4), nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    wallet = relationship("CryptoWallet", back_populates="holdings")
 
 
 class Security(Base):

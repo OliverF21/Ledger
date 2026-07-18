@@ -57,6 +57,7 @@ That's it — you're running Ledger. 🎉
 | **Investments**   | Brokerage holdings and performance (needs the Plaid Investments product)                                              |
 | **Subscriptions** | Automatic detection of recurring charges                                                                              |
 | **Net worth**     | Daily balance snapshots that build a net-worth-over-time chart                                                        |
+| **Crypto wallets**| Optional read-only Robinhood Chain addresses (USDG + majors) folded into net worth                                    |
 | **Alerts**        | In-app notifications, plus optional push to Slack / Discord / your phone                                              |
 | **Weekly email**  | Optional spending-vs-budget summary in your inbox                                                                     |
 | **AI Advisor**    | Claude (Anthropic's AI) can look at your finances and *suggest* budget changes — you approve or reject them in the app |
@@ -67,6 +68,7 @@ That's it — you're running Ledger. 🎉
 
 None of these are required. Set them up from **Settings** only if you want the feature.
 
+- **Crypto wallets** — in the desktop app, paste an Alchemy API key and a public `0x` address under **Settings → Crypto wallets** (Robinhood Chain USDG + curated majors fold into net worth). For source installs you can also set `ALCHEMY_API_KEY` in `backend/.env`.
 - **Alerts to your phone or chat** — add a webhook URL for budget-overage and large-transaction alerts pushed to Slack, Discord, or [ntfy](https://ntfy.sh/).
 - **Weekly summary email** — a free [Resend](https://resend.com/) key enables a spending-vs-budget email on a schedule you set.
 - **AI Advisor (Claude)** — a local MCP server lets [Claude Desktop](https://claude.ai/download) read your finances and *propose* budget changes; you always Apply or Dismiss them yourself. Setup + example prompts: **[backend/MCP_SETUP.md](backend/MCP_SETUP.md)**.
@@ -117,6 +119,7 @@ Desktop-app users configure everything from **Settings** in the app. Source/self
 | `PLAID_PROD_SECRET`    | Plaid Production secret (used when `PLAID_ENV=production`)        |
 | `PLAID_ENV`            | `sandbox` (test banks) or `production` (real banks)               |
 | `ENCRYPTION_KEY`       | Scrambles saved bank connections — **never change after linking** |
+| `ALCHEMY_API_KEY`      | Optional fallback for Robinhood Chain wallets (desktop: Settings) |
 | `SYNC_INTERVAL_HOURS`  | How often to auto-sync (default 6)                                   |
 | `RESEND_API_KEY`       | Enables the weekly summary email                                     |
 | `RESET_EMERGENCY_RESEND_API_KEY` | Enables email-based password reset                         |
