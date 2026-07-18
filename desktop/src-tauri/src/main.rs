@@ -10,15 +10,17 @@ use std::time::{Duration, Instant};
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
-/// Fixed loopback port — must match the OAuth redirect URI registered in Plaid.
+/// Fixed loopback port for the bundled backend.
 const PORT: u16 = 17384;
 const HOST: &str = "127.0.0.1";
 
 /// Hosts (and their subdomains) that should open in the user's real browser
 /// instead of navigating the app window. Everything NOT listed here stays
-/// in-webview — required for Plaid Link's cdn.plaid.com iframe and OAuth
-/// institution redirects (Chase, Robinhood) to work at all.
-const EXTERNAL_HOSTS: &[&str] = &["ko-fi.com", "dashboard.plaid.com"];
+/// in-webview — required for Plaid Link's cdn.plaid.com iframe to work at all.
+/// secure.plaid.com serves Plaid Hosted Link: the bank OAuth flow needs a real
+/// browser (not this http://127.0.0.1 webview, which Plaid production won't
+/// accept as an OAuth redirect target), so on_navigation below hands it off.
+const EXTERNAL_HOSTS: &[&str] = &["ko-fi.com", "dashboard.plaid.com", "secure.plaid.com"];
 
 /// Holds the spawned backend process so we can kill it on exit.
 struct Backend(Mutex<Option<Child>>);

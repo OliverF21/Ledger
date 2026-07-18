@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Iterator, Optional
 from datetime import date, datetime
 
 from app.enrichment import extract_plaid_enrichment
-from app.plaid_errors import extract_plaid_error, raise_for_plaid_response
+from app.plaid_errors import raise_for_plaid_response
 
 logger = logging.getLogger(__name__)
 
@@ -82,35 +82,25 @@ class PlaidService:
             )
 
     @staticmethod
-    def _normalize_redirect_uri(uri: str) -> str:
-        uri = uri.strip()
-        return uri if uri.endswith('/') else f'{uri}/'
-
-    @staticmethod
-    def _resolve_redirect_uri(explicit: Optional[str] = None) -> Optional[str]:
-        """Return redirect_uri for Link token create, or None if invalid for this env."""
-        uri = (explicit or PlaidService._setting("PLAID_REDIRECT_URI") or "").strip()
-        if not uri:
-            return None
-        uri = PlaidService._normalize_redirect_uri(uri)
-        env = (PlaidService._setting("PLAID_ENV") or "sandbox").lower()
-        if env == 'production' and not uri.startswith('https://'):
-            return None
-        return uri
-
-    @staticmethod
     def create_link_token(
         user_id: int,
         client_name: str = "Ledger",
         *,
         access_token: Optional[str] = None,
-        redirect_uri: Optional[str] = None,
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, str]:
         """
-        Create a Plaid Link token for the frontend.
+        Create a Plaid Hosted Link token for the frontend.
 
-        When access_token is provided, Link opens in update mode for re-auth or
-        additional consent (e.g. investments on an existing Item).
+        With Hosted Link, Plaid hosts the whole Link experience — including the
+        OAuth "log in at your bank" redirect — on its own HTTPS domain. The
+        client therefore needs no redirect URI of its own, which is what made
+        OAuth banks impossible in the packaged http://127.0.0.1 desktop app
+        (Plaid rejects non-HTTPS redirect URIs in production).
+
+        Returns (link_token, hosted_link_url): open hosted_link_url in the
+        system browser and poll get_link_session(link_token) for the result.
+
+        When access_token is provided, Link opens in update mode for re-auth.
         """
         try:
             url = f"{PlaidService._get_plaid_url()}/link/token/create"
@@ -125,26 +115,42 @@ class PlaidService:
                 'products': ['transactions'],
                 'optional_products': ['auth'],
                 'required_if_supported_products': ['investments'],
+                # Plaid hosts the flow and owns the OAuth redirect.
+                'hosted_link': {},
             }
             if access_token:
                 payload['access_token'] = access_token
-            resolved_redirect = PlaidService._resolve_redirect_uri(redirect_uri)
-            oauth_configured = resolved_redirect is not None
-            if resolved_redirect:
-                payload['redirect_uri'] = resolved_redirect
             response = requests.post(url, json=payload, headers=PlaidService._get_headers())
-            if not response.ok and resolved_redirect:
-                code, message = extract_plaid_error(response)
-                if code == 'INVALID_FIELD' and 'redirect' in (message or '').lower():
-                    payload.pop('redirect_uri', None)
-                    oauth_configured = False
-                    response = requests.post(url, json=payload, headers=PlaidService._get_headers())
             raise_for_plaid_response(response, "Failed to create link token")
-            return response.json()['link_token'], oauth_configured
+            data = response.json()
+            return data['link_token'], data['hosted_link_url']
         except ValueError:
             raise
         except Exception as e:
             raise ValueError(f"Failed to create link token: {str(e)}")
+
+    @staticmethod
+    def get_link_session(link_token: str) -> Dict[str, Any]:
+        """Fetch Link session details for a Hosted Link token.
+
+        Retrieves the outcome of a Hosted Link flow without webhooks (a packaged
+        desktop app has no public URL Plaid can call back). The completed
+        public_token — and any early exit — is reported here for six hours after
+        the session ends. Parsed by routes/plaid.py::get_link_session.
+        """
+        try:
+            url = f"{PlaidService._get_plaid_url()}/link/token/get"
+            payload = {
+                **PlaidService._get_credentials(),
+                'link_token': link_token,
+            }
+            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            raise_for_plaid_response(response, "Failed to get link session")
+            return response.json()
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Failed to get link session: {str(e)}")
 
     @staticmethod
     def exchange_public_token(public_token: str) -> tuple[str, str]:
