@@ -241,12 +241,13 @@ def rollup_category_key(
     if resolved in PLAID_PFC_PRIMARIES or resolved in KNOWN_CATEGORY_KEYS:
         return normalize_category_key(resolved)
 
-    from mcp_server.category_labels import format_category, label_to_pfc_key
+    from mcp_server.category_labels import format_category
 
     if category_user:
         stripped = category_user.strip()
-        # Keep the label the user picked (e.g. "Dining Out"), not a derived hierarchy.
-        if label_to_pfc_key(stripped) and not stripped.isupper():
+        # Keep the label the user picked (e.g. "Dining Out", "Paycheck"), not a
+        # derived hierarchy like "Income · Paycheck".
+        if stripped and not stripped.isupper():
             return stripped
 
     return format_category(resolved)
@@ -314,14 +315,30 @@ def display_rollup_category(
     if resolved and (resolved in PLAID_PFC_PRIMARIES or resolved in KNOWN_CATEGORY_KEYS):
         return normalize_category_key(resolved)
 
-    if category_user:
-        from mcp_server.category_labels import label_to_pfc_key
+    from mcp_server.category_labels import label_to_pfc_key
 
+    # Prefer an explicit taxonomy mapping for the stored label (e.g. "Restaurants"
+    # → FOOD_AND_DRINK_RESTAURANT → FOOD_AND_DRINK) over freeform uppercase-ification.
+    mapped = None
+    if category_user:
         stripped = category_user.strip()
-        mapped = label_to_pfc_key(stripped)
-        if mapped and not stripped.isupper():
-            parent = parent_from_pfc_detailed(normalize_category_key(mapped).upper().replace(".", "_"))
-            if parent in PLAID_PFC_PRIMARIES or parent in KNOWN_CATEGORY_KEYS:
+        if stripped and not stripped.isupper():
+            mapped = label_to_pfc_key(stripped)
+    if not mapped and category and not category.isupper():
+        mapped = label_to_pfc_key(category)
+
+    detailed = None
+    if mapped:
+        detailed = normalize_category_key(mapped).upper().replace(".", "_")
+    elif resolved:
+        detailed = normalize_category_key(resolved).upper().replace(".", "_")
+
+    if detailed:
+        parent = parent_from_pfc_detailed(detailed)
+        if parent in PLAID_PFC_PRIMARIES or parent in KNOWN_CATEGORY_KEYS:
+            # Only roll up when we actually hit the taxonomy (mapped label or a
+            # real detailed PFC key), not arbitrary text that uppercased oddly.
+            if mapped or detailed != parent:
                 return normalize_category_key(parent)
 
     return category

@@ -56,17 +56,62 @@ class BudgetsResponse(BaseModel):
 
 # ── GET /budgets ──────────────────────────────────────────────────────────────
 
+def carry_forward_budgets(bdb: Session, month_key: str) -> list[Budget]:
+    """
+    Ensure `month_key` has budget rows by copying the most recent prior month.
+
+    Budgets are stored per YYYY-MM so spending stays month-scoped, but limits
+    should persist across month boundaries — otherwise a new month opens empty
+    even though the user already set Food/Transport/etc. last month.
+    """
+    existing = (
+        bdb.query(Budget)
+        .filter(Budget.user_id == 1, Budget.month == month_key)
+        .all()
+    )
+    if existing:
+        return existing
+
+    prior_month = (
+        bdb.query(Budget.month)
+        .filter(Budget.user_id == 1, Budget.month < month_key)
+        .order_by(Budget.month.desc())
+        .limit(1)
+        .scalar()
+    )
+    if not prior_month:
+        return []
+
+    source = (
+        bdb.query(Budget)
+        .filter(Budget.user_id == 1, Budget.month == prior_month)
+        .all()
+    )
+    copied: list[Budget] = []
+    for src in source:
+        row = Budget(
+            user_id=1,
+            month=month_key,
+            category_name=src.category_name,
+            category_key=src.category_key,
+            limit=src.limit,
+            color=src.color,
+        )
+        bdb.add(row)
+        copied.append(row)
+    bdb.commit()
+    for row in copied:
+        bdb.refresh(row)
+    return copied
+
+
 def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetItem]:
     """
     Per-category budget items (limit + pre-computed spent) for a given month.
     Limits come from budgets.db; spending sums come from ledger.db (read-only).
     Shared by GET /budgets and the alert-computation endpoint.
     """
-    budgets = (
-        bdb.query(Budget)
-        .filter(Budget.user_id == 1, Budget.month == month_key)
-        .all()
-    )
+    budgets = carry_forward_budgets(bdb, month_key)
     if not budgets:
         return []
 

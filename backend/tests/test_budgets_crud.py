@@ -97,3 +97,75 @@ def test_delete_budget_removes_row(client):
 def test_delete_missing_budget_returns_404(client):
     res = client.delete("/api/budgets/9999", headers=_auth_headers())
     assert res.status_code == 404
+
+
+def test_budgets_carry_forward_into_empty_month(client):
+    """A new month with no rows should inherit the prior month's limits."""
+    created = client.post(
+        "/api/budgets",
+        headers=_auth_headers(),
+        json={
+            "category_name": "Food & Drink",
+            "category_key": "FOOD_AND_DRINK",
+            "limit": 400,
+            "month": "2026-07",
+            "color": "#4fc4c4",
+        },
+    )
+    assert created.status_code == 200
+
+    client.post(
+        "/api/budgets",
+        headers=_auth_headers(),
+        json={
+            "category_name": "Transportation",
+            "category_key": "TRANSPORTATION",
+            "limit": 200,
+            "month": "2026-07",
+            "color": "#8a7df0",
+        },
+    )
+
+    august = client.get("/api/budgets?month=2026-08", headers=_auth_headers())
+    assert august.status_code == 200
+    body = august.json()
+    assert body["month"] == "2026-08"
+    by_name = {b["category"]: b for b in body["budgets"]}
+    assert by_name["Food & Drink"]["limit"] == 400
+    assert by_name["Transportation"]["limit"] == 200
+    # Carried rows are real persisted copies, not just a virtual view.
+    assert by_name["Food & Drink"]["id"] != created.json()["id"]
+
+    july = client.get("/api/budgets?month=2026-07", headers=_auth_headers())
+    assert len(july.json()["budgets"]) == 2
+
+
+def test_budgets_do_not_overwrite_existing_month(client):
+    client.post(
+        "/api/budgets",
+        headers=_auth_headers(),
+        json={
+            "category_name": "Food & Drink",
+            "category_key": "FOOD_AND_DRINK",
+            "limit": 400,
+            "month": "2026-07",
+            "color": "#4fc4c4",
+        },
+    )
+    client.post(
+        "/api/budgets",
+        headers=_auth_headers(),
+        json={
+            "category_name": "Food & Drink",
+            "category_key": "FOOD_AND_DRINK",
+            "limit": 500,
+            "month": "2026-08",
+            "color": "#4fc4c4",
+        },
+    )
+
+    august = client.get("/api/budgets?month=2026-08", headers=_auth_headers())
+    assert august.status_code == 200
+    budgets = august.json()["budgets"]
+    assert len(budgets) == 1
+    assert budgets[0]["limit"] == 500

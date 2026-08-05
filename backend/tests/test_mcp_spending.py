@@ -332,6 +332,32 @@ def test_build_cash_flow_matches_expected_totals(db_session: Session):
     assert result.income_sources[0].label == "Paycheck"
 
 
+def test_build_cash_flow_rolls_subcategory_into_primary(db_session: Session):
+    """Manual 'Dining Out' / 'Restaurants' overrides merge into Food & Drink on cash flow."""
+    card = db_session.query(Account).filter_by(plaid_account_id="acct_card").one()
+    db_session.add(
+        Transaction(
+            account=card,
+            merchant="Bistro",
+            amount=Decimal("40.00"),
+            date=date(2026, 6, 20),
+            category_user="Restaurants",
+            category_plaid="GENERAL_MERCHANDISE",
+            pending=False,
+            removed=False,
+            hidden=False,
+        )
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_id = {node.id: node for node in result.spending_categories}
+    assert "Restaurants" not in by_id
+    assert "Dining Out" not in by_id
+    # Groceries (120) + Dining Out split (100) + Restaurants (40)
+    assert by_id["FOOD_AND_DRINK"].amount == 260.0
+
+
 def test_build_cash_flow_excludes_internal_transfer_in(db_session: Session):
     """Paycheck + internal savings transfer should not double-count income."""
     savings = Account(

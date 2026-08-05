@@ -1,6 +1,7 @@
 from app.analytics_shared import (
     budget_parent_key,
     category_key_for_income_rules,
+    display_rollup_category,
     is_excluded_from_income,
     is_excluded_from_spending,
     normalize_category_key,
@@ -33,6 +34,18 @@ def test_rollup_merges_primary_label_and_pfc_key():
 def test_rollup_keeps_detailed_user_override_bucket():
     assert rollup_category_key("Dining Out", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "Dining Out"
     assert rollup_category_key("Video Games", "ENTERTAINMENT", "ENTERTAINMENT_VIDEO_GAMES") == "Video Games"
+    assert rollup_category_key("Restaurants", "GENERAL_MERCHANDISE", None) == "Restaurants"
+
+
+def test_display_rollup_merges_subcategory_into_primary():
+    """Cash-flow charts should bucket Food subcategories under Food & Drink."""
+    assert display_rollup_category("Restaurants", "GENERAL_MERCHANDISE", None) == "FOOD_AND_DRINK"
+    assert display_rollup_category("Dining Out", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "FOOD_AND_DRINK"
+    assert display_rollup_category("Coffee", None, None) == "FOOD_AND_DRINK"
+    assert display_rollup_category("Gas", "GENERAL_MERCHANDISE", None) == "TRANSPORTATION"
+    assert display_rollup_category("Rideshare & Taxis", None, None) == "TRANSPORTATION"
+    # Custom labels with no PFC mapping stay as-is.
+    assert display_rollup_category("Paycheck", None, None) == "Paycheck"
 
 
 def test_excludes_loan_payment_subcategories_from_spending():
@@ -81,6 +94,8 @@ def test_resolve_category_label_to_pfc_key():
     assert resolve_category_to_pfc_key("Flights") == "TRAVEL_FLIGHTS"
     assert resolve_category_to_pfc_key("Food & Drink") == "FOOD_AND_DRINK"
     assert resolve_category_to_pfc_key("GENERAL_MERCHANDISE") == "GENERAL_MERCHANDISE"
+    assert resolve_category_to_pfc_key("Restaurants") == "FOOD_AND_DRINK_RESTAURANT"
+    assert resolve_category_to_pfc_key("Dining Out") == "FOOD_AND_DRINK_RESTAURANTS"
 
 
 def test_budget_parent_key_respects_user_override():
@@ -89,3 +104,5 @@ def test_budget_parent_key_respects_user_override():
     assert budget_parent_key(None, "GENERAL_MERCHANDISE", None) == "GENERAL_MERCHANDISE"
     assert budget_parent_key("Shopping", "TRAVEL", "TRAVEL_FLIGHTS") == "GENERAL_MERCHANDISE"
     assert budget_parent_key("Travel", None, None) == "TRAVEL"
+    assert budget_parent_key("Restaurants", "GENERAL_MERCHANDISE", None) == "FOOD_AND_DRINK"
+    assert budget_parent_key("Dining Out", "GENERAL_MERCHANDISE", None) == "FOOD_AND_DRINK"
