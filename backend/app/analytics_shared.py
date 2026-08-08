@@ -17,6 +17,12 @@ EXCLUDED_FROM_SPENDING = {
     "TRANSFER_IN",     # incoming transfers (already counted when charged)
     "TRANSFER_OUT",    # outgoing transfers
     "TRANSFER",
+    # All transfer types except "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS" are excluded.
+    "TRANSFER_OUT_SAVINGS",        # example: internal moves to savings
+    "TRANSFER_OUT_CASH",           # example: cash withdrawals
+    "TRANSFER_OUT_OTHER",          # other outgoing transfers
+    # Add any additional transfer types here as necessary except "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"
+    # "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS" intentionally not excluded
 }
 
 # Excluded from INCOME (negative/credit transactions).
