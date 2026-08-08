@@ -589,8 +589,13 @@ def test_build_budget_vs_actual_combines_budgets_and_ledger(db_session: Session,
 
     assert result.month == "2026-06"
     assert result.total_limit == 240.0
-    assert result.total_spent == 100.0
-    assert any(item.over_budget for item in result.budgets)
+    # Dining Out $100 (tracked) + Groceries $120 + pending Shopping $999 → Misc.
+    assert result.total_spent == 1219.0
+    misc = next(item for item in result.budgets if item.virtual)
+    assert misc.category == "Misc."
+    assert misc.spent == 1119.0
+    assert misc.over_budget is False
+    assert any(item.over_budget for item in result.budgets if not item.virtual)
 
 
 def test_build_investment_performance_returns_portfolio_metrics(db_session: Session):

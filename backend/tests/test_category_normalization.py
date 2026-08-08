@@ -71,6 +71,15 @@ def test_includes_investment_transfer_out_in_spending():
     assert not is_excluded_from_spending("Investment / Retirement Transfer Out")
 
 
+def test_excludes_investment_transfer_from_budget_spending():
+    """Budgets track consumptive spend; brokerage funding stays out of Misc."""
+    from app.analytics_shared import is_excluded_from_budget_spending
+
+    assert is_excluded_from_budget_spending("TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS")
+    assert is_excluded_from_budget_spending("TRANSFER_OUT_ACCOUNT_TRANSFER")
+    assert not is_excluded_from_budget_spending("FOOD_AND_DRINK")
+
+
 def test_spending_rules_prefer_detailed_transfer_key():
     """Cash flow must not roll TRANSFER_OUT_INVESTMENT_* up before exclusion."""
     detailed = category_key_for_spending_rules(

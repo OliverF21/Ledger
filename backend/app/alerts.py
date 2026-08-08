@@ -86,7 +86,7 @@ def compute_active_alerts(
         budget_exceeded = [
             BudgetExceededItem(category=b.category, spent=b.spent, limit=b.limit)
             for b in budget_items
-            if b.spent > b.limit
+            if (not b.virtual) and b.spent > b.limit
         ]
 
     large_transactions: list[LargeTransactionItem] = []

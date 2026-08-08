@@ -24,6 +24,7 @@ from app.analytics_shared import (
     budget_parent_key,
     category_key_for_income_rules,
     category_key_for_spending_rules,
+    is_excluded_from_budget_spending,
     is_excluded_from_income,
     is_excluded_from_spending,
     month_bounds,
@@ -36,6 +37,11 @@ from app.models import Transaction
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
+# Virtual catch-all for spend that doesn't match any tracked budget category.
+MISC_BUDGET_ID = -1
+MISC_BUDGET_CATEGORY = "Misc."
+MISC_BUDGET_COLOR = CATEGORY_COLORS[-1]  # muted slate
+
 
 # ── Response models ───────────────────────────────────────────────────────────
 
@@ -45,6 +51,7 @@ class BudgetItem(BaseModel):
     limit: float
     spent: float
     color: str
+    virtual: bool = False
 
 
 class BudgetsResponse(BaseModel):
@@ -110,6 +117,9 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
     Per-category budget items (limit + pre-computed spent) for a given month.
     Limits come from budgets.db; spending sums come from ledger.db (read-only).
     Shared by GET /budgets and the alert-computation endpoint.
+
+    Spend that does not match any tracked budget lands in a virtual Misc. bucket
+    so overall budget progress reflects all consumptive spending.
     """
     budgets = carry_forward_budgets(bdb, month_key)
     if not budgets:
@@ -136,9 +146,10 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
     # Two spending maps — use effective amount (respects user split)
     spent_by_plaid_parent: dict[str, float] = {}
     spent_by_display: dict[str, float] = {}
+    eligible: list[tuple[float, str | None, str]] = []
 
     for t in txns:
-        if is_excluded_from_spending(
+        if is_excluded_from_budget_spending(
             category_key_for_spending_rules(t.category_user, t.category_plaid, t.category_plaid_detailed)
         ):
             continue
@@ -148,12 +159,18 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
         parent = budget_parent_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
         if parent:
             spent_by_plaid_parent[parent] = spent_by_plaid_parent.get(parent, 0.0) + eff
+        eligible.append((eff, parent, display))
 
     budget_items: list[BudgetItem] = []
+    tracked_keys: set[str] = set()
+    tracked_names: set[str] = set()
     for b in budgets:
         if b.category_key:
-            spent = spent_by_plaid_parent.get(normalize_category_key(b.category_key), 0.0)
+            key = normalize_category_key(b.category_key)
+            tracked_keys.add(key)
+            spent = spent_by_plaid_parent.get(key, 0.0)
         else:
+            tracked_names.add(b.category_name)
             spent = spent_by_display.get(b.category_name, 0.0)
         budget_items.append(BudgetItem(
             id=b.id,
@@ -161,6 +178,24 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
             limit=round(float(b.limit), 2),
             spent=round(spent, 2),
             color=b.color or CATEGORY_COLORS[0],
+        ))
+
+    misc_spent = 0.0
+    for eff, parent, display in eligible:
+        if parent and parent in tracked_keys:
+            continue
+        if display in tracked_names:
+            continue
+        misc_spent += eff
+
+    if misc_spent > 0:
+        budget_items.append(BudgetItem(
+            id=MISC_BUDGET_ID,
+            category=MISC_BUDGET_CATEGORY,
+            limit=0.0,
+            spent=round(misc_spent, 2),
+            color=MISC_BUDGET_COLOR,
+            virtual=True,
         ))
     return budget_items
 
@@ -185,7 +220,8 @@ async def get_budgets(
 
         budget_items = get_budget_items(bdb, ldb, month_key)
 
-        total_limit = round(sum(bi.limit for bi in budget_items), 2)
+        # Virtual Misc. has no limit; don't inflate total_limit with a $0 row.
+        total_limit = round(sum(bi.limit for bi in budget_items if not bi.virtual), 2)
         total_spent = round(sum(bi.spent for bi in budget_items), 2)
 
         return BudgetsResponse(

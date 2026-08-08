@@ -140,6 +140,7 @@ class BudgetVsActualItemResult(BaseModel):
     percent_used: float
     over_budget: bool
     color: str
+    virtual: bool = False
 
 
 class BudgetVsActualResult(BaseModel):

@@ -170,7 +170,12 @@ def compute_weekly_summary(db: Session, bdb: Session, today: date | None = None)
 
     budget_items = get_budget_items(bdb, db, month_key)
     budgets: list[BudgetPaceItem] = []
+    misc_spent = 0.0
     for b in budget_items:
+        # Virtual Misc. has no limit — include in totals, skip pace ranking.
+        if b.virtual:
+            misc_spent += b.spent
+            continue
         used_pct = (b.spent / b.limit * 100) if b.limit > 0 else 0.0
         elapsed_frac = month_elapsed_pct / 100 or 1e-9
         budgets.append(BudgetPaceItem(
@@ -199,7 +204,7 @@ def compute_weekly_summary(db: Session, bdb: Session, today: date | None = None)
         month_key=month_key,
         month_elapsed_pct=round(month_elapsed_pct, 1),
         budgets=budgets,
-        total_spent=round(sum(b.spent for b in budgets), 2),
+        total_spent=round(sum(b.spent for b in budgets) + misc_spent, 2),
         total_limit=round(sum(b.limit for b in budgets), 2),
     )
 
