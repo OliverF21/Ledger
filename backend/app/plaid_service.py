@@ -350,6 +350,7 @@ class PlaidService:
                 'access_token': access_token,
                 'options': {
                     'personal_finance_category_version': 'v2',
+                    'include_original_description': True,
                 },
             }
             if cursor:
@@ -393,6 +394,7 @@ class PlaidService:
                 "end_date": end_date.isoformat(),
                 "options": {
                     "personal_finance_category_version": "v2",
+                    "include_original_description": True,
                     "count": page_size,
                     "offset": offset,
                 },

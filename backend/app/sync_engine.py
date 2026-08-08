@@ -99,6 +99,8 @@ def _sync_item_inner(db: Session, item: Item) -> dict:
                     category_plaid_detailed=txn_data.get("category_plaid_detailed"),
                     merchant_logo_url=txn_data.get("merchant_logo_url"),
                     payment_channel=txn_data.get("payment_channel"),
+                    original_description=txn_data.get("original_description"),
+                    transaction_code=txn_data.get("transaction_code"),
                     enrichment_json=txn_data.get("enrichment_json"),
                     pending=txn_data.get("pending", False),
                 )
@@ -386,7 +388,11 @@ def backfill_enrichment(
             Transaction.account_id.in_(account_ids),
             Transaction.plaid_transaction_id.isnot(None),
             Transaction.removed == False,
-            Transaction.category_plaid_detailed.is_(None),
+            (
+                (Transaction.category_plaid_detailed.is_(None))
+                | (Transaction.original_description.is_(None))
+                | (Transaction.transaction_code.is_(None))
+            ),
         )
         .all()
     }

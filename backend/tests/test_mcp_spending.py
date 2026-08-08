@@ -384,6 +384,33 @@ def test_build_cash_flow_shows_investment_transfer_out(db_session: Session):
     assert result.savings == 3000.0 - (1219.0 + 500.0)
 
 
+def test_build_cash_flow_classifies_brokerage_ach_memo_as_investments(db_session: Session):
+    """Bank memos like ACH→brokerage should count even when PFC is a generic transfer."""
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    db_session.add(
+        Transaction(
+            account=checking,
+            merchant="Robinhood",
+            amount=Decimal("250.00"),
+            date=date(2026, 6, 16),
+            category_plaid="TRANSFER_OUT",
+            category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
+            original_description="ACH deposit of $250 into Brokerage account ending in 4355",
+            transaction_code="transfer",
+            enrichment_json='{"payment_meta":{"payment_method":"ACH"},'
+            '"counterparties":[{"name":"Robinhood","type":"financial_institution"}]}',
+            pending=False,
+            removed=False,
+            hidden=False,
+        )
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_id = {node.id: node for node in result.spending_categories}
+    assert by_id["Investments"].amount == 250.0
+
+
 def test_build_cash_flow_excludes_internal_transfer_in(db_session: Session):
     """Paycheck + internal savings transfer should not double-count income."""
     savings = Account(
