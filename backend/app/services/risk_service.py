@@ -25,6 +25,13 @@ from app.services.returns_service import TWRPoint, build_cagr, build_mwr_xirr, b
 TRADING_DAYS_PER_YEAR = 365
 BENCHMARK_TICKER = "SPY"
 MIN_DATA_POINTS = 5
+# Annualized/percentile metrics (volatility, Sharpe, VaR) extrapolate a full
+# year's risk from the observed daily-return sample; with only a handful of
+# points that extrapolation is mostly noise (e.g. 4 daily returns can produce
+# a Sharpe of 5+ with no statistical meaning). Require about a month of daily
+# data before surfacing them. Max drawdown/duration/CAGR/TWR/MWR degrade more
+# gracefully with less data and stay gated on the lower MIN_DATA_POINTS floor.
+MIN_ANNUALIZED_METRICS_POINTS = 21
 
 
 @dataclass(frozen=True)
@@ -52,18 +59,21 @@ def _daily_returns(growth_index: list[float]) -> np.ndarray:
     return arr[1:] / arr[:-1] - 1
 
 
-def _max_drawdown(growth_index: list[float]) -> tuple[float | None, int | None]:
-    if len(growth_index) < 2:
+def _max_drawdown(twr_series: list[TWRPoint]) -> tuple[float | None, int | None]:
+    if len(twr_series) < 2:
         return None, None
-    arr = np.array(growth_index, dtype=float)
+    arr = np.array([p.growth_index for p in twr_series], dtype=float)
     running_max = np.maximum.accumulate(arr)
     drawdowns = (arr - running_max) / running_max
     max_dd = float(drawdowns.min())
 
     trough_idx = int(drawdowns.argmin())
     peak_idx = int(np.argmax(arr[: trough_idx + 1]))
-    duration = trough_idx - peak_idx
-    return max_dd * 100, duration
+    # BalanceSnapshot rows only exist on days a sync ran, so the index gap
+    # between peak and trough can undercount elapsed time whenever a sync was
+    # missed — use the actual calendar-day difference instead.
+    duration_days = (twr_series[trough_idx].date - twr_series[peak_idx].date).days
+    return max_dd * 100, duration_days
 
 
 def _compute_beta(db: Session, twr_series: list[TWRPoint]) -> float | None:
@@ -117,16 +127,22 @@ def build_risk_metrics(db: Session, *, lookback_days: int = 365) -> RiskMetricsD
     growth_index = [p.growth_index for p in twr_series]
     daily_returns = _daily_returns(growth_index)
 
-    volatility = float(np.std(daily_returns, ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR)) * 100
-    mean_daily = float(np.mean(daily_returns))
-    annualized_return = mean_daily * TRADING_DAYS_PER_YEAR
-    sharpe = (
-        (annualized_return - risk_free_rate_pct / 100) / (volatility / 100)
-        if volatility > 0 else None
-    )
-    var_95 = float(-np.percentile(daily_returns, 5)) * 100
-    var_99 = float(-np.percentile(daily_returns, 1)) * 100
-    max_dd_pct, dd_duration = _max_drawdown(growth_index)
+    if len(twr_series) >= MIN_ANNUALIZED_METRICS_POINTS:
+        volatility = float(np.std(daily_returns, ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR)) * 100
+        mean_daily = float(np.mean(daily_returns))
+        annualized_return = mean_daily * TRADING_DAYS_PER_YEAR
+        sharpe = (
+            (annualized_return - risk_free_rate_pct / 100) / (volatility / 100)
+            if volatility > 0 else None
+        )
+        var_95 = float(-np.percentile(daily_returns, 5)) * 100
+        var_99 = float(-np.percentile(daily_returns, 1)) * 100
+    else:
+        volatility = None
+        sharpe = None
+        var_95 = None
+        var_99 = None
+    max_dd_pct, dd_duration = _max_drawdown(twr_series)
     beta = _compute_beta(db, twr_series)
     cagr = build_cagr(twr_series)
     twr_pct = (growth_index[-1] / growth_index[0] - 1) * 100 if growth_index[0] else None
@@ -135,10 +151,10 @@ def build_risk_metrics(db: Session, *, lookback_days: int = 365) -> RiskMetricsD
     return RiskMetricsData(
         lookback_days=lookback_days,
         as_of=end.isoformat(),
-        volatility_pct=round(volatility, 2),
+        volatility_pct=round(volatility, 2) if volatility is not None else None,
         sharpe_ratio=round(sharpe, 2) if sharpe is not None else None,
-        var_95_pct=round(var_95, 2),
-        var_99_pct=round(var_99, 2),
+        var_95_pct=round(var_95, 2) if var_95 is not None else None,
+        var_99_pct=round(var_99, 2) if var_99 is not None else None,
         max_drawdown_pct=round(max_dd_pct, 2) if max_dd_pct is not None else None,
         drawdown_duration_days=dd_duration,
         beta_vs_spy=round(beta, 2) if beta is not None else None,

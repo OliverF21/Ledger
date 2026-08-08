@@ -70,9 +70,37 @@ def test_known_series_max_drawdown_and_volatility(db_session, account):
     # Hand-computed: running max [100,102,102,105,105], drawdown min at day5
     # = (103-105)/105 = -1.904...%
     assert data.max_drawdown_pct == pytest.approx(-1.9, abs=0.05)
-    assert data.volatility_pct is not None and data.volatility_pct > 0
-    assert data.var_95_pct is not None
+    # Trough at index 4 (day5), peak at index 3 (day4) -> 1 calendar day apart,
+    # and since these are consecutive daily snapshots with no gaps, the
+    # calendar-day duration matches the index difference here.
+    assert data.drawdown_duration_days == 1
+    # 5 points is below MIN_ANNUALIZED_METRICS_POINTS (21) -- annualized/
+    # percentile metrics should be withheld as statistically meaningless,
+    # while max drawdown (which degrades more gracefully) still computes.
+    assert data.volatility_pct is None
+    assert data.sharpe_ratio is None
+    assert data.var_95_pct is None
+    assert data.var_99_pct is None
     assert data.risk_free_rate_pct > 0  # falls back to DEFAULT_RISK_FREE_RATE_PCT
+
+
+def test_annualized_metrics_populate_past_min_points_floor(db_session, account):
+    # 25 daily snapshots (above MIN_ANNUALIZED_METRICS_POINTS=21) with mild
+    # noise so volatility/Sharpe/VaR are well-defined and should populate.
+    d0 = date.today() - timedelta(days=24)
+    values = [100, 101, 100, 102, 103, 102, 104, 105, 104, 106, 107, 106, 108,
+              109, 108, 110, 111, 110, 112, 113, 112, 114, 115, 114, 116]
+    for i, v in enumerate(values):
+        db_session.add(BalanceSnapshot(account_id=account.id, balance=v, snapshot_date=d0 + timedelta(days=i)))
+    db_session.commit()
+
+    data = build_risk_metrics(db_session, lookback_days=30)
+
+    assert data.data_points == 25
+    assert data.volatility_pct is not None and data.volatility_pct > 0
+    assert data.sharpe_ratio is not None
+    assert data.var_95_pct is not None
+    assert data.var_99_pct is not None
 
 
 def test_beta_uses_market_price_spy_series(db_session, account):
