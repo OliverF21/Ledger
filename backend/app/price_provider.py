@@ -35,7 +35,7 @@ def fetch_daily_closes(tickers: list[str], start: date, end: date) -> dict[str, 
     result: dict[str, list[tuple[date, Decimal]]] = {}
     for ticker in tickers:
         try:
-            closes = data[ticker]["Close"] if len(tickers) > 1 else data["Close"]
+            closes = data[ticker]["Close"]
         except KeyError:
             result[ticker] = []
             continue
