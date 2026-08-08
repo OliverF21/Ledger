@@ -136,14 +136,27 @@ function stackIncomeBands(
   return nodes
 }
 
+const INVESTMENTS_NODE_ID = 'Investments'
+const SAVINGS_NODE_ID = '__savings__'
+const SAVINGS_COLOR = '#4ec38a'
+
+function isAllocationNode(id: string): boolean {
+  return id === SAVINGS_NODE_ID || id === INVESTMENTS_NODE_ID
+}
+
 function buildLayout(data: CashFlowData, W: number, H: number) {
   const avail = H - PAD_Y * 2
   const totalIncome = data.total_income || 1
 
+  // Keep Investments with Savings as allocation sinks (after consumptive spend),
+  // matching how Savings is appended rather than mixed into expense sort order.
+  const investmentItem = data.spending_categories.find(c => c.id === INVESTMENTS_NODE_ID)
+  const spendItems = data.spending_categories.filter(c => c.id !== INVESTMENTS_NODE_ID)
   const rightItems: FlowNode[] = [
-    ...data.spending_categories,
+    ...spendItems,
+    ...(investmentItem && investmentItem.amount > 0.01 ? [investmentItem] : []),
     ...(data.savings > 0.01
-      ? [{ id: '__savings__', label: 'Savings', amount: data.savings, color: '#4ec38a', top_transactions: [] }]
+      ? [{ id: SAVINGS_NODE_ID, label: 'Savings', amount: data.savings, color: SAVINGS_COLOR, top_transactions: [] }]
       : []),
   ]
   const totalOutflow = rightItems.reduce((sum, item) => sum + item.amount, 0) || 1
@@ -197,7 +210,7 @@ function buildLayout(data: CashFlowData, W: number, H: number) {
       const rh = Math.max((tgt.amount / totalOutflow) * tunnelFlow, 1)
       rightLinks.push({
         id: tgt.id,
-        color: tgt.id === '__savings__' ? '#4ec38a' : tgt.color,
+        color: tgt.id === SAVINGS_NODE_ID ? SAVINGS_COLOR : tgt.color,
         sx: tunnelX + TUNNEL_W,
         sy0: tunnelY + offset,
         sy1: tunnelY + offset + rh,
@@ -381,8 +394,12 @@ export default function Spending() {
   }
 
   const deficit = data ? Math.max(0, data.total_spending - data.total_income) : 0
+  const invested = data
+    ? (data.spending_categories.find(c => c.id === INVESTMENTS_NODE_ID)?.amount ?? 0)
+    : 0
+  const consumptiveSpending = data ? Math.max(0, data.total_spending - invested) : 0
 
-  const hoveredNode: LNode | null = hovered && layout && hovered !== '__tunnel__' && hovered !== '__savings__'
+  const hoveredNode: LNode | null = hovered && layout && hovered !== '__tunnel__' && hovered !== SAVINGS_NODE_ID
     ? (layout.leftNodes.find(n => n.id === hovered) ?? layout.rightNodes.find(n => n.id === hovered) ?? null)
     : null
 
@@ -404,8 +421,13 @@ export default function Spending() {
               Income <span className="text-ledger-positive font-semibold">${fmt(data.total_income)}</span>
             </span>
             <span className="text-ledger-text-faint">
-              Spending <span className="text-ledger-text-secondary font-semibold">${fmt(data.total_spending)}</span>
+              Spending <span className="text-ledger-text-secondary font-semibold">${fmt(consumptiveSpending)}</span>
             </span>
+            {invested > 0.01 && (
+              <span className="text-ledger-text-faint">
+                Invested <span className="text-ledger-accent font-semibold">${fmt(invested)}</span>
+              </span>
+            )}
             {deficit > 0
               ? <span className="text-ledger-negative font-semibold">−${fmt(deficit)} over</span>
               : <span className="text-ledger-text-faint">Saved <span className="text-ledger-positive font-semibold">${fmt(data.savings)}</span></span>
@@ -493,7 +515,7 @@ export default function Spending() {
                 />
               ))}
 
-              {/* Right expense/savings nodes */}
+              {/* Right expense / allocation nodes */}
               {layout.rightNodes.map(n => (
                 <NodeGroup
                   key={n.id}
@@ -501,9 +523,9 @@ export default function Spending() {
                   chartW={svgW}
                   tunnelX={layout.tunnelX}
                   nodeVis={nodeVis}
-                  formatLabel={n => n.id === '__savings__' ? 'Savings' : formatCategory(n.label)}
+                  formatLabel={n => n.id === SAVINGS_NODE_ID ? 'Savings' : formatCategory(n.label)}
                   amountPrefix=""
-                  amountClass={n.id === '__savings__' ? '#4ec38a' : '#9aa2b2'}
+                  amountClass={isAllocationNode(n.id) ? (n.id === SAVINGS_NODE_ID ? SAVINGS_COLOR : n.color) : '#9aa2b2'}
                   onHover={setHovered}
                 />
               ))}
