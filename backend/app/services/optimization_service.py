@@ -55,6 +55,24 @@ def _empty_result(data_points: int = 0) -> OptimizationData:
     )
 
 
+def _priceable_tickers(db: Session, tickers: list[str], start: date, end: date) -> list[str]:
+    """Held tickers that have at least one MarketPrice row in the lookback
+    window. A single ticker yfinance can't resolve (money-market funds,
+    unusual symbols) shouldn't disable optimization for the rest of the
+    book — drop it here so `tickers` only contains names `_price_matrix` can
+    actually use."""
+    if not tickers:
+        return []
+    rows = (
+        db.query(MarketPrice.ticker)
+        .filter(MarketPrice.ticker.in_(tickers), MarketPrice.price_date >= start, MarketPrice.price_date <= end)
+        .distinct()
+        .all()
+    )
+    priceable = {row[0] for row in rows}
+    return [t for t in tickers if t in priceable]
+
+
 def _held_tickers(db: Session, account_ids: list[int]) -> list[str]:
     if not account_ids:
         return []
@@ -130,6 +148,10 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
     accounts = _investment_accounts(db)
     account_ids = [a.id for a in accounts]
     tickers = _held_tickers(db, account_ids)
+    if len(tickers) < 2:
+        return _empty_result()
+
+    tickers = _priceable_tickers(db, tickers, start, end)
     if len(tickers) < 2:
         return _empty_result()
 

@@ -89,6 +89,45 @@ def test_optimization_shifts_weight_toward_higher_sharpe_asset(db_session):
     assert data.suggested_sharpe >= data.current_sharpe - 0.01  # optimizer must not do worse
 
 
+def test_optimization_drops_unpriceable_ticker_and_uses_remaining(db_session):
+    # Three-ticker portfolio where TICKC has a holding but zero MarketPrice
+    # rows (e.g. yfinance couldn't resolve it). The optimizer should drop
+    # TICKC and still produce a valid suggestion over TICKA/TICKB rather than
+    # reporting insufficient_data for the whole book.
+    item = Item(user_id=1, item_id="item-1", access_token_encrypted="x")
+    db_session.add(item)
+    db_session.flush()
+    account = Account(item_id=item.id, plaid_account_id="acc-1", name="Brokerage", type="investment", current_balance=Decimal("3000"))
+    db_session.add(account)
+    db_session.flush()
+
+    sec_a = Security(plaid_security_id="sec-A", ticker_symbol="TICKA", type="equity")
+    sec_b = Security(plaid_security_id="sec-B", ticker_symbol="TICKB", type="equity")
+    sec_c = Security(plaid_security_id="sec-C", ticker_symbol="TICKC", type="equity")
+    db_session.add_all([sec_a, sec_b, sec_c])
+    db_session.flush()
+
+    db_session.add(Holding(account_id=account.id, security_id=sec_a.id, quantity=Decimal("10"), institution_price=Decimal("100"), institution_value=Decimal("1000")))
+    db_session.add(Holding(account_id=account.id, security_id=sec_b.id, quantity=Decimal("10"), institution_price=Decimal("100"), institution_value=Decimal("1000")))
+    # TICKC is held but has NO MarketPrice rows at all -- unresolvable ticker.
+    db_session.add(Holding(account_id=account.id, security_id=sec_c.id, quantity=Decimal("10"), institution_price=Decimal("100"), institution_value=Decimal("1000")))
+
+    start = date.today() - timedelta(days=60)
+    a_prices = [100 + i * 0.5 for i in range(60)]
+    b_prices = [100 + (5 if i % 2 == 0 else -5) for i in range(60)]
+    for i in range(60):
+        day = start + timedelta(days=i)
+        db_session.add(MarketPrice(ticker="TICKA", price_date=day, close_price=Decimal(str(a_prices[i]))))
+        db_session.add(MarketPrice(ticker="TICKB", price_date=day, close_price=Decimal(str(b_prices[i]))))
+    db_session.commit()
+
+    data = build_optimization_suggestion(db_session, lookback_days=90)
+
+    assert not data.insufficient_data
+    tickers_present = {t.ticker for t in data.tickers}
+    assert tickers_present == {"TICKA", "TICKB"}
+
+
 def test_optimization_insufficient_data_with_fewer_than_two_tickers(db_session):
     item = Item(user_id=1, item_id="item-1", access_token_encrypted="x")
     db_session.add(item)
