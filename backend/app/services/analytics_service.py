@@ -800,7 +800,9 @@ def _aggregate_spending(
 
         if is_excluded_from_spending(_spending_category_key(txn)):
             continue
-        category = _rollup_category(txn, "Uncategorized")
+        # Merge subcategory overrides into PFC primaries (same as Cash Flow) so
+        # Overview doesn't show duplicate truncated "Food…" / "Rent…" rows.
+        category = _display_rollup_category(txn, "Uncategorized")
 
         bucket = buckets.setdefault(category, {"value": 0.0, "transaction_count": 0})
         bucket["value"] += _effective_amount(txn)

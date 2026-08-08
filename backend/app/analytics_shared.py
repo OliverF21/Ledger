@@ -211,7 +211,11 @@ def is_excluded_from_income(category: str | None) -> bool:
 
 
 def normalize_category_key(key: str) -> str:
-    """Map legacy SHOPPING (PFC v1) and label aliases onto GENERAL_MERCHANDISE (PFC v2)."""
+    """Map legacy SHOPPING (PFC v1) and label aliases onto GENERAL_MERCHANDISE (PFC v2).
+
+    PFC-shaped keys are returned in uppercase underscore form. Human labels
+    (e.g. "Dining Out") are preserved so rollup can keep subcategory buckets.
+    """
     if not key:
         return key
     if key.lower() in _SHOPPING_LABEL_ALIASES:
@@ -221,6 +225,10 @@ def normalize_category_key(key: str) -> str:
         return "GENERAL_MERCHANDISE"
     if normalized.startswith("SHOPPING_"):
         return normalized.replace("SHOPPING_", "GENERAL_MERCHANDISE_", 1)
+    if normalized in PLAID_PFC_PRIMARIES or normalized in KNOWN_CATEGORY_KEYS:
+        return normalized
+    if any(normalized.startswith(f"{primary}_") for primary in PLAID_PFC_PRIMARIES):
+        return normalized
     return key
 
 

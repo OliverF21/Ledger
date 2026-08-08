@@ -146,3 +146,38 @@ def test_misc_bucket_omitted_when_all_spend_is_tracked(sessions):
     items = get_budget_items(bdb, ldb, "2026-07")
     assert all(not item.virtual for item in items)
     assert all(item.category != MISC_BUDGET_CATEGORY for item in items)
+
+
+def test_name_only_primary_budget_matches_leaf_spend(sessions):
+    """Manual 'Travel' budget (no category_key) still captures TRAVEL_FLIGHTS spend."""
+    ldb, bdb, checking = sessions
+    ldb.add(
+        Transaction(
+            account=checking,
+            merchant="Airline",
+            amount=Decimal("500.00"),
+            date=date(2026, 7, 5),
+            category_plaid="TRAVEL",
+            category_plaid_detailed="TRAVEL_FLIGHTS",
+            pending=False,
+            removed=False,
+            hidden=False,
+        )
+    )
+    ldb.commit()
+    bdb.add(
+        Budget(
+            user_id=1,
+            month="2026-07",
+            category_name="Travel",
+            category_key=None,
+            limit=Decimal("600.00"),
+            color="#4ec38a",
+        )
+    )
+    bdb.commit()
+
+    items = get_budget_items(bdb, ldb, "2026-07")
+    by_name = {item.category: item for item in items}
+    assert by_name["Travel"].spent == 500.0
+    assert MISC_BUDGET_CATEGORY not in by_name

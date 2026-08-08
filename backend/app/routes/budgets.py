@@ -21,6 +21,9 @@ from sqlalchemy.orm import Session
 
 from app.analytics_shared import (
     CATEGORY_COLORS,
+    CATEGORY_KEY_LABELS,
+    KNOWN_CATEGORY_KEYS,
+    PLAID_PFC_PRIMARIES,
     budget_parent_key,
     category_key_for_income_rules,
     category_key_for_spending_rules,
@@ -29,6 +32,7 @@ from app.analytics_shared import (
     is_excluded_from_spending,
     month_bounds,
     normalize_category_key,
+    resolve_category_to_pfc_key,
 )
 from app.budgets_db import Budget, get_budgets_db
 from app.database import get_db
@@ -170,8 +174,22 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
             tracked_keys.add(key)
             spent = spent_by_plaid_parent.get(key, 0.0)
         else:
-            tracked_names.add(b.category_name)
-            spent = spent_by_display.get(b.category_name, 0.0)
+            # Name-only budgets whose label is a PFC primary (e.g. "Travel")
+            # should match all leaf spend under that primary — not only rows
+            # whose display_category string equals the label exactly.
+            resolved = normalize_category_key(resolve_category_to_pfc_key(b.category_name))
+            primary_label = CATEGORY_KEY_LABELS.get(resolved, "")
+            if (
+                resolved
+                and (resolved in PLAID_PFC_PRIMARIES or resolved in KNOWN_CATEGORY_KEYS)
+                and primary_label
+                and primary_label.lower() == (b.category_name or "").strip().lower()
+            ):
+                tracked_keys.add(resolved)
+                spent = spent_by_plaid_parent.get(resolved, 0.0)
+            else:
+                tracked_names.add(b.category_name)
+                spent = spent_by_display.get(b.category_name, 0.0)
         budget_items.append(BudgetItem(
             id=b.id,
             category=b.category_name,
