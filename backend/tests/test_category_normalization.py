@@ -60,7 +60,14 @@ def test_excludes_loan_payment_subcategories_from_spending():
 def test_excludes_transfer_subcategories_from_spending():
     assert is_excluded_from_spending("TRANSFER_OUT")
     assert is_excluded_from_spending("TRANSFER_OUT_ACCOUNT_TRANSFER")
+    assert is_excluded_from_spending("TRANSFER_OUT_SAVINGS")
     assert is_excluded_from_spending("TRANSFER_IN_SAVINGS")
+
+
+def test_includes_investment_transfer_out_in_spending():
+    assert not is_excluded_from_spending("TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS")
+    assert not is_excluded_from_spending("TRANSFER_OUT.INVESTMENT_AND_RETIREMENT_FUNDS")
+    assert not is_excluded_from_spending("Investment / Retirement Transfer Out")
 
 
 def test_excludes_loan_payment_subcategories_from_income():
