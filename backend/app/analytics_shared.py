@@ -17,12 +17,13 @@ EXCLUDED_FROM_SPENDING = {
     "TRANSFER_IN",     # incoming transfers (already counted when charged)
     "TRANSFER_OUT",    # outgoing transfers
     "TRANSFER",
-    # All transfer types except "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS" are excluded.
-    "TRANSFER_OUT_SAVINGS",        # example: internal moves to savings
-    "TRANSFER_OUT_CASH",           # example: cash withdrawals
-    "TRANSFER_OUT_OTHER",          # other outgoing transfers
-    # Add any additional transfer types here as necessary except "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"
-    # "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS" intentionally not excluded
+}
+
+# TRANSFER_OUT subcategories that still count as cash-flow outflows.
+# Kept as an allowlist so other TRANSFER_OUT_* keys remain excluded via the
+# TRANSFER_OUT primary above (prefix match in _matches_excluded_primary).
+TRANSFER_OUT_SPENDING_SUBCATEGORIES = {
+    "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
 }
 
 # Excluded from INCOME (negative/credit transactions).
@@ -139,7 +140,14 @@ def _matches_excluded_primary(category: str, excluded_primaries: set[str]) -> bo
 
 
 def is_excluded_from_spending(category: str | None) -> bool:
-    """Spending totals exclude loan/CC payments and transfers at any category depth."""
+    """Spending totals exclude loan/CC payments and transfers at any category depth.
+
+    Investment / retirement funding transfers are an intentional exception so
+    Cash Flow can show money leaving spendable cash for brokerage/retirement.
+    """
+    upper = _exclusion_key(category)
+    if upper in TRANSFER_OUT_SPENDING_SUBCATEGORIES:
+        return False
     return _matches_excluded_primary(category or "", EXCLUDED_FROM_SPENDING)
 
 
