@@ -127,6 +127,34 @@ def expire_stale_proposals():
         logger.error(f"Proposal expiry sweep failed: {str(e)}")
 
 
+def sync_market_data_job():
+    """
+    Refresh daily price history (app.services.price_sync_service) for every
+    held + benchmark ticker, and the cached risk-free rate (app.risk_free_rate)
+    used by Sharpe-ratio calculations. Runs nightly, independent of the Plaid
+    sync loop — market data comes from yfinance/FRED, not Plaid.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.risk_free_rate import fetch_and_cache_risk_free_rate
+        from app.services.price_sync_service import sync_market_prices
+
+        db = SessionLocal()
+        try:
+            price_stats = sync_market_prices(db)
+            logger.info(
+                "Market prices synced: %s tickers, %s rows",
+                price_stats.get("tickers_synced"),
+                price_stats.get("rows_upserted"),
+            )
+            rate = fetch_and_cache_risk_free_rate(db)
+            logger.info(f"Risk-free rate refreshed: {rate}%")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Market data sync job failed: {str(e)}")
+
+
 def _current_sync_frequency_hours() -> int:
     """Read the persisted sync frequency (app_config), defaulting to 6h."""
     from app import app_config
@@ -208,6 +236,17 @@ def init_scheduler():
         CronTrigger(hour=3, minute=0),
         id="expire_proposals",
         name="Expire stale advisor proposals",
+        replace_existing=True
+    )
+
+    # Refresh market prices + risk-free rate nightly at 04:00 (server local
+    # time, after US market close data settles), independent of the Plaid
+    # sync loop.
+    scheduler.add_job(
+        sync_market_data_job,
+        CronTrigger(hour=4, minute=0),
+        id="sync_market_data",
+        name="Sync market prices + risk-free rate",
         replace_existing=True
     )
 
