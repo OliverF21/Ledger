@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models import Account, BalanceSnapshot, Base, InvestmentTransaction, Item, User
-from app.services.returns_service import build_cagr, build_mwr_xirr, build_twr_series
+from app.services.returns_service import build_cagr, build_mwr_xirr, build_twr_series, external_cash_flows
 
 
 @pytest.fixture
@@ -60,6 +60,29 @@ def test_twr_ignores_deposit_inflating_return(db_session, account):
     assert series[1].growth_index == pytest.approx(1.0, abs=0.001)
     # Day 2 sub-period return is -2% on top of that.
     assert series[2].growth_index == pytest.approx(0.98, abs=0.001)
+
+
+def test_twr_treats_dividend_as_real_return_not_external_flow(db_session, account):
+    # Day 0: $100. Day 1: a $50 dividend lands (type="cash", subtype="dividend")
+    # and the balance rises to $150 purely because of it. Since a dividend is
+    # investment income already reflected in the balance -- not an external
+    # deposit -- it must NOT be excluded from the day's TWR sub-period return:
+    # the day should read as a real +50% gain, not 0%.
+    d0 = date(2026, 1, 1)
+    _snapshot(db_session, account, d0, 100)
+    _snapshot(db_session, account, d0 + timedelta(days=1), 150)
+    db_session.add(InvestmentTransaction(
+        account_id=account.id, plaid_investment_transaction_id="txn-div-1",
+        name="dividend", type="cash", subtype="dividend", amount=-50, date=d0 + timedelta(days=1),
+    ))
+    db_session.commit()
+
+    flows = external_cash_flows(db_session, [account.id], d0, d0 + timedelta(days=1))
+    assert flows == []
+
+    series = build_twr_series(db_session, [account.id], d0, d0 + timedelta(days=1))
+    assert len(series) == 2
+    assert series[1].growth_index == pytest.approx(1.50, abs=0.001)
 
 
 def test_twr_reflects_real_gains_without_cash_flows(db_session, account):

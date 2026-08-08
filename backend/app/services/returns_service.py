@@ -27,6 +27,17 @@ from app.models import BalanceSnapshot, InvestmentTransaction
 
 EXTERNAL_CASH_FLOW_TYPES = ("cash", "transfer")
 
+# Plaid's investment_transaction_type is a coarse enum: dividends, interest,
+# and capital-gain distributions all share type == "cash" with deposits and
+# withdrawals, distinguished only by `subtype`. Only these subtypes represent
+# money genuinely crossing the brokerage boundary (external to the account);
+# everything else with type in EXTERNAL_CASH_FLOW_TYPES (dividend, interest,
+# qualified dividend, long-term/short-term capital gain, etc.) is investment
+# income already reflected in the balance and must stay out of TWR/XIRR flows.
+EXTERNAL_CASH_FLOW_SUBTYPES = {
+    "deposit", "withdrawal", "contribution", "distribution", "transfer", "send", "request",
+}
+
 
 @dataclass(frozen=True)
 class TWRPoint:
@@ -75,7 +86,11 @@ def external_cash_flows(db: Session, account_ids: list[int], start: date, end: d
         .order_by(InvestmentTransaction.date.asc())
         .all()
     )
-    return [CashFlow(date=t.date, amount=-float(t.amount)) for t in rows]
+    return [
+        CashFlow(date=t.date, amount=-float(t.amount))
+        for t in rows
+        if (t.subtype or "").strip().lower() in EXTERNAL_CASH_FLOW_SUBTYPES
+    ]
 
 
 def build_twr_series(db: Session, account_ids: list[int], start: date, end: date) -> list[TWRPoint]:
