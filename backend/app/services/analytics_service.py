@@ -9,11 +9,12 @@ from datetime import date
 from typing import Any
 
 from sqlalchemy import case, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.analytics_shared import (
     CATEGORY_COLORS,
     category_key_for_income_rules,
+    category_key_for_spending_rules,
     display_rollup_category,
     is_excluded_from_income,
     is_excluded_from_spending,
@@ -21,6 +22,7 @@ from app.analytics_shared import (
 )
 from app.enrichment import parse_enrichment_json
 from app.models import Account, BalanceSnapshot, Item, Transaction
+from app.txn_classifier import classify_orm_transaction
 
 LIABILITY_TYPES = frozenset({"credit", "loan"})
 EXCLUDED_PLAID_ITEMS = frozenset({"manual_import", "test_item"})
@@ -414,9 +416,9 @@ def build_trends(db: Session, months: int = 6) -> TrendsData:
         mk = f"{txn.date.year:04d}-{txn.date.month:02d}"
         amount = float(txn.amount)
         if amount > 0:
-            category = _rollup_category(txn, "Uncategorized")
-            if is_excluded_from_spending(category):
+            if is_excluded_from_spending(_spending_category_key(txn)):
                 continue
+            category = _rollup_category(txn, "Uncategorized")
             bucket = spend_by_month.setdefault(mk, {})
             bucket[category] = bucket.get(category, 0.0) + _effective_amount(txn)
         elif amount < 0:
@@ -527,6 +529,7 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
 
     month_txns = (
         db.query(Transaction)
+        .options(joinedload(Transaction.account))
         .filter(
             Transaction.removed.is_(False),
             # Pending transactions ARE counted so purchases show up immediately.
@@ -538,16 +541,20 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
         )
         .all()
     )
-    income_pool = [
-        txn
-        for txn in month_txns
-        if float(txn.amount) < 0 and not is_excluded_from_income(_income_category_key(txn))
-    ]
-    spend_pool = [
-        txn
-        for txn in month_txns
-        if float(txn.amount) > 0 and not is_excluded_from_spending(_rollup_category(txn, "Uncategorized"))
-    ]
+
+    income_pool: list[Transaction] = []
+    spend_pool: list[Transaction] = []
+    investment_pool: list[Transaction] = []
+
+    for txn in month_txns:
+        role = classify_orm_transaction(txn)
+        if role == "income":
+            income_pool.append(txn)
+        elif role == "spending":
+            spend_pool.append(txn)
+        elif role == "investments":
+            investment_pool.append(txn)
+        # transfer / exclude → omitted from cash-flow sinks
 
     income_buckets: dict[str, float] = {}
     for txn in income_pool:
@@ -558,6 +565,10 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
     for txn in spend_pool:
         category = _display_rollup_category(txn, "Uncategorized")
         spend_buckets[category] = spend_buckets.get(category, 0.0) + _effective_amount(txn)
+
+    investment_total = round(sum(_effective_amount(txn) for txn in investment_pool), 2)
+    if investment_total > 0:
+        spend_buckets["Investments"] = spend_buckets.get("Investments", 0.0) + investment_total
 
     income_sources = [
         CashFlowNodeItem(
@@ -577,7 +588,11 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
             label=category,
             amount=round(total, 2),
             color=CATEGORY_COLORS[index % len(CATEGORY_COLORS)],
-            top_transactions=_top_spending_txns(spend_pool, category),
+            top_transactions=(
+                _top_investment_txns(investment_pool)
+                if category == "Investments"
+                else _top_spending_txns(spend_pool, category)
+            ),
         )
         for index, (category, total) in enumerate(
             sorted(spend_buckets.items(), key=lambda item: item[1], reverse=True)
@@ -781,9 +796,9 @@ def _aggregate_spending(
         if float(txn.amount) <= 0:
             continue
 
-        category = _rollup_category(txn, "Uncategorized")
-        if is_excluded_from_spending(category):
+        if is_excluded_from_spending(_spending_category_key(txn)):
             continue
+        category = _rollup_category(txn, "Uncategorized")
 
         bucket = buckets.setdefault(category, {"value": 0.0, "transaction_count": 0})
         bucket["value"] += _effective_amount(txn)
@@ -877,6 +892,14 @@ def _income_category_key(txn: Transaction) -> str:
     )
 
 
+def _spending_category_key(txn: Transaction) -> str:
+    return category_key_for_spending_rules(
+        txn.category_user,
+        txn.category_plaid,
+        txn.category_plaid_detailed,
+    )
+
+
 def _effective_amount(txn: Transaction) -> float:
     return float(txn.amount) * float(txn.user_split_pct or 1)
 
@@ -897,6 +920,18 @@ def _top_income_txns(pool: list[Transaction], category: str, limit: int = 3) -> 
 def _top_spending_txns(pool: list[Transaction], category: str, limit: int = 3) -> list[CashFlowTxnItem]:
     matching = [txn for txn in pool if _display_rollup_category(txn, "Uncategorized") == category]
     matching.sort(key=_effective_amount, reverse=True)
+    return [
+        CashFlowTxnItem(
+            merchant=txn.merchant or "",
+            amount=round(_effective_amount(txn), 2),
+            date=txn.date.isoformat(),
+        )
+        for txn in matching[:limit]
+    ]
+
+
+def _top_investment_txns(pool: list[Transaction], limit: int = 3) -> list[CashFlowTxnItem]:
+    matching = sorted(pool, key=_effective_amount, reverse=True)
     return [
         CashFlowTxnItem(
             merchant=txn.merchant or "",

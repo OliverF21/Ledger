@@ -27,6 +27,7 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 class TransactionEnrichment(BaseModel):
     counterparties: list[dict] | None = None
     location: dict | None = None
+    payment_meta: dict | None = None
     pfc_confidence: str | None = None
     category_icon_url: str | None = None
     description_raw: str | None = None
@@ -36,6 +37,8 @@ class TransactionResponse(BaseModel):
     id: int
     account_id: int
     account_name: str | None
+    account_type: str | None = None
+    account_subtype: str | None = None
     merchant: str
     amount: float          # effective amount (split applied)
     original_amount: float # raw Plaid amount before split
@@ -46,17 +49,25 @@ class TransactionResponse(BaseModel):
     category_plaid_detailed: str | None = None
     merchant_logo_url: str | None = None
     payment_channel: str | None = None
+    original_description: str | None = None
+    transaction_code: str | None = None
     enrichment: TransactionEnrichment | None = None
     pending: bool = False
     manual_override: bool = False
     hidden: bool = False
 
 
-def _transaction_response(txn: Transaction, account_name: str | None) -> TransactionResponse:
+def _transaction_response(
+    txn: Transaction,
+    account_name: str | None,
+    account_type: str | None = None,
+    account_subtype: str | None = None,
+) -> TransactionResponse:
     extra = parse_enrichment_json(txn.enrichment_json) or {}
     enrichment = TransactionEnrichment(
         counterparties=extra.get("counterparties"),
         location=extra.get("location"),
+        payment_meta=extra.get("payment_meta"),
         pfc_confidence=extra.get("pfc_confidence"),
         category_icon_url=extra.get("category_icon_url"),
         description_raw=extra.get("description_raw"),
@@ -64,6 +75,7 @@ def _transaction_response(txn: Transaction, account_name: str | None) -> Transac
     if not any([
         enrichment.counterparties,
         enrichment.location,
+        enrichment.payment_meta,
         enrichment.pfc_confidence,
         enrichment.category_icon_url,
         enrichment.description_raw,
@@ -74,6 +86,8 @@ def _transaction_response(txn: Transaction, account_name: str | None) -> Transac
         id=txn.id,
         account_id=txn.account_id,
         account_name=account_name,
+        account_type=account_type,
+        account_subtype=account_subtype,
         merchant=txn.merchant,
         amount=round(float(txn.amount) * float(txn.user_split_pct or 1), 2),
         original_amount=round(float(txn.amount), 2),
@@ -84,6 +98,8 @@ def _transaction_response(txn: Transaction, account_name: str | None) -> Transac
         category_plaid_detailed=txn.category_plaid_detailed,
         merchant_logo_url=txn.merchant_logo_url,
         payment_channel=txn.payment_channel,
+        original_description=txn.original_description,
+        transaction_code=txn.transaction_code,
         enrichment=enrichment,
         pending=bool(txn.pending or False),
         manual_override=bool(txn.manual_override or False),
@@ -128,7 +144,12 @@ async def list_transactions(
     """List non-removed transactions with pagination. Hidden transactions are included unless exclude_hidden=true."""
     try:
         query = (
-            db.query(Transaction, Account.name.label("account_name"))
+            db.query(
+                Transaction,
+                Account.name.label("account_name"),
+                Account.type.label("account_type"),
+                Account.subtype.label("account_subtype"),
+            )
             .outerjoin(Account, Transaction.account_id == Account.id)
             .filter(Transaction.removed == False)
         )
@@ -148,8 +169,8 @@ async def list_transactions(
         )
         total = db.query(Transaction).filter(Transaction.removed == False).count()
         result = [
-            _transaction_response(txn, account_name)
-            for txn, account_name in rows
+            _transaction_response(txn, account_name, account_type, account_subtype)
+            for txn, account_name, account_type, account_subtype in rows
         ]
         return TransactionsListResponse(transactions=result, total=total)
     except Exception as e:
