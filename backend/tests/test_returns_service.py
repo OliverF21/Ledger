@@ -97,3 +97,27 @@ def test_xirr_matches_known_single_period_return(db_session, account):
 
     rate = build_mwr_xirr(db_session, [account.id], d0, d1)
     assert rate == pytest.approx(10.0, abs=0.5)
+
+
+def test_xirr_flips_sign_of_intermediate_cash_flow(db_session, account):
+    # $1000 start, a $500 deposit mid-period, $1500 end with zero organic
+    # growth beyond the deposit itself. The investor put in 1000 + 500 = 1500
+    # total and got back exactly 1500 -> true XIRR is ~0%, regardless of when
+    # the deposit landed. A sign bug in how the intermediate flow is folded
+    # into the NPV (treating the deposit as money returned to the investor
+    # instead of money the investor put in) would instead solve for a large
+    # spurious positive rate.
+    d0 = date(2025, 1, 1)
+    d_mid = date(2025, 7, 1)
+    d1 = date(2026, 1, 1)
+    _snapshot(db_session, account, d0, 1000)
+    _snapshot(db_session, account, d_mid, 1500)
+    db_session.add(InvestmentTransaction(
+        account_id=account.id, plaid_investment_transaction_id="txn-mid-deposit",
+        name="deposit", type="cash", subtype="deposit", amount=-500, date=d_mid,
+    ))
+    _snapshot(db_session, account, d1, 1500)
+    db_session.commit()
+
+    rate = build_mwr_xirr(db_session, [account.id], d0, d1)
+    assert rate == pytest.approx(0.0, abs=0.5)

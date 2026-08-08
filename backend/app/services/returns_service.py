@@ -142,7 +142,11 @@ def build_mwr_xirr(db: Session, account_ids: list[int], start: date, end: date) 
 
     flows = external_cash_flows(db, account_ids, start, end)
     dated_flows = [CashFlow(date=dates[0], amount=-start_value)]
-    dated_flows += [f for f in flows if dates[0] < f.date < dates[-1]]
+    # external_cash_flows() reports portfolio-perspective signs (positive =
+    # money in). XIRR's NPV needs investor-perspective signs (negative = money
+    # the investor put in, i.e. an outflow) to match start_value/end_value
+    # below, so flip them here.
+    dated_flows += [CashFlow(date=f.date, amount=-f.amount) for f in flows if dates[0] < f.date < dates[-1]]
     dated_flows.append(CashFlow(date=dates[-1], amount=end_value))
 
     if all(f.amount <= 0 for f in dated_flows) or all(f.amount >= 0 for f in dated_flows):
