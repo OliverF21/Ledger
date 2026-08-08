@@ -18,6 +18,10 @@ def test_normalize_shopping_aliases():
     assert normalize_category_key("Shopping") == "GENERAL_MERCHANDISE"
     assert normalize_category_key("General Merchandise") == "GENERAL_MERCHANDISE"
     assert normalize_category_key("FOOD_AND_DRINK") == "FOOD_AND_DRINK"
+    assert normalize_category_key("food_and_drink") == "FOOD_AND_DRINK"
+    assert normalize_category_key("TRAVEL_FLIGHTS") == "TRAVEL_FLIGHTS"
+    # Human labels stay as-is for subcategory rollup buckets.
+    assert normalize_category_key("Dining Out") == "Dining Out"
 
 
 def test_rollup_collapses_legacy_shopping():
