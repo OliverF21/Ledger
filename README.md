@@ -1,4 +1,4 @@
-# Ledger — Your Personal Finance Dashboard
+# Ledger, Your Personal Finance Dashboard
 
 Ledger is a private, self-hosted app that connects to your bank accounts and credit cards, automatically pulls in your transactions, and turns them into clean dashboards for spending, budgets, investments, and net worth. Everything runs **on your own computer** — your bank data never lives on someone else's server.
 
