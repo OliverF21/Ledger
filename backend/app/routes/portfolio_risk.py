@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.errors import log_and_raise
 from app.services.risk_service import build_risk_metrics
+from app.services.optimization_service import build_optimization_suggestion
 
 router = APIRouter(prefix="/investments/risk", tags=["investments"])
 
@@ -41,5 +42,42 @@ async def get_risk_metrics(lookback_days: int = Query(365, ge=30, le=1825), db: 
     try:
         data = build_risk_metrics(db, lookback_days=lookback_days)
         return RiskMetricsResponse(**vars(data))
+    except Exception as e:
+        log_and_raise(e)
+
+
+class AllocationWeight(BaseModel):
+    ticker: str
+    current_weight_pct: float
+    suggested_weight_pct: float
+
+
+class OptimizationResponse(BaseModel):
+    tickers: list[AllocationWeight]
+    current_expected_return_pct: Optional[float]
+    current_volatility_pct: Optional[float]
+    current_sharpe: Optional[float]
+    suggested_expected_return_pct: Optional[float]
+    suggested_volatility_pct: Optional[float]
+    suggested_sharpe: Optional[float]
+    data_points: int
+    insufficient_data: bool
+
+
+@router.get("/optimize", response_model=OptimizationResponse)
+async def get_optimization(lookback_days: int = Query(365, ge=90, le=1825), db: Session = Depends(get_db)):
+    try:
+        data = build_optimization_suggestion(db, lookback_days=lookback_days)
+        return OptimizationResponse(
+            tickers=[AllocationWeight(**vars(w)) for w in data.tickers],
+            current_expected_return_pct=data.current_expected_return_pct,
+            current_volatility_pct=data.current_volatility_pct,
+            current_sharpe=data.current_sharpe,
+            suggested_expected_return_pct=data.suggested_expected_return_pct,
+            suggested_volatility_pct=data.suggested_volatility_pct,
+            suggested_sharpe=data.suggested_sharpe,
+            data_points=data.data_points,
+            insufficient_data=data.insufficient_data,
+        )
     except Exception as e:
         log_and_raise(e)

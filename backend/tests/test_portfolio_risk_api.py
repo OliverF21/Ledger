@@ -63,3 +63,16 @@ def test_get_risk_metrics_respects_lookback_days_param(client):
 def test_get_risk_metrics_rejects_out_of_range_lookback(client):
     resp = client.get("/api/investments/risk/metrics?lookback_days=5")
     assert resp.status_code == 422
+
+
+def test_get_optimization_with_no_holdings_returns_insufficient_data(client):
+    resp = client.get("/api/investments/risk/optimize")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["insufficient_data"] is True
+    assert body["tickers"] == []
+
+
+def test_get_optimization_rejects_out_of_range_lookback(client):
+    resp = client.get("/api/investments/risk/optimize?lookback_days=10")
+    assert resp.status_code == 422
