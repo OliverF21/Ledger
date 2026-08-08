@@ -1,4 +1,4 @@
-# Ledger
+# Ledger, Your Personal Finance Dashboard
 
 A personal finance app that runs on your computer. It links your bank accounts through Plaid, pulls in transactions, and shows spending, budgets, investments, and net worth. Your data stays on your machine.
 
