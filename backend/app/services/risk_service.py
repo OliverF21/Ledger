@@ -87,10 +87,10 @@ def _compute_beta(db: Session, twr_series: list[TWRPoint]) -> float | None:
 
     port_returns = port_values[1:] / port_values[:-1] - 1
     spy_returns = spy_values[1:] / spy_values[:-1] - 1
-    if len(spy_returns) < 2 or np.var(spy_returns) == 0:
+    if len(spy_returns) < 2 or np.var(spy_returns, ddof=1) == 0:
         return None
-    covariance = np.cov(port_returns, spy_returns)[0][1]
-    return float(covariance / np.var(spy_returns))
+    covariance = np.cov(port_returns, spy_returns, ddof=1)[0][1]
+    return float(covariance / np.var(spy_returns, ddof=1))
 
 
 def build_risk_metrics(db: Session, *, lookback_days: int = 365) -> RiskMetricsData:

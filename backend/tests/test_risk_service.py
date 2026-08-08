@@ -87,3 +87,42 @@ def test_beta_uses_market_price_spy_series(db_session, account):
 
     data = build_risk_metrics(db_session, lookback_days=10)
     assert data.beta_vs_spy is not None
+
+
+def test_beta_matches_hand_computed_value(db_session, account):
+    """
+    Pins beta to a known value so a ddof mismatch between np.cov (default
+    ddof=1) and np.var (default ddof=0) in _compute_beta can't slip back in
+    undetected — the prior "is not None" check couldn't catch it.
+
+    Portfolio daily returns are constructed as exactly 2x SPY's daily returns
+    (0.05, -0.02, 0.03, -0.01 for SPY; 0.10, -0.04, 0.06, -0.02 for the
+    portfolio), so true beta = cov(port, spy) / var(spy) = cov(2*spy, spy) /
+    var(spy) = 2*var(spy) / var(spy) = 2.0 exactly, for *any* ddof as long as
+    the same ddof is used for both cov and var. Prices are built by
+    compounding those returns from a start of 100 (rounded to the DB column's
+    decimal precision — 4dp for BalanceSnapshot.balance, 6dp for
+    MarketPrice.close_price), which perturbs the exact ratio by <0.001%.
+
+    With a ddof mismatch (np.cov ddof=1, np.var ddof=0), beta would compute to
+    2.0 * n/(n-1) = 2.0 * 4/3 ~= 2.67 for these 4 return pairs -- verified by
+    direct calculation with the same rounded prices before writing this test.
+    """
+    d0 = date.today() - timedelta(days=4)
+    portfolio_prices = [
+        Decimal("100.0000"), Decimal("110.0000"), Decimal("105.6000"),
+        Decimal("111.9360"), Decimal("109.6973"),
+    ]
+    spy_prices = [
+        Decimal("100.000000"), Decimal("105.000000"), Decimal("102.900000"),
+        Decimal("105.987000"), Decimal("104.927130"),
+    ]
+    for i, (pv, sv) in enumerate(zip(portfolio_prices, spy_prices)):
+        day = d0 + timedelta(days=i)
+        db_session.add(BalanceSnapshot(account_id=account.id, balance=pv, snapshot_date=day))
+        db_session.add(MarketPrice(ticker="SPY", price_date=day, close_price=sv))
+    db_session.commit()
+
+    data = build_risk_metrics(db_session, lookback_days=10)
+
+    assert data.beta_vs_spy == pytest.approx(2.0, abs=0.05)
