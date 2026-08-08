@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.analytics_shared import (
     CATEGORY_COLORS,
     category_key_for_income_rules,
+    category_key_for_spending_rules,
     display_rollup_category,
     is_excluded_from_income,
     is_excluded_from_spending,
@@ -414,9 +415,9 @@ def build_trends(db: Session, months: int = 6) -> TrendsData:
         mk = f"{txn.date.year:04d}-{txn.date.month:02d}"
         amount = float(txn.amount)
         if amount > 0:
-            category = _rollup_category(txn, "Uncategorized")
-            if is_excluded_from_spending(category):
+            if is_excluded_from_spending(_spending_category_key(txn)):
                 continue
+            category = _rollup_category(txn, "Uncategorized")
             bucket = spend_by_month.setdefault(mk, {})
             bucket[category] = bucket.get(category, 0.0) + _effective_amount(txn)
         elif amount < 0:
@@ -546,7 +547,7 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
     spend_pool = [
         txn
         for txn in month_txns
-        if float(txn.amount) > 0 and not is_excluded_from_spending(_rollup_category(txn, "Uncategorized"))
+        if float(txn.amount) > 0 and not is_excluded_from_spending(_spending_category_key(txn))
     ]
 
     income_buckets: dict[str, float] = {}
@@ -781,9 +782,9 @@ def _aggregate_spending(
         if float(txn.amount) <= 0:
             continue
 
-        category = _rollup_category(txn, "Uncategorized")
-        if is_excluded_from_spending(category):
+        if is_excluded_from_spending(_spending_category_key(txn)):
             continue
+        category = _rollup_category(txn, "Uncategorized")
 
         bucket = buckets.setdefault(category, {"value": 0.0, "transaction_count": 0})
         bucket["value"] += _effective_amount(txn)
@@ -871,6 +872,14 @@ def _display_rollup_category(txn: Transaction, default: str) -> str:
 
 def _income_category_key(txn: Transaction) -> str:
     return category_key_for_income_rules(
+        txn.category_user,
+        txn.category_plaid,
+        txn.category_plaid_detailed,
+    )
+
+
+def _spending_category_key(txn: Transaction) -> str:
+    return category_key_for_spending_rules(
         txn.category_user,
         txn.category_plaid,
         txn.category_plaid_detailed,

@@ -22,7 +22,11 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.analytics_shared import is_excluded_from_spending, month_bounds, rollup_category_key
+from app.analytics_shared import (
+    category_key_for_spending_rules,
+    is_excluded_from_spending,
+    month_bounds,
+)
 from app.email_sender import get_resend_api_key, send_email
 from app.models import Transaction, User
 from app.routes.budgets import get_budget_items
@@ -128,7 +132,7 @@ def _spend_in_window(db: Session, start: date, end: date) -> tuple[float, dict[s
     by_category: dict[str, float] = {}
     for t in txns:
         if is_excluded_from_spending(
-            rollup_category_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
+            category_key_for_spending_rules(t.category_user, t.category_plaid, t.category_plaid_detailed)
         ):
             continue
         eff = float(t.amount) * float(t.user_split_pct or 1)

@@ -1,6 +1,7 @@
 from app.analytics_shared import (
     budget_parent_key,
     category_key_for_income_rules,
+    category_key_for_spending_rules,
     display_rollup_category,
     is_excluded_from_income,
     is_excluded_from_spending,
@@ -68,6 +69,28 @@ def test_includes_investment_transfer_out_in_spending():
     assert not is_excluded_from_spending("TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS")
     assert not is_excluded_from_spending("TRANSFER_OUT.INVESTMENT_AND_RETIREMENT_FUNDS")
     assert not is_excluded_from_spending("Investment / Retirement Transfer Out")
+
+
+def test_spending_rules_prefer_detailed_transfer_key():
+    """Cash flow must not roll TRANSFER_OUT_INVESTMENT_* up before exclusion."""
+    detailed = category_key_for_spending_rules(
+        None, "TRANSFER_OUT", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"
+    )
+    assert detailed == "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"
+    assert not is_excluded_from_spending(detailed)
+    # Primary alone is still excluded.
+    assert is_excluded_from_spending(
+        category_key_for_spending_rules(None, "TRANSFER_OUT", None)
+    )
+
+
+def test_display_rollup_buckets_investment_transfers():
+    assert display_rollup_category(
+        None, "TRANSFER_OUT", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"
+    ) == "Investments"
+    assert display_rollup_category(
+        "Investment / Retirement Transfer Out", "TRANSFER_OUT", None
+    ) == "Investments"
 
 
 def test_excludes_loan_payment_subcategories_from_income():
