@@ -429,7 +429,7 @@ export default function Investments() {
               <div className="text-[15px] font-bold tabular-nums mt-0.5">{fmtPct(risk.volatility_pct)}</div>
             </div>
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Sharpe ratio</div>
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Portfolio Sharpe</div>
               <div className="text-[15px] font-bold tabular-nums mt-0.5">{risk.sharpe_ratio === null ? '—' : risk.sharpe_ratio.toFixed(2)}</div>
             </div>
             <div className="glass-chip px-3 py-2">
@@ -467,32 +467,39 @@ export default function Investments() {
             </div>
           </div>
 
-          {!optimizationLoading && optimization && !optimization.insufficient_data && (
-            <div className="border-t border-ledger-border-subtle pt-3">
-              <div className="text-[12px] font-semibold mb-2">Suggested allocation (max Sharpe)</div>
-              <div className="text-[11px] text-ledger-text-faint mb-2">
-                Current Sharpe {optimization.current_sharpe?.toFixed(2) ?? '—'} · Suggested Sharpe {optimization.suggested_sharpe?.toFixed(2) ?? '—'}
-              </div>
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="text-left text-ledger-text-faint">
-                    <th className="font-medium pb-1.5">Ticker</th>
-                    <th className="font-medium pb-1.5 text-right">Current</th>
-                    <th className="font-medium pb-1.5 text-right">Suggested</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {optimization.tickers.map(t => (
-                    <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
-                      <td className="py-1.5 font-medium">{t.ticker}</td>
-                      <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
-                      <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="text-[10px] text-ledger-text-faint">
+            Portfolio Sharpe is time-weighted return on total account equity (includes cash drag). It won't match the "Current Sharpe" below, which covers held tickers only.
+          </div>
+        </div>
+      )}
+
+      {/* Suggested allocation — depends only on Holding + MarketPrice data (populated
+          after the first nightly sync), not on the BalanceSnapshot history the risk
+          card above needs, so it's gated independently rather than nested inside it. */}
+      {!optimizationLoading && optimization && !optimization.insufficient_data && (
+        <div className="glass-card p-4">
+          <div className="text-[12px] font-semibold mb-2">Suggested allocation (max Sharpe)</div>
+          <div className="text-[11px] text-ledger-text-faint mb-2">
+            Current Sharpe (holdings only) {optimization.current_sharpe?.toFixed(2) ?? '—'} · Suggested Sharpe (holdings only) {optimization.suggested_sharpe?.toFixed(2) ?? '—'}
+          </div>
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-left text-ledger-text-faint">
+                <th className="font-medium pb-1.5">Ticker</th>
+                <th className="font-medium pb-1.5 text-right">Current</th>
+                <th className="font-medium pb-1.5 text-right">Suggested</th>
+              </tr>
+            </thead>
+            <tbody>
+              {optimization.tickers.map(t => (
+                <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
+                  <td className="py-1.5 font-medium">{t.ticker}</td>
+                  <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
+                  <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
