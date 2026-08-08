@@ -146,7 +146,9 @@ class Transaction(Base):
     category_plaid_detailed = Column(String(255), nullable=True)  # Plaid PFC detailed, e.g. FOOD_AND_DRINK_RESTAURANTS
     merchant_logo_url = Column(String(512), nullable=True)  # 100x100 merchant logo from Plaid
     payment_channel = Column(String(20), nullable=True)  # online | in store | other
-    enrichment_json = Column(Text, nullable=True)  # counterparties, location, confidence, category icon
+    original_description = Column(String(512), nullable=True)  # bank memo when Plaid provides it
+    transaction_code = Column(String(64), nullable=True)  # Plaid transaction_code (transfer, purchase, …)
+    enrichment_json = Column(Text, nullable=True)  # counterparties, payment_meta, location, confidence, icons
     category_user = Column(String(255), nullable=True)  # User-defined category override
     manual_override = Column(Boolean, default=False)  # True if user manually changed category
     pending = Column(Boolean, default=False)  # True if transaction is still pending
