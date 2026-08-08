@@ -7,6 +7,8 @@ import {
   useInvestmentsHoldings,
   useInvestmentsHistory,
   useInvestmentTransactions,
+  useInvestmentsRisk,
+  useInvestmentsOptimization,
   type AllocationSlice,
 } from '../hooks/useInvestments'
 
@@ -14,6 +16,11 @@ import { alphaColor, mixHex } from '../utils/color'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtPct(n: number | null): string {
+  if (n === null) return '—'
+  return `${n >= 0 ? '' : ''}${n.toFixed(2)}%`
 }
 
 function formatSecurityType(t: string | null): string {
@@ -63,6 +70,8 @@ export default function Investments() {
   const { transactions, loading: txnsLoading } = useInvestmentTransactions(6)
   const [historyRange, setHistoryRange] = useState<'6M' | '1Y'>('6M')
   const { data: history, loading: historyLoading } = useInvestmentsHistory(historyRange === '6M' ? 6 : 12)
+  const { data: risk, loading: riskLoading } = useInvestmentsRisk(365)
+  const { data: optimization, loading: optimizationLoading } = useInvestmentsOptimization(365)
   const [allocationView, setAllocationView] = useState<AllocationView>('security')
   const [activeSlice, setActiveSlice] = useState<number | null>(null)
   const [activityExpanded, setActivityExpanded] = useState(false)
@@ -401,6 +410,91 @@ export default function Investments() {
           )}
         </div>
       </div>
+
+      {/* Risk & performance */}
+      {!riskLoading && risk && risk.data_points >= 5 && (
+        <div className="glass-card p-4">
+          <div className="flex items-start justify-between mb-2.5">
+            <div>
+              <div className="text-[13px] font-semibold">Risk & performance</div>
+              <div className="text-[11px] text-ledger-text-faint mt-[2px]">
+                Trailing {risk.lookback_days} days · time-weighted return basis · risk-free rate {risk.risk_free_rate_pct.toFixed(2)}%
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 mb-3">
+            <div className="glass-chip px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Volatility</div>
+              <div className="text-[15px] font-bold tabular-nums mt-0.5">{fmtPct(risk.volatility_pct)}</div>
+            </div>
+            <div className="glass-chip px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Sharpe ratio</div>
+              <div className="text-[15px] font-bold tabular-nums mt-0.5">{risk.sharpe_ratio === null ? '—' : risk.sharpe_ratio.toFixed(2)}</div>
+            </div>
+            <div className="glass-chip px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Max drawdown</div>
+              <div className={`text-[15px] font-bold tabular-nums mt-0.5 ${risk.max_drawdown_pct !== null && risk.max_drawdown_pct < 0 ? 'text-ledger-negative' : ''}`}>
+                {fmtPct(risk.max_drawdown_pct)}
+              </div>
+            </div>
+            <div className="glass-chip px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">VaR (95%, 1d)</div>
+              <div className="text-[15px] font-bold tabular-nums mt-0.5">{fmtPct(risk.var_95_pct)}</div>
+            </div>
+            <div className="glass-chip px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Beta vs. SPY</div>
+              <div className="text-[15px] font-bold tabular-nums mt-0.5">{risk.beta_vs_spy === null ? '—' : risk.beta_vs_spy.toFixed(2)}</div>
+            </div>
+            <div className="glass-chip px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">CAGR</div>
+              <div className={`text-[15px] font-bold tabular-nums mt-0.5 ${risk.cagr_pct !== null ? (risk.cagr_pct >= 0 ? 'text-ledger-positive' : 'text-ledger-negative') : ''}`}>
+                {fmtPct(risk.cagr_pct)}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 mb-3">
+            <div className="glass-chip px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return</div>
+              <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.twr_pct)}</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance, excludes deposit/withdrawal timing</div>
+            </div>
+            <div className="glass-chip px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR)</div>
+              <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.mwr_pct)}</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, includes your deposit/withdrawal timing</div>
+            </div>
+          </div>
+
+          {!optimizationLoading && optimization && !optimization.insufficient_data && (
+            <div className="border-t border-ledger-border-subtle pt-3">
+              <div className="text-[12px] font-semibold mb-2">Suggested allocation (max Sharpe)</div>
+              <div className="text-[11px] text-ledger-text-faint mb-2">
+                Current Sharpe {optimization.current_sharpe?.toFixed(2) ?? '—'} · Suggested Sharpe {optimization.suggested_sharpe?.toFixed(2) ?? '—'}
+              </div>
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="text-left text-ledger-text-faint">
+                    <th className="font-medium pb-1.5">Ticker</th>
+                    <th className="font-medium pb-1.5 text-right">Current</th>
+                    <th className="font-medium pb-1.5 text-right">Suggested</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {optimization.tickers.map(t => (
+                    <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
+                      <td className="py-1.5 font-medium">{t.ticker}</td>
+                      <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
+                      <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Per-account holdings */}
       {!holdingsLoading && accounts.map(account => (
