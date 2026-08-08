@@ -151,12 +151,17 @@ def is_excluded_from_spending(category: str | None) -> bool:
     return _matches_excluded_primary(category or "", EXCLUDED_FROM_SPENDING)
 
 
-def category_key_for_income_rules(
+def most_specific_category_key(
     category_user: str | None,
     category_plaid: str | None,
     category_plaid_detailed: str | None,
 ) -> str:
-    """Most specific category for income rules (needs PFC detail to split transfer subtypes)."""
+    """Prefer user override, then Plaid detailed, then primary.
+
+    Exclusion allowlists (investment transfer-out, deposit transfer-in) need the
+    detailed key. Rolling up to the primary first would make every TRANSFER_OUT_*
+    look like TRANSFER_OUT and defeat the allowlist.
+    """
     if category_user:
         return normalize_category_key(category_user)
     if category_plaid_detailed:
@@ -164,6 +169,24 @@ def category_key_for_income_rules(
     if category_plaid:
         return normalize_category_key(category_plaid)
     return ""
+
+
+def category_key_for_income_rules(
+    category_user: str | None,
+    category_plaid: str | None,
+    category_plaid_detailed: str | None,
+) -> str:
+    """Most specific category for income rules (needs PFC detail to split transfer subtypes)."""
+    return most_specific_category_key(category_user, category_plaid, category_plaid_detailed)
+
+
+def category_key_for_spending_rules(
+    category_user: str | None,
+    category_plaid: str | None,
+    category_plaid_detailed: str | None,
+) -> str:
+    """Most specific category for spending exclusion (needs detail to greenlight investments)."""
+    return most_specific_category_key(category_user, category_plaid, category_plaid_detailed)
 
 
 def is_excluded_from_income(category: str | None) -> bool:
@@ -320,7 +343,14 @@ def display_rollup_category(
     subcategory's primary so charts show one umbrella bucket; truly custom
     labels (e.g. "Paycheck") that don't map to the PFC taxonomy have no
     primary to roll up to, so they're kept as-is.
+
+    Investment / retirement funding transfers are kept as their own "Investments"
+    sink instead of collapsing into TRANSFER_OUT (which is otherwise excluded).
     """
+    for raw in (category_user, category_plaid_detailed, category_plaid):
+        if raw and _exclusion_key(raw) in TRANSFER_OUT_SPENDING_SUBCATEGORIES:
+            return "Investments"
+
     category = rollup_category_key(category_user, category_plaid, category_plaid_detailed, default)
     if not category or category == default:
         return default

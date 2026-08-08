@@ -23,11 +23,11 @@ from app.analytics_shared import (
     CATEGORY_COLORS,
     budget_parent_key,
     category_key_for_income_rules,
+    category_key_for_spending_rules,
     is_excluded_from_income,
     is_excluded_from_spending,
     month_bounds,
     normalize_category_key,
-    rollup_category_key,
 )
 from app.budgets_db import Budget, get_budgets_db
 from app.database import get_db
@@ -139,7 +139,7 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
 
     for t in txns:
         if is_excluded_from_spending(
-            rollup_category_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
+            category_key_for_spending_rules(t.category_user, t.category_plaid, t.category_plaid_detailed)
         ):
             continue
         eff = float(t.amount) * float(t.user_split_pct or 1)
@@ -406,14 +406,15 @@ async def suggest_budgets(db: Session = Depends(get_db)):
         income_total = 0.0
         parent_spend: dict[str, float] = {}
         for t in txns:
-            category = rollup_category_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
             income_category = category_key_for_income_rules(
                 t.category_user, t.category_plaid, t.category_plaid_detailed
             )
             eff = float(t.amount) * float(t.user_split_pct or 1)
             if eff < 0 and not is_excluded_from_income(income_category):
                 income_total += abs(eff)
-            elif eff > 0 and not is_excluded_from_spending(category):
+            elif eff > 0 and not is_excluded_from_spending(
+                category_key_for_spending_rules(t.category_user, t.category_plaid, t.category_plaid_detailed)
+            ):
                 parent = budget_parent_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
                 if parent:
                     parent_spend[parent] = parent_spend.get(parent, 0.0) + eff
