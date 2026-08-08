@@ -151,6 +151,15 @@ def is_excluded_from_spending(category: str | None) -> bool:
     return _matches_excluded_primary(category or "", EXCLUDED_FROM_SPENDING)
 
 
+def is_excluded_from_budget_spending(category: str | None) -> bool:
+    """Budget progress excludes loan/CC payments and all transfers.
+
+    Unlike cash-flow spending, investment/retirement funding is also excluded —
+    budgets track consumptive spend, not brokerage deposits.
+    """
+    return _matches_excluded_primary(category or "", EXCLUDED_FROM_SPENDING)
+
+
 def most_specific_category_key(
     category_user: str | None,
     category_plaid: str | None,

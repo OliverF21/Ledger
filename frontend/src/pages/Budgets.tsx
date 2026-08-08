@@ -11,6 +11,7 @@ interface BudgetItem {
   limit: number
   spent: number
   color: string
+  virtual?: boolean
 }
 
 interface BudgetsData {
@@ -648,43 +649,48 @@ export default function Budgets() {
       ) : (
         <div className="grid grid-cols-3 gap-[18px]">
           {budgets.map((budget) => {
-            const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : 0
-            const isOver = budget.spent > budget.limit
+            const isVirtual = Boolean(budget.virtual)
+            const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (isVirtual ? 100 : 0)
+            const isOver = !isVirtual && budget.spent > budget.limit
 
             return (
               <div key={budget.id} className="glass-card p-[18px]">
                 <div className="flex items-center gap-[10px] mb-[12px]">
                   <span className="w-[10px] h-[10px] rounded-[3px] flex-shrink-0" style={{ backgroundColor: budget.color }} />
                   <span className="text-[13px] font-semibold flex-1 truncate">{formatCategory(budget.category)}</span>
-                  {isOver
-                    ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(231,112,95,0.1)] shrink-0">Over</span>
-                    : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(78,195,138,0.1)] shrink-0">On track</span>
+                  {isVirtual
+                    ? <span className="text-ledger-text-secondary text-[11px] px-[6px] py-[2px] rounded-[4px] bg-ledger-inset shrink-0">Unbudgeted</span>
+                    : isOver
+                      ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(231,112,95,0.1)] shrink-0">Over</span>
+                      : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(78,195,138,0.1)] shrink-0">On track</span>
                   }
-                  <div className="flex items-center gap-[6px] shrink-0">
-                    <button
-                      type="button"
-                      title="Edit budget"
-                      onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
-                      className="p-[4px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
-                    >
-                      <Pencil className="w-[13px] h-[13px]" strokeWidth={2} />
-                    </button>
-                    <button
-                      type="button"
-                      title="Remove budget"
-                      onClick={() => {
-                        setDeleteError(null)
-                        setConfirmingDeleteId(prev => prev === budget.id ? null : budget.id)
-                      }}
-                      disabled={deletingId === budget.id}
-                      className="p-[4px] text-ledger-text-faint hover:text-ledger-negative transition-colors disabled:opacity-40"
-                    >
-                      <Trash2 className="w-[13px] h-[13px]" strokeWidth={2} />
-                    </button>
-                  </div>
+                  {!isVirtual && (
+                    <div className="flex items-center gap-[6px] shrink-0">
+                      <button
+                        type="button"
+                        title="Edit budget"
+                        onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
+                        className="p-[4px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
+                      >
+                        <Pencil className="w-[13px] h-[13px]" strokeWidth={2} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Remove budget"
+                        onClick={() => {
+                          setDeleteError(null)
+                          setConfirmingDeleteId(prev => prev === budget.id ? null : budget.id)
+                        }}
+                        disabled={deletingId === budget.id}
+                        className="p-[4px] text-ledger-text-faint hover:text-ledger-negative transition-colors disabled:opacity-40"
+                      >
+                        <Trash2 className="w-[13px] h-[13px]" strokeWidth={2} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {confirmingDeleteId === budget.id && (
+                {!isVirtual && confirmingDeleteId === budget.id && (
                   <div className="flex items-center justify-between gap-[10px] mb-[12px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
                     <span className="text-[12px] text-ledger-text-secondary">Remove this budget?</span>
                     <div className="flex items-center gap-[8px] shrink-0">
@@ -708,7 +714,13 @@ export default function Budgets() {
                 )}
 
                 <div className="text-[14px] font-bold mb-[8px] tabular-nums">
-                  ${fmt(budget.spent)} <span className="text-ledger-text-faint font-normal">/ ${fmt(budget.limit)}</span>
+                  {isVirtual ? (
+                    <>${fmt(budget.spent)}</>
+                  ) : (
+                    <>
+                      ${fmt(budget.spent)} <span className="text-ledger-text-faint font-normal">/ ${fmt(budget.limit)}</span>
+                    </>
+                  )}
                 </div>
 
                 <div className="h-[7px] rounded-[4px] bg-ledger-track overflow-hidden mb-[10px]">
@@ -719,9 +731,11 @@ export default function Budgets() {
                 </div>
 
                 <div className="text-[11.5px] text-ledger-text-faint">
-                  {isOver
-                    ? `$${fmt(budget.spent - budget.limit)} over budget`
-                    : `$${fmt(budget.limit - budget.spent)} remaining`}
+                  {isVirtual
+                    ? 'Outside tracked categories'
+                    : isOver
+                      ? `$${fmt(budget.spent - budget.limit)} over budget`
+                      : `$${fmt(budget.limit - budget.spent)} remaining`}
                 </div>
               </div>
             )

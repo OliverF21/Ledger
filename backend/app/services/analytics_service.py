@@ -151,6 +151,7 @@ class BudgetVsActualItem:
     percent_used: float
     over_budget: bool
     color: str
+    virtual: bool = False
 
 
 @dataclass(frozen=True)
@@ -647,12 +648,13 @@ def build_budget_vs_actual(ldb: Session, bdb: Session, month: str | None = None)
             spent=round(item.spent, 2),
             remaining=round(item.limit - item.spent, 2),
             percent_used=round((item.spent / item.limit * 100) if item.limit > 0 else 0.0, 1),
-            over_budget=item.spent > item.limit,
+            over_budget=(not item.virtual) and item.spent > item.limit,
             color=item.color,
+            virtual=item.virtual,
         )
         for item in items
     ]
-    total_limit = round(sum(item.limit for item in budgets), 2)
+    total_limit = round(sum(item.limit for item in budgets if not item.virtual), 2)
     total_spent = round(sum(item.spent for item in budgets), 2)
     return BudgetVsActualData(
         month=month_key,

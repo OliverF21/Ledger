@@ -120,6 +120,7 @@ interface BudgetItem {
   limit: number
   spent: number
   color: string
+  virtual?: boolean
 }
 
 interface BudgetsData {
@@ -875,14 +876,15 @@ export default function Overview({ onNavigate }: OverviewProps) {
 
               <div className="flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto justify-evenly">
                 {sortedBudgetItems.map(b => {
-                  const pct = b.limit > 0 ? (b.spent / b.limit) * 100 : 0
-                  const over = b.spent > b.limit
+                  const isVirtual = Boolean(b.virtual)
+                  const pct = b.limit > 0 ? (b.spent / b.limit) * 100 : (isVirtual ? 100 : 0)
+                  const over = !isVirtual && b.spent > b.limit
                   return (
                     <div key={b.id}>
                       <div className="flex justify-between text-[11.5px] mb-1 leading-tight">
                         <span className="truncate pr-2">{formatCategory(b.category)}</span>
                         <span className="tabular-nums text-ledger-text-muted flex-shrink-0 text-[11px]">
-                          ${fmt(b.spent)} / ${fmt(b.limit)}
+                          {isVirtual ? `$${fmt(b.spent)}` : `$${fmt(b.spent)} / $${fmt(b.limit)}`}
                         </span>
                       </div>
                       <div className="h-[5px] rounded-[3px] bg-ledger-track overflow-hidden">
