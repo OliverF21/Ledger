@@ -35,6 +35,9 @@ class RiskMetricsResponse(BaseModel):
     mwr_pct: Optional[float]
     risk_free_rate_pct: float
     data_points: int
+    series_start: Optional[str] = None
+    series_end: Optional[str] = None
+    effective_days: Optional[int] = None
 
 
 @router.get("/metrics", response_model=RiskMetricsResponse)

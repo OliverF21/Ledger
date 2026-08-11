@@ -418,7 +418,10 @@ export default function Investments() {
             <div>
               <div className="text-[13px] font-semibold">Risk & performance</div>
               <div className="text-[11px] text-ledger-text-faint mt-[2px]">
-                Trailing {risk.lookback_days} days · time-weighted return basis · risk-free rate {risk.risk_free_rate_pct.toFixed(2)}%
+                {risk.effective_days != null && risk.effective_days < risk.lookback_days
+                  ? `Based on ${risk.effective_days} days of history (requested ${risk.lookback_days})`
+                  : `Trailing ${risk.lookback_days} days`}
+                {' · '}time-weighted return basis · risk-free rate {risk.risk_free_rate_pct.toFixed(2)}%
               </div>
             </div>
           </div>
@@ -456,19 +459,26 @@ export default function Investments() {
 
           <div className="grid grid-cols-2 gap-2.5 mb-3">
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return</div>
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">
+                Time-weighted return{risk.effective_days != null ? ` (${risk.effective_days}d)` : ''}
+              </div>
               <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.twr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance, excludes deposit/withdrawal timing</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">
+                Period strategy return — excludes deposit/withdrawal timing. CAGR above is this annualized.
+              </div>
             </div>
             <div className="glass-chip px-3 py-2">
               <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR)</div>
               <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.mwr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, includes your deposit/withdrawal timing</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">
+                Annualized — what you earned, including deposit/withdrawal timing
+              </div>
             </div>
           </div>
 
           <div className="text-[10px] text-ledger-text-faint">
-            Portfolio Sharpe is time-weighted return on total account equity (includes cash drag). It won't match the "Current Sharpe" below, which covers held tickers only.
+            Portfolio Sharpe uses annualized time-weighted return (CAGR) on total account equity, including cash drag.
+            It won't match "Current Sharpe" below, which covers held tickers only. Beta needs SPY price history from the nightly market sync.
           </div>
         </div>
       )}

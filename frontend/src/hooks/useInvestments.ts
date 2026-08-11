@@ -154,6 +154,9 @@ export interface RiskMetrics {
   mwr_pct: number | null
   risk_free_rate_pct: number
   data_points: number
+  series_start?: string | null
+  series_end?: string | null
+  effective_days?: number | null
 }
 
 export function useInvestmentsRisk(lookbackDays: number = 365) {

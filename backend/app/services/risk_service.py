@@ -32,6 +32,10 @@ MIN_DATA_POINTS = 5
 # data before surfacing them. Max drawdown/duration/CAGR/TWR/MWR degrade more
 # gracefully with less data and stay gated on the lower MIN_DATA_POINTS floor.
 MIN_ANNUALIZED_METRICS_POINTS = 21
+# CAGR / Sharpe annualize a short observed span into a full-year rate. Extrapolating
+# ~a month of history into "13% CAGR" is misleading — require ~a quarter of calendar
+# coverage before showing annualized return tiles.
+MIN_CAGR_CALENDAR_DAYS = 90
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,9 @@ class RiskMetricsData:
     mwr_pct: float | None
     risk_free_rate_pct: float
     data_points: int
+    series_start: str | None = None
+    series_end: str | None = None
+    effective_days: int | None = None
 
 
 def _daily_returns(growth_index: list[float]) -> np.ndarray:
@@ -103,6 +110,37 @@ def _compute_beta(db: Session, twr_series: list[TWRPoint]) -> float | None:
     return float(covariance / np.var(spy_returns, ddof=1))
 
 
+def _empty_metrics(
+    *,
+    lookback_days: int,
+    as_of: date,
+    risk_free_rate_pct: float,
+    data_points: int,
+    series_start: date | None = None,
+    series_end: date | None = None,
+    effective_days: int | None = None,
+) -> RiskMetricsData:
+    return RiskMetricsData(
+        lookback_days=lookback_days,
+        as_of=as_of.isoformat(),
+        volatility_pct=None,
+        sharpe_ratio=None,
+        var_95_pct=None,
+        var_99_pct=None,
+        max_drawdown_pct=None,
+        drawdown_duration_days=None,
+        beta_vs_spy=None,
+        cagr_pct=None,
+        twr_pct=None,
+        mwr_pct=None,
+        risk_free_rate_pct=risk_free_rate_pct,
+        data_points=data_points,
+        series_start=series_start.isoformat() if series_start else None,
+        series_end=series_end.isoformat() if series_end else None,
+        effective_days=effective_days,
+    )
+
+
 def build_risk_metrics(db: Session, *, lookback_days: int = 365) -> RiskMetricsData:
     lookback_days = max(30, min(int(lookback_days), 1825))
     end = date.today()
@@ -115,44 +153,59 @@ def build_risk_metrics(db: Session, *, lookback_days: int = 365) -> RiskMetricsD
     risk_free_rate_pct = get_cached_risk_free_rate(db)
 
     if len(twr_series) < MIN_DATA_POINTS:
-        return RiskMetricsData(
+        return _empty_metrics(
             lookback_days=lookback_days,
-            as_of=end.isoformat(),
-            volatility_pct=None, sharpe_ratio=None, var_95_pct=None, var_99_pct=None,
-            max_drawdown_pct=None, drawdown_duration_days=None, beta_vs_spy=None,
-            cagr_pct=None, twr_pct=None, mwr_pct=None,
-            risk_free_rate_pct=risk_free_rate_pct, data_points=len(twr_series),
+            as_of=end,
+            risk_free_rate_pct=risk_free_rate_pct,
+            data_points=len(twr_series),
         )
+
+    series_start = twr_series[0].date
+    series_end = twr_series[-1].date
+    effective_days = (series_end - series_start).days
 
     growth_index = [p.growth_index for p in twr_series]
     daily_returns = _daily_returns(growth_index)
 
     if len(twr_series) >= MIN_ANNUALIZED_METRICS_POINTS:
         volatility = float(np.std(daily_returns, ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR)) * 100
-        mean_daily = float(np.mean(daily_returns))
-        annualized_return = mean_daily * TRADING_DAYS_PER_YEAR
-        sharpe = (
-            (annualized_return - risk_free_rate_pct / 100) / (volatility / 100)
-            if volatility > 0 else None
-        )
         var_95 = float(-np.percentile(daily_returns, 5)) * 100
         var_99 = float(-np.percentile(daily_returns, 1)) * 100
     else:
         volatility = None
-        sharpe = None
         var_95 = None
         var_99 = None
+
     max_dd_pct, dd_duration = _max_drawdown(twr_series)
     beta = _compute_beta(db, twr_series)
-    cagr = build_cagr(twr_series)
     twr_pct = (growth_index[-1] / growth_index[0] - 1) * 100 if growth_index[0] else None
     mwr_pct = build_mwr_xirr(db, account_ids, start, end)
+
+    # CAGR is annualized TWR over the *observed* span. Withholding it (and Sharpe)
+    # until we have enough calendar coverage avoids "13% CAGR" from ~a month of data.
+    cagr = build_cagr(twr_series) if effective_days >= MIN_CAGR_CALENDAR_DAYS else None
+
+    # Sharpe must use the same annualized return the CAGR tile shows (geometric
+    # TWR), not arithmetic mean×365 — that produced positive Sharpes while
+    # (TWR − rf) / vol was negative.
+    sharpe = None
+    if (
+        cagr is not None
+        and volatility is not None
+        and volatility > 1e-9
+        and len(twr_series) >= MIN_ANNUALIZED_METRICS_POINTS
+    ):
+        sharpe = (cagr / 100 - risk_free_rate_pct / 100) / (volatility / 100)
 
     return RiskMetricsData(
         lookback_days=lookback_days,
         as_of=end.isoformat(),
         volatility_pct=round(volatility, 2) if volatility is not None else None,
-        sharpe_ratio=round(sharpe, 2) if sharpe is not None else None,
+        sharpe_ratio=(
+            round(sharpe, 2)
+            if sharpe is not None and volatility is not None and round(volatility, 2) > 0
+            else None
+        ),
         var_95_pct=round(var_95, 2) if var_95 is not None else None,
         var_99_pct=round(var_99, 2) if var_99 is not None else None,
         max_drawdown_pct=round(max_dd_pct, 2) if max_dd_pct is not None else None,
@@ -163,4 +216,7 @@ def build_risk_metrics(db: Session, *, lookback_days: int = 365) -> RiskMetricsD
         mwr_pct=round(mwr_pct, 2) if mwr_pct is not None else None,
         risk_free_rate_pct=risk_free_rate_pct,
         data_points=len(twr_series),
+        series_start=series_start.isoformat(),
+        series_end=series_end.isoformat(),
+        effective_days=effective_days,
     )
