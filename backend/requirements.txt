@@ -18,6 +18,10 @@ APScheduler==3.10.4
 # Utilities
 python-dotenv==1.1.0  # fastmcp 3.4.2 requires >=1.1.0
 requests==2.31.0
+yfinance>=0.2.40  # unofficial Yahoo Finance wrapper for historical daily closes; see app/price_provider.py
+pandas>=2.0  # yfinance's return type; pinned explicitly since price_provider tests build DataFrames directly
+scipy>=1.11  # XIRR root-finding (brentq) in returns_service.py; max-Sharpe optimization in optimization_service.py
+numpy>=1.26  # volatility/Sharpe/VaR/drawdown/beta math in risk_service.py; mean-variance inputs in optimization_service.py
 fastmcp==3.4.2
 
 # Development & Testing

@@ -18,6 +18,10 @@ hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("app")            # routes/services/etc.
 hiddenimports += collect_submodules("sqlalchemy.dialects.sqlite")
 hiddenimports += collect_submodules("apscheduler")
+hiddenimports += collect_submodules("yfinance")
+hiddenimports += collect_submodules("curl_cffi")
+hiddenimports += collect_submodules("scipy")
+hiddenimports += collect_submodules("numpy")
 hiddenimports += [
     "uvicorn.logging",
     "uvicorn.loops.auto",

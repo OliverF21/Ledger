@@ -138,3 +138,70 @@ export function useInvestmentTransactions(months: number) {
 
   return { transactions, loading }
 }
+
+export interface RiskMetrics {
+  lookback_days: number
+  as_of: string
+  volatility_pct: number | null
+  sharpe_ratio: number | null
+  var_95_pct: number | null
+  var_99_pct: number | null
+  max_drawdown_pct: number | null
+  drawdown_duration_days: number | null
+  beta_vs_spy: number | null
+  cagr_pct: number | null
+  twr_pct: number | null
+  mwr_pct: number | null
+  risk_free_rate_pct: number
+  data_points: number
+}
+
+export function useInvestmentsRisk(lookbackDays: number = 365) {
+  const [data, setData] = useState<RiskMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    apiFetch(`/api/investments/risk/metrics?lookback_days=${lookbackDays}`)
+      .then(r => r.json())
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [lookbackDays])
+
+  return { data, loading }
+}
+
+export interface AllocationWeight {
+  ticker: string
+  current_weight_pct: number
+  suggested_weight_pct: number
+}
+
+export interface OptimizationSuggestion {
+  tickers: AllocationWeight[]
+  current_expected_return_pct: number | null
+  current_volatility_pct: number | null
+  current_sharpe: number | null
+  suggested_expected_return_pct: number | null
+  suggested_volatility_pct: number | null
+  suggested_sharpe: number | null
+  data_points: number
+  insufficient_data: boolean
+}
+
+export function useInvestmentsOptimization(lookbackDays: number = 365) {
+  const [data, setData] = useState<OptimizationSuggestion | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    apiFetch(`/api/investments/risk/optimize?lookback_days=${lookbackDays}`)
+      .then(r => r.json())
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [lookbackDays])
+
+  return { data, loading }
+}

@@ -299,6 +299,25 @@ class Security(Base):
     investment_transactions = relationship("InvestmentTransaction", back_populates="security")
 
 
+class MarketPrice(Base):
+    """
+    Daily close price for a ticker symbol, backfilled from an external market-data
+    provider (yfinance — see app/price_provider.py). Plaid only ever gives the
+    latest close (Security.close_price), so this table is what makes historical
+    return/risk calculations (volatility, Sharpe, VaR, drawdown, beta) possible.
+    Keyed by ticker string rather than security_id: benchmark tickers (SPY,
+    BTC-USD) have no corresponding Security row since nothing holds them.
+    """
+    __tablename__ = "market_prices"
+    __table_args__ = (UniqueConstraint("ticker", "price_date", name="uq_market_price_ticker_date"),)
+
+    id = Column(Integer, primary_key=True)
+    ticker = Column(String(32), nullable=False)
+    price_date = Column(Date, nullable=False)
+    close_price = Column(Numeric(19, 6), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Holding(Base):
     """User's position in a security within an investment account."""
     __tablename__ = "holdings"
