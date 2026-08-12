@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+from urllib.parse import quote
 
 from cryptography.fernet import Fernet
 
@@ -31,6 +32,12 @@ def _desktop_enabled() -> bool:
 def _use_appdata_enabled() -> bool:
     """Dev: point source uvicorn at the desktop Application Support DBs."""
     return _env_flag("LEDGER_USE_APPDATA")
+
+
+def _sqlite_url(db_path) -> str:
+    """Build a sqlite URL that survives spaces (Application Support)."""
+    resolved = db_path.resolve()
+    return f"sqlite:///{quote(resolved.as_posix(), safe='/')}"
 
 
 def _load_config() -> dict:
@@ -57,6 +64,11 @@ def _setenv_default(key: str, value: str) -> None:
     """Set env only if not already present (preset env wins)."""
     if not os.environ.get(key):
         os.environ[key] = value
+
+
+def _setenv_force(key: str, value: str) -> None:
+    """Always set — used by LEDGER_USE_APPDATA so backend/.env cannot win."""
+    os.environ[key] = value
 
 
 def bootstrap_desktop() -> None:
@@ -88,6 +100,22 @@ def bootstrap_desktop() -> None:
         cfg["ENCRYPTION_KEY"] = key
         _write_config(cfg)
 
-    _setenv_default("ENCRYPTION_KEY", key)
-    _setenv_default("DATABASE_URL", f"sqlite:///{paths.ledger_db_path()}")
-    _setenv_default("BUDGETS_DATABASE_URL", f"sqlite:///{paths.budgets_db_path()}")
+    ledger_url = _sqlite_url(paths.ledger_db_path())
+    budgets_url = _sqlite_url(paths.budgets_db_path())
+
+    if use_appdata and not desktop:
+        # Force — otherwise a DATABASE_URL in backend/.env silently keeps
+        # uvicorn on the stale backend/ledger.db (e.g. "last synced Jul 9").
+        _setenv_force("ENCRYPTION_KEY", key)
+        _setenv_force("DATABASE_URL", ledger_url)
+        _setenv_force("BUDGETS_DATABASE_URL", budgets_url)
+        print(
+            f"[LEDGER_USE_APPDATA] Using desktop DBs:\n"
+            f"  ledger:  {paths.ledger_db_path()}\n"
+            f"  budgets: {paths.budgets_db_path()}\n"
+            f"  Quit the desktop app while this server is running."
+        )
+    else:
+        _setenv_default("ENCRYPTION_KEY", key)
+        _setenv_default("DATABASE_URL", ledger_url)
+        _setenv_default("BUDGETS_DATABASE_URL", budgets_url)

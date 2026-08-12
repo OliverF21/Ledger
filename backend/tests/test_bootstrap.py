@@ -40,8 +40,8 @@ def test_generates_key_and_sets_env(monkeypatch, tmp_path):
     cfg = json.loads((tmp_path / "config.json").read_text())
     assert cfg["ENCRYPTION_KEY"]
     assert os.environ["ENCRYPTION_KEY"] == cfg["ENCRYPTION_KEY"]
-    assert os.environ["DATABASE_URL"] == f"sqlite:///{tmp_path / 'ledger.db'}"
-    assert os.environ["BUDGETS_DATABASE_URL"] == f"sqlite:///{tmp_path / 'budgets.db'}"
+    assert os.environ["DATABASE_URL"] == f"sqlite:///{(tmp_path / 'ledger.db').resolve().as_posix()}"
+    assert os.environ["BUDGETS_DATABASE_URL"] == f"sqlite:///{(tmp_path / 'budgets.db').resolve().as_posix()}"
     if os.name == "posix":
         assert (os.stat(tmp_path / "config.json").st_mode & 0o777) == 0o600
 
@@ -74,10 +74,16 @@ def test_use_appdata_loads_existing_key(monkeypatch, tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({"ENCRYPTION_KEY": key}))
     (tmp_path / "ledger.db").write_bytes(b"x")
     b = _fresh(monkeypatch, tmp_path, use_appdata=True)
+    # Stale .env-style values must lose to LEDGER_USE_APPDATA.
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///stale-backend.db")
+    monkeypatch.setenv("BUDGETS_DATABASE_URL", "sqlite:///stale-budgets.db")
+    monkeypatch.setenv("ENCRYPTION_KEY", "stale-key-from-dotenv")
     b.bootstrap_desktop()
     assert os.environ["ENCRYPTION_KEY"] == key
-    assert os.environ["DATABASE_URL"] == f"sqlite:///{tmp_path / 'ledger.db'}"
-    assert os.environ["BUDGETS_DATABASE_URL"] == f"sqlite:///{tmp_path / 'budgets.db'}"
+    assert "stale-backend" not in os.environ["DATABASE_URL"]
+    assert "stale-budgets" not in os.environ["BUDGETS_DATABASE_URL"]
+    ledger = str((tmp_path / "ledger.db").resolve())
+    assert ledger in os.environ["DATABASE_URL"].replace("%20", " ")
     # Must not flip desktop mode — health.desktop stays driven by LEDGER_DESKTOP.
     assert not b._desktop_enabled()
     assert b._use_appdata_enabled()
@@ -88,3 +94,14 @@ def test_use_appdata_refuses_without_config(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="LEDGER_USE_APPDATA"):
         b.bootstrap_desktop()
     assert not (tmp_path / "config.json").exists()
+
+
+def test_sqlite_url_quotes_spaces():
+    from pathlib import Path
+
+    from app.bootstrap import _sqlite_url
+
+    url = _sqlite_url(Path("/tmp/Application Support/Ledger/ledger.db"))
+    assert "Application%20Support" in url
+    assert " " not in url
+

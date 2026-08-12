@@ -57,6 +57,15 @@ async def lifespan(app: FastAPI):
     init_scheduler()
 
     print("[OK] Ledger backend started")
+    # Make it obvious which SQLite files are open (dev + desktop debugging).
+    try:
+        from app.database import DATABASE_URL
+        from app.budgets_db import BUDGETS_DB_URL
+
+        print(f"[DB] ledger:  {DATABASE_URL}")
+        print(f"[DB] budgets: {BUDGETS_DB_URL}")
+    except Exception as exc:  # pragma: no cover — never block startup on logging
+        print(f"[DB] (could not report paths: {exc})")
 
     yield
 
