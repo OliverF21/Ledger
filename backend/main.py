@@ -5,9 +5,10 @@ FastAPI application entry point
 
 import os
 
-# Desktop bootstrap MUST run before importing any module that reads env at
+# App-data bootstrap MUST run before importing any module that reads env at
 # import time (app.security raises without ENCRYPTION_KEY; app.database builds
-# its engine from DATABASE_URL at import). No-op unless LEDGER_DESKTOP is set.
+# its engine from DATABASE_URL at import). No-op unless LEDGER_DESKTOP or
+# LEDGER_USE_APPDATA is set.
 from app.bootstrap import bootstrap_desktop
 bootstrap_desktop()
 
