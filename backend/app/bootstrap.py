@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import os
-from urllib.parse import quote
 
 from cryptography.fernet import Fernet
 
@@ -35,9 +34,8 @@ def _use_appdata_enabled() -> bool:
 
 
 def _sqlite_url(db_path) -> str:
-    """Build a sqlite URL that survives spaces (Application Support)."""
-    resolved = db_path.resolve()
-    return f"sqlite:///{quote(resolved.as_posix(), safe='/')}"
+    """Absolute sqlite URL. Keep spaces as spaces (sqlite3 needs a real path)."""
+    return f"sqlite:///{db_path.resolve().as_posix()}"
 
 
 def _load_config() -> dict:

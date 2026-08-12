@@ -96,12 +96,26 @@ def test_use_appdata_refuses_without_config(monkeypatch, tmp_path):
     assert not (tmp_path / "config.json").exists()
 
 
-def test_sqlite_url_quotes_spaces():
+def test_sqlite_url_keeps_spaces():
     from pathlib import Path
 
     from app.bootstrap import _sqlite_url
 
     url = _sqlite_url(Path("/tmp/Application Support/Ledger/ledger.db"))
-    assert "Application%20Support" in url
-    assert " " not in url
+    assert "Application Support" in url
+    assert "%20" not in url
+
+
+def test_resolve_sqlite_unquotes_percent_encoding(tmp_path):
+    from app.sqlite_paths import resolve_sqlite_database_url
+
+    spaced = tmp_path / "Application Support" / "Ledger"
+    spaced.mkdir(parents=True)
+    db = spaced / "ledger.db"
+    db.write_bytes(b"")
+    encoded = f"sqlite:///{db.as_posix().replace(' ', '%20')}"
+    resolved = resolve_sqlite_database_url(encoded)
+    assert "Application Support" in resolved
+    assert "%20" not in resolved
+    assert str(db.resolve()) in resolved
 

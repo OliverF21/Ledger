@@ -8,7 +8,7 @@
 #
 # On startup the server prints:
 #   [LEDGER_USE_APPDATA] Using desktop DBs: ...
-#   [DB] ledger:  sqlite:////Users/.../Application%20Support/Ledger/ledger.db
+#   [DB] ledger:  sqlite:////Users/.../Application Support/Ledger/ledger.db
 # If you still see backend/ledger.db in that line, you're on the old DB.
 
 set -euo pipefail
