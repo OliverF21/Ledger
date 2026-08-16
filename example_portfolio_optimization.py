@@ -175,16 +175,19 @@ w_cur = w_cur / w_cur.sum()
 cur_ret = float(w_cur @ mu)
 cur_vol = float(np.sqrt(w_cur @ S @ w_cur))
 
-asset_rets = close_df[ret_bl.index].pct_change()
-spy_rets = spy.set_index("price_date")["close_price"].reindex(asset_rets.index).pct_change()
-aligned = pd.concat([asset_rets, spy_rets.rename("SPY")], axis=1).dropna()
-spy_r = aligned["SPY"].to_numpy()
-asset_r = aligned.drop(columns="SPY")
+# Same Ledoit-Wolf estimator as the optimizer, with SPY in the matrix so
+# β = (w' Σ e_spy) / Σ_spy,spy matches the risk model (still vs SPY, like δ).
+px_beta = close_df[ret_bl.index].copy()
+px_beta["SPY"] = spy.set_index("price_date")["close_price"].reindex(px_beta.index)
+px_beta = px_beta.dropna()
+cov_with_spy = risk_models.CovarianceShrinkage(px_beta).ledoit_wolf()
+var_spy = float(cov_with_spy.loc["SPY", "SPY"])
+cov_to_spy = cov_with_spy.reindex(index=ret_bl.index)["SPY"]
 
 
 def portfolio_beta(w) -> float:
-    rp = asset_r.to_numpy() @ np.asarray(w)
-    return float(np.cov(rp, spy_r, ddof=1)[0, 1] / np.var(spy_r, ddof=1))
+    w = pd.Series(np.asarray(w), index=ret_bl.index)
+    return float(cov_to_spy.dot(w) / var_spy)
 
 
 beta_s = portfolio_beta(ef_sharpe.weights)
@@ -219,6 +222,8 @@ cal_ret = rf_rate + (ret_s - rf_rate) / vol_s * cal_vol
 def draw_panel(ax, title, h_vol, h_ret, h_color, h_label, box):
     ax.plot(front_vol, front_ret, color="black", linestyle="-.", label="Efficient frontier")
     ax.scatter(asset_vol, mu, s=30, color="k", zorder=3, label="Assets")
+    for ticker, vol, ret in zip(ret_bl.index, asset_vol, mu):
+        ax.annotate(ticker, (vol, ret), textcoords="offset points", xytext=(4, 4), fontsize=7)
     ax.scatter(
         rand_vols, rand_rets, c=rand_sharpe, cmap="viridis_r", s=1, alpha=0.35, zorder=0,
     )
@@ -244,15 +249,18 @@ fig, (ax_s, ax_q) = plt.subplots(1, 2, figsize=(14.5, 6.5), sharey=True)
 draw_panel(
     ax_s, "Max Sharpe", vol_s, ret_s, "red", "Maximum Sharpe ratio",
     metrics_box(ret_s, vol_s, beta_s, sharpe_s),
+
 )
 draw_panel(
     ax_q, f"Max quadratic utility (δ={delta:.2f})", vol_q, ret_q, "orange",
     "Maximum quadratic utility",
     metrics_box(ret_q, vol_q, beta_q, sharpe_q),
+
 )
 ax_s.set_ylabel("Annualised Returns")
-ax_s.legend(loc="lower right", fontsize=8)
 fig.tight_layout()
+ax_s.legend(loc="lower right", fontsize=8)
+ax_q.legend(loc="lower right", fontsize=8)
 plt.show()
 
 investable = values.reindex(weights.index).sum()
