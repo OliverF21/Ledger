@@ -67,3 +67,53 @@ def market_implied_risk_aversion(benchmark_prices: pd.Series, risk_free_rate_pct
     annual_return = daily_returns.mean() * TRADING_DAYS_PER_YEAR
     annual_var = daily_returns.var() * TRADING_DAYS_PER_YEAR
     return float((annual_return - risk_free_rate_pct / 100) / annual_var)
+
+
+def market_implied_prior(cov: np.ndarray, market_weights: np.ndarray, delta: float) -> np.ndarray:
+    """π = δ·Σ·w_mkt — the reverse-optimized equilibrium return vector that
+    makes market_weights the mean-variance-optimal (tangency) portfolio for
+    (π, Σ, δ). market_weights must be a market-cap/AUM-weighted vector over
+    the SAME assets as cov's rows/columns, summing to 1."""
+    return delta * cov @ market_weights
+
+
+def idzorek_omega(view_confidences: list[float], P: np.ndarray, tau: float, cov: np.ndarray) -> np.ndarray:
+    """
+    Idzorek's method: converts intuitive 0-1 confidence percentages into
+    the view-uncertainty (Ω) diagonal matrix, rather than requiring the
+    caller to construct Ω by hand. confidence=1 -> near-zero uncertainty
+    (full trust in the view); confidence->0 -> uncertainty blows up,
+    pulling the posterior back toward the prior.
+    """
+    k = P.shape[0]
+    omega = np.zeros((k, k))
+    tau_cov = tau * cov
+    for i in range(k):
+        p_i = P[i]
+        view_variance_at_100pct_confidence = float(p_i @ tau_cov @ p_i)
+        confidence = max(1e-6, min(1.0 - 1e-6, view_confidences[i]))
+        # Idzorek's closed-form: uncertainty scales as (1/confidence - 1)
+        # times the tau-scaled prior variance of the view portfolio.
+        omega[i, i] = view_variance_at_100pct_confidence * (1.0 / confidence - 1.0)
+    return omega
+
+
+def black_litterman_posterior(
+    cov: np.ndarray, pi: np.ndarray, P: np.ndarray, Q: np.ndarray, omega: np.ndarray, tau: float = 0.05
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Standard Black-Litterman posterior (He & Litterman 1999 formulation):
+      Σ_hat = [(τΣ)⁻¹ + PᵀΩ⁻¹P]⁻¹ [(τΣ)⁻¹π + PᵀΩ⁻¹Q]
+      μ_BL = π + (Σ_hat - π-term already folded in above; see below)
+      Σ_BL = Σ + [(τΣ)⁻¹ + PᵀΩ⁻¹P]⁻¹
+    Returns (mu_bl, sigma_bl) as an (n,) vector and (n,n) matrix.
+    """
+    tau_cov_inv = np.linalg.inv(tau * cov)
+    omega_inv = np.linalg.inv(omega)
+
+    posterior_precision = tau_cov_inv + P.T @ omega_inv @ P
+    posterior_cov_of_mean = np.linalg.inv(posterior_precision)
+
+    mu_bl = posterior_cov_of_mean @ (tau_cov_inv @ pi + P.T @ omega_inv @ Q)
+    sigma_bl = cov + posterior_cov_of_mean
+    return mu_bl, sigma_bl

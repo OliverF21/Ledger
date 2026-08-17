@@ -1,7 +1,13 @@
 import numpy as np
 import pandas as pd
 
-from app.services.portfolio_math_service import ledoit_wolf_shrinkage, market_implied_risk_aversion
+from app.services.portfolio_math_service import (
+    ledoit_wolf_shrinkage,
+    market_implied_risk_aversion,
+    market_implied_prior,
+    idzorek_omega,
+    black_litterman_posterior,
+)
 
 
 def test_ledoit_wolf_shrinkage_returns_symmetric_positive_semidefinite():
@@ -122,3 +128,40 @@ def test_market_implied_risk_aversion_matches_closed_form():
     annual_var = daily.var() * 252
     expected_delta = (annual_return - 0.04) / annual_var
     assert abs(delta - expected_delta) < 1e-6
+
+
+def test_market_implied_prior_matches_pi_equals_delta_sigma_w():
+    cov = np.array([[0.04, 0.01], [0.01, 0.09]])
+    w_mkt = np.array([0.6, 0.4])
+    delta = 2.5
+    pi = market_implied_prior(cov, w_mkt, delta)
+    expected = delta * cov @ w_mkt
+    assert np.allclose(pi, expected)
+
+
+def test_black_litterman_posterior_with_one_view_pulls_toward_view():
+    # 2 assets, prior returns [0.08, 0.10], one absolute view on asset 0 of 0.20
+    cov = np.array([[0.04, 0.01], [0.01, 0.09]])
+    pi = np.array([0.08, 0.10])
+    P = np.array([[1.0, 0.0]])
+    Q = np.array([0.20])
+    tau = 0.05
+    omega = idzorek_omega(view_confidences=[0.5], P=P, tau=tau, cov=cov)
+
+    mu_bl, sigma_bl = black_litterman_posterior(cov, pi, P, Q, omega, tau)
+
+    # Posterior for asset 0 should sit strictly between the prior (0.08)
+    # and the view (0.20) -- confirms the blend direction is correct.
+    assert 0.08 < mu_bl[0] < 0.20
+    # Posterior variance must not shrink below the prior's (BL only adds
+    # uncertainty, never removes it below the base covariance).
+    assert sigma_bl[0, 0] >= cov[0, 0]
+
+
+def test_idzorek_omega_lower_confidence_means_higher_uncertainty():
+    cov = np.array([[0.04, 0.0], [0.0, 0.09]])
+    P = np.array([[1.0, 0.0]])
+    tau = 0.05
+    omega_low_conf = idzorek_omega(view_confidences=[0.1], P=P, tau=tau, cov=cov)
+    omega_high_conf = idzorek_omega(view_confidences=[0.9], P=P, tau=tau, cov=cov)
+    assert omega_low_conf[0, 0] > omega_high_conf[0, 0]
