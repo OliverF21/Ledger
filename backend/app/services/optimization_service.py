@@ -9,8 +9,10 @@ book's size, ~5-30 holdings).
 Basic mode (User.optimization_advanced_enabled == False, the default): a
 single max-Sharpe solve over historical-mean returns and a Ledoit-Wolf-
 shrunk covariance, bounded by a user-configurable position cap. Advanced
-mode (Black-Litterman return blending, sector/ticker constraints,
-concentration penalty, efficient-frontier sweep) lands in Tasks 10-12.
+mode blends Black-Litterman returns (market-implied prior + ETF trailing-
+mean views via Idzorek) with sector/ticker constraints for a single
+max-Sharpe solve (Task 10); the concentration penalty, max-quadratic-
+utility objective, and efficient-frontier sweep land in Tasks 11-12.
 """
 from __future__ import annotations
 
@@ -18,15 +20,20 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 import numpy as np
+import pandas as pd
 from scipy.optimize import minimize
 from sqlalchemy.orm import Session
 
-from app.models import User
+from app.models import TickerClassification, User
 from app.risk_free_rate import get_cached_risk_free_rate
 from app.services.investment_service import _investment_accounts
 from app.services.portfolio_math_service import (
     TRADING_DAYS_PER_YEAR as LEDOIT_WOLF_ANNUALIZATION_DAYS,
+    black_litterman_posterior,
+    idzorek_omega,
     ledoit_wolf_shrinkage,
+    market_implied_prior,
+    market_implied_risk_aversion,
 )
 from app.services.price_matrix_service import (
     current_weights,
@@ -35,7 +42,12 @@ from app.services.price_matrix_service import (
     price_matrix,
     priceable_tickers,
 )
-from app.services.sector_constraint_service import relax_position_cap_if_needed
+from app.services.sector_constraint_service import (
+    build_sector_exposure_matrix,
+    build_ticker_bounds,
+    clip_sector_bounds,
+    relax_position_cap_if_needed,
+)
 
 TRADING_DAYS_PER_YEAR = 365
 MIN_LOOKBACK_ROWS = 30
@@ -172,11 +184,179 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
     effective_cap, cap_relax_log = relax_position_cap_if_needed(n, requested_cap)
 
     if advanced:
-        # Built out in Tasks 10-12 (Black-Litterman blending, sector/ticker
-        # constraints, concentration penalty, max-quadratic-utility
-        # objective, efficient-frontier sweep). Stubbed here so basic mode
-        # can ship and be tested independently -- see design doc decision 2.
-        raise NotImplementedError("advanced mode lands in Task 10")
+        # Max Quadratic Utility objective + concentration penalty (Task 11)
+        # and the efficient-frontier sweep (Task 12) land in later tasks;
+        # this branch currently returns a single BL-driven max_sharpe
+        # ObjectiveResult with sector_breakdown populated.
+        spy_dates, spy_prices = price_matrix(db, ["SPY"], start, end)
+        if len(spy_dates) < 2:
+            # SPY is a guaranteed benchmark ticker per price_sync_service.py's
+            # BENCHMARK_TICKERS -- this should only happen if the initial
+            # price sync hasn't run yet. Fail loud with a clear diagnostic
+            # rather than an IndexError from indexing an empty price matrix
+            # below; routes/portfolio_risk.py's try/except degrades either
+            # one to a normal 500 the same way.
+            raise ValueError("advanced mode requires SPY benchmark price history")
+        spy_series = pd.Series(spy_prices[:, 0])
+        delta = market_implied_risk_aversion(spy_series, risk_free_rate_pct)
+
+        classifications = db.query(TickerClassification).filter(TickerClassification.ticker.in_(tickers)).all()
+        classification_by_ticker = {c.ticker: c for c in classifications}
+
+        # Market-cap/AUM-weighted "market portfolio" over the same tickers
+        # as cov's rows/columns -- the AUM-fallback fix validated in the
+        # example script (ETFs report AUM via a different yfinance field
+        # than ordinary equities' market cap; TickerClassification already
+        # coalesces both into one market_cap_or_aum column upstream, so no
+        # separate fallback is needed here beyond treating a missing
+        # classification or a NULL value as 0 exposure). If nothing has
+        # been classified yet (e.g. sector_sync_service.py hasn't run),
+        # fall back to an equally-weighted market rather than dividing by
+        # zero -- this only shifts the BL prior's starting point; the
+        # sector/ticker constraints below read TickerClassification
+        # independently and are unaffected.
+        market_caps = np.array([
+            float(classification_by_ticker[t].market_cap_or_aum)
+            if t in classification_by_ticker and classification_by_ticker[t].market_cap_or_aum is not None
+            else 0.0
+            for t in tickers
+        ])
+        total_market_cap = market_caps.sum()
+        market_weights = market_caps / total_market_cap if total_market_cap > 0 else np.full(n, 1.0 / n)
+
+        # black_litterman_posterior inverts (tau * cov) directly via
+        # np.linalg.inv, which raises LinAlgError: Singular matrix if cov
+        # contains ANY zero-variance asset. This is a real, expected input
+        # class here, not a hypothetical: ledoit_wolf_shrinkage's own test
+        # suite establishes zero-variance tickers (stale/halted/constant-
+        # price securities) as first-class supported input, and a PSD
+        # covariance matrix with one zero-variance asset is guaranteed to
+        # have that asset's entire row/column be exactly zero -- which
+        # makes tau*cov singular regardless of every other asset's data
+        # quality. idzorek_omega's existing epsilon-floor guard (Task 5)
+        # only protects omega's own inversion, not this separate one.
+        # Floor the covariance diagonal before any BL call rather than
+        # letting one degenerate ticker crash the whole advanced-mode solve
+        # for the entire book, or silently dropping it from advanced mode's
+        # output only (which basic mode would still show -- a confusing
+        # inconsistency for a user toggling the mode). Off-diagonal entries
+        # are left untouched: a true zero-variance asset has zero
+        # covariance with everything by definition (Cov(X,Y)=0 when
+        # Var(X)=0), so only the diagonal needs nudging off of exactly
+        # zero. Mirrors the same floor-before-inverting idiom
+        # ledoit_wolf_shrinkage (std floor) and idzorek_omega (omega floor)
+        # already use elsewhere in this pipeline.
+        cov_for_bl = cov.copy()
+        np.fill_diagonal(cov_for_bl, np.maximum(np.diag(cov_for_bl), 1e-10))
+
+        pi = market_implied_prior(cov_for_bl, market_weights, delta)
+
+        etf_indices = [
+            i for i, t in enumerate(tickers)
+            if classification_by_ticker.get(t) is not None and classification_by_ticker[t].asset_class == "etf"
+        ]
+        if etf_indices:
+            P = np.zeros((len(etf_indices), n))
+            Q = np.zeros(len(etf_indices))
+            for row, i in enumerate(etf_indices):
+                P[row, i] = 1.0
+                Q[row] = mean_returns[i]
+            omega = idzorek_omega([0.3] * len(etf_indices), P, tau=0.05, cov=cov_for_bl)
+            mu_bl, sigma_bl = black_litterman_posterior(cov_for_bl, pi, P, Q, omega, tau=0.05)
+        else:
+            # No ETF held -> no views to blend; Black-Litterman with zero
+            # views collapses to the market-implied prior itself.
+            mu_bl, sigma_bl = pi, cov_for_bl
+
+        exposure_matrix, sector_names = build_sector_exposure_matrix(db, tickers)
+        sector_lower, sector_upper, clip_log = clip_sector_bounds(db, 1, sector_names, exposure_matrix, effective_cap)
+        ticker_lower, ticker_upper = build_ticker_bounds(db, 1, tickers, effective_cap)
+
+        def neg_sharpe_bl(weights: np.ndarray) -> float:
+            ret = np.dot(weights, mu_bl) * TRADING_DAYS_PER_YEAR
+            vol = np.sqrt(weights @ sigma_bl @ weights) * np.sqrt(TRADING_DAYS_PER_YEAR)
+            if vol == 0:
+                return 0.0
+            return -(ret - risk_free_rate_pct / 100) / vol
+
+        advanced_constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
+        for j in range(len(sector_names)):
+            col = exposure_matrix[:, j]
+            lo = sector_lower[j]
+            hi = sector_upper[j]
+            # Bind col/lo/hi as default args, not a bare closure over the
+            # loop variables -- scipy only calls these `fun`s AFTER this
+            # loop finishes building the whole constraints list, so a bare
+            # `lambda w: col @ w - lo` would have every constraint
+            # reference the SAME (final) col/lo/hi from the last iteration,
+            # silently applying only the last sector's bounds to every
+            # sector. Default args are evaluated once, at lambda-definition
+            # time (i.e. per-iteration here), so each constraint keeps its
+            # own sector's values independently.
+            advanced_constraints.append({"type": "ineq", "fun": lambda w, col=col, lo=lo: col @ w - lo})
+            advanced_constraints.append({"type": "ineq", "fun": lambda w, col=col, hi=hi: hi - col @ w})
+
+        bounds = list(zip(ticker_lower, ticker_upper))
+        initial = np.array([1.0 / n] * n)
+
+        result = minimize(neg_sharpe_bl, initial, method="SLSQP", bounds=bounds, constraints=advanced_constraints)
+        suggested_weights = result.x if result.success else initial
+        suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mu_bl, sigma_bl, risk_free_rate_pct)
+
+        ticker_weights = [
+            TickerWeight(
+                ticker=t,
+                current_weight_pct=round(current_weights_pct[t], 2),
+                suggested_weight_pct=round(float(suggested_weights[i]) * 100, 2),
+            )
+            for i, t in enumerate(tickers)
+        ]
+        suggested_sharpe_rounded = round(suggested_sharpe, 2) if suggested_sharpe is not None else None
+        objectives = [
+            ObjectiveResult(
+                name="max_sharpe",
+                tickers=ticker_weights,
+                expected_return_pct=round(suggested_return, 2),
+                volatility_pct=round(suggested_vol, 2),
+                sharpe=suggested_sharpe_rounded,
+            )
+        ]
+
+        # floor_pct/cap_pct reuse the lower/upper vectors clip_sector_bounds
+        # already returned above (rather than re-reading the raw
+        # SectorConstraint rows) so the reported figures reflect any
+        # auto-clipping that happened -- e.g. a floor request that exceeded
+        # what's achievable given the position cap shows the ACHIEVABLE
+        # (clipped) floor here, matching what the solver was actually asked
+        # to enforce, not the user's original unclipped request.
+        sector_breakdown = [
+            {
+                "sector": s,
+                "weight_pct": float(exposure_matrix[:, j] @ suggested_weights * 100),
+                "floor_pct": float(sector_lower[j] * 100),
+                "cap_pct": float(sector_upper[j] * 100),
+            }
+            for j, s in enumerate(sector_names)
+        ]
+
+        return OptimizationData(
+            tickers=ticker_weights,
+            current_expected_return_pct=round(current_return, 2),
+            current_volatility_pct=round(current_vol, 2),
+            current_sharpe=round(current_sharpe, 2) if current_sharpe is not None else None,
+            suggested_expected_return_pct=round(suggested_return, 2),
+            suggested_volatility_pct=round(suggested_vol, 2),
+            suggested_sharpe=suggested_sharpe_rounded,
+            data_points=len(dates),
+            insufficient_data=False,
+            advanced_enabled=True,
+            position_cap_pct=round(effective_cap * 100, 2),
+            cap_relaxed=cap_relax_log,
+            objectives=objectives,
+            frontier_points=None,
+            sector_breakdown=sector_breakdown,
+            clip_log=clip_log,
+        )
 
     def neg_sharpe(weights: np.ndarray) -> float:
         ret = np.dot(weights, mean_returns) * TRADING_DAYS_PER_YEAR

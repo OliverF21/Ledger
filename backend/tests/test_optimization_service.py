@@ -1,6 +1,7 @@
 # backend/tests/test_optimization_service.py
 from __future__ import annotations
 
+import json
 import os
 from datetime import date, timedelta
 from decimal import Decimal
@@ -18,7 +19,17 @@ import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
-from app.models import Account, Base, Holding, Item, MarketPrice, Security, User  # noqa: E402
+from app.models import (  # noqa: E402
+    Account,
+    Base,
+    Holding,
+    Item,
+    MarketPrice,
+    SectorConstraint,
+    Security,
+    TickerClassification,
+    User,
+)
 from app.services.optimization_service import build_optimization_suggestion  # noqa: E402
 
 
@@ -190,7 +201,25 @@ def seeded_price_history(db_session):
 
     Mirrors _setup_two_ticker_portfolio's story-per-ticker style, generalized
     to N tickers via loops. Return value (the ticker list) isn't needed by
-    the current caller but is handed back in case a future test wants it."""
+    the current caller but is handed back in case a future test wants it.
+
+    Also seeds SPY (mild uptrend + day-to-day zigzag noise, unrelated to the
+    12 held tickers) over the same window even though nothing here holds it
+    -- advanced mode (Task 10+) always fetches SPY as its market-implied-
+    risk-aversion benchmark, per price_sync_service.py's BENCHMARK_TICKERS
+    guarantee that SPY is always synced. Without it, price_matrix(db,
+    ["SPY"], ...) would return empty and advanced mode would have no
+    benchmark to compute delta from. The zigzag noise is deliberate, not
+    decorative: a PURELY linear (noise-free) price series -- like
+    _GOOD_TICKERS' own formula below -- has near-zero day-to-day return
+    VARIANCE even though its mean return is normal, and
+    market_implied_risk_aversion divides annualized return BY annualized
+    variance. Verified empirically while building this fixture: a noise-
+    free linear SPY series produced delta ~6.25 MILLION (vs. a realistic
+    ~2-4), which blew up every downstream Black-Litterman number into
+    nonsense and silently broke SLSQP convergence. The zigzag keeps SPY's
+    variance on a realistic scale (annualized ~5%) while preserving a
+    normal positive trend."""
     item = Item(user_id=1, item_id="item-1", access_token_encrypted="x")
     db_session.add(item)
     db_session.flush()
@@ -216,6 +245,7 @@ def seeded_price_history(db_session):
             sign = 1 if (i + k) % 2 == 0 else -1
             price = 100 + sign * (4 + k % 3)
             db_session.add(MarketPrice(ticker=t, price_date=day, close_price=Decimal(str(price))))
+        db_session.add(MarketPrice(ticker="SPY", price_date=day, close_price=Decimal(str(400 + i * 0.3 + (3 if i % 2 == 0 else -3)))))
     db_session.commit()
     return tickers
 
@@ -235,3 +265,206 @@ def test_basic_mode_matches_position_cap_and_single_objective(db_session, seeded
     assert result.sector_breakdown is None
     for weight in (tw.suggested_weight_pct for tw in result.tickers):
         assert weight <= 10.0 + 1e-6
+
+
+# Sector names are deliberately spread alphabetically before AND after
+# "healthcare" (communication < consumerdiscretionary < consumerstaples <
+# energy < financials < healthcare < industrials < materials < realestate <
+# technology < utilities) rather than making healthcare the first or last
+# sector. That placement matters: if the sector-constraint loop in
+# optimization_service.py had the classic late-binding-closure bug (every
+# constraint lambda silently sharing the loop's FINAL `j` instead of its own
+# sector's), every constraint would incorrectly apply to "utilities" (the
+# last sector alphabetically) instead of its intended sector -- so
+# healthcare's floor would silently go unenforced and
+# test_advanced_mode_uses_black_litterman_and_sector_constraints below would
+# only pass "by accident" if healthcare's unconstrained-optimal weight
+# happened to already clear 2% on its own. Putting healthcare (and energy,
+# used by the second sanity-check test below) in the middle of the sorted
+# order means that failure mode is directly observable: with the bug, only
+# "utilities" would be constrained and healthcare/energy would not.
+#
+# TICKF10 is the sole ETF (diversified across technology/financials/
+# utilities, no healthcare or energy) so the Black-Litterman absolute-view
+# path (Step 3.5-3.7) actually executes rather than trivially falling back
+# to the no-views case. It's deliberately one of the FLAT tickers, not
+# TICKG1/TICKG2: TICKG1/TICKG2's price formula (seeded_price_history above)
+# is a perfectly linear day-over-day trend with no noise, which gives them
+# near-zero return VARIANCE even though their mean return is normal
+# (verified empirically while building this fixture -- see the SPY-zigzag
+# comment above for the same underlying issue). That's harmless for basic
+# mode (which never inverts the covariance matrix) but numerically toxic
+# for Black-Litterman: using a near-zero-variance asset as the view ticker
+# drives idzorek_omega's uncertainty to an artificially tiny value
+# regardless of the 0.3 confidence passed in (Idzorek's Ω scales with the
+# view portfolio's OWN tau*cov variance, which is ~0 here), which in turn
+# swings the posterior to unrealistic extremes and silently breaks SLSQP
+# convergence (result.success=False, falling back to the equal-weight
+# `initial` guess -- every sector coming back at exactly 1/12 regardless of
+# any constraint, which was observed while building this fixture and would
+# have made both sector-floor tests below pass vacuously rather than for
+# the right reason). market_cap_or_aum is spread evenly across all 12
+# tickers (rather than concentrated in any one, as an earlier version of
+# this fixture did with TICKG1/TICKG2) for the same reason: concentrating
+# weight in a near-zero-variance ticker would let it dominate the
+# market-cap-weighted prior too.
+#
+# TICKF06 (not TICKF01) is the sole healthcare-classified ticker, and
+# TICKF08 (not TICKF03) is the sole energy-classified ticker -- chosen by
+# empirically probing every flat ticker's UNCONSTRAINED optimal weight
+# under this fixture (before picking which one plays which sector role).
+# Most flat/good tickers land pinned at the 10% position cap regardless of
+# sector, because _FLAT_TICKERS' price formula makes same-parity tickers
+# perfectly +1-correlated and opposite-parity tickers perfectly
+# -1-correlated (see seeded_price_history's own docstring) -- a mean-
+# variance optimizer treats that as an irresistible hedge and wants as
+# much of ~9 of the 12 tickers as the cap allows, independent of which
+# sector floor (if any) they carry. Only TICKF02, TICKF06, and TICKF08
+# consistently land BELOW the cap naturally (~5%, ~0%, and ~5%
+# respectively, verified stable across every choice of ETF ticker) --
+# TICKF06 and TICKF08 were picked from that set specifically so the floor
+# constraints below have real work to do instead of being trivially
+# satisfied by a ticker that was already going to sit at 10% anyway.
+# Energy's floor is set to 8% (not a smaller value) in the tests below
+# because TICKF08's own natural weight is ~5%, not ~0% -- an 8% floor is
+# comfortably above that, so it's unambiguously the floor (not noise)
+# pushing energy's weight up.
+_SECTOR_BY_TICKER = {
+    "TICKG1": "technology",
+    "TICKG2": "financials",
+    "TICKF01": "consumerstaples",
+    "TICKF02": "industrials",
+    "TICKF03": "realestate",
+    "TICKF04": "utilities",
+    "TICKF05": "materials",
+    "TICKF06": "healthcare",
+    "TICKF07": "communication",
+    "TICKF08": "energy",
+    "TICKF09": "consumerdiscretionary",
+}
+_ETF_TICKER = "TICKF10"
+
+
+@pytest.fixture
+def seeded_ticker_classifications(db_session, seeded_price_history):
+    """TickerClassification rows for every ticker seeded_price_history
+    creates (see _SECTOR_BY_TICKER's docstring above for the reasoning
+    behind the ETF choice, sector assignments, and even market-cap
+    weighting)."""
+    classifications = [
+        TickerClassification(
+            ticker=_ETF_TICKER,
+            asset_class="etf",
+            sector_weights_json=json.dumps({"technology": 0.4, "financials": 0.3, "utilities": 0.3}),
+            market_cap_or_aum=Decimal("6000000000"),
+        ),
+    ]
+    for i, (ticker, sector) in enumerate(_SECTOR_BY_TICKER.items()):
+        classifications.append(
+            TickerClassification(
+                ticker=ticker,
+                asset_class="equity",
+                sector_weights_json=json.dumps({sector: 1.0}),
+                market_cap_or_aum=Decimal(str(5_000_000_000 + i * 300_000_000)),
+            )
+        )
+    db_session.add_all(classifications)
+    db_session.commit()
+    return classifications
+
+
+def test_advanced_mode_uses_black_litterman_and_sector_constraints(db_session, seeded_price_history, seeded_ticker_classifications):
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    db_session.commit()
+    db_session.add(SectorConstraint(user_id=1, sector="healthcare", floor_pct=2.0, cap_pct=40.0))
+    db_session.commit()
+
+    result = build_optimization_suggestion(db_session)
+
+    assert result.advanced_enabled is True
+    assert result.sector_breakdown is not None
+    healthcare_row = next(r for r in result.sector_breakdown if r["sector"] == "healthcare")
+    assert healthcare_row["weight_pct"] >= 2.0 - 0.5  # allow for solver tolerance, not full safety-margin clip
+
+
+def test_advanced_mode_enforces_multiple_independent_sector_floors(db_session, seeded_price_history, seeded_ticker_classifications):
+    # Sanity check called for explicitly in the task brief's self-review
+    # step: two DIFFERENT sectors with two DIFFERENT floors must both be
+    # independently enforced -- not just whichever one happens to be last
+    # alphabetically. This is a stronger, more direct guard against the
+    # late-binding-closure bug than the single-sector test above (which
+    # could in principle still pass "by accident" under the bug if
+    # healthcare's natural weight already cleared 2% on its own). Energy's
+    # floor is 8% (not a smaller value): verified empirically (see
+    # _SECTOR_BY_TICKER's docstring above) that TICKF08/energy's own
+    # unconstrained-optimal weight is ~5%, so an 8% floor is comfortably
+    # above that -- unambiguously the floor doing the work, not solver
+    # noise -- whereas healthcare's ~0% natural weight makes even the
+    # brief-specified 2% floor genuinely binding on its own.
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    db_session.commit()
+    db_session.add(SectorConstraint(user_id=1, sector="healthcare", floor_pct=2.0, cap_pct=40.0))
+    db_session.add(SectorConstraint(user_id=1, sector="energy", floor_pct=8.0, cap_pct=40.0))
+    db_session.commit()
+
+    result = build_optimization_suggestion(db_session)
+
+    breakdown_by_sector = {r["sector"]: r for r in result.sector_breakdown}
+    assert breakdown_by_sector["healthcare"]["weight_pct"] >= 2.0 - 0.5
+    assert breakdown_by_sector["energy"]["weight_pct"] >= 8.0 - 0.5
+
+
+def test_advanced_mode_handles_zero_variance_ticker_without_crashing(db_session):
+    # Regression test for a review finding carried forward from Task 5:
+    # black_litterman_posterior's own np.linalg.inv(tau * cov) raises
+    # LinAlgError: Singular matrix if cov contains ANY zero-variance asset
+    # (ledoit_wolf_shrinkage's own test suite establishes zero-variance
+    # tickers -- e.g. stale, halted, or constant-price securities -- as a
+    # real, expected input, and a PSD covariance matrix with one
+    # zero-variance asset forces that whole row/column to exactly zero,
+    # independent of idzorek_omega's existing guard, which only protects
+    # omega's OWN inversion). TICKZERO has a perfectly constant price
+    # (return == 0 every day), so its row/column of the shared Ledoit-Wolf
+    # covariance is exactly zero. TICKA is classified as an ETF so the
+    # Black-Litterman absolute-view path (and therefore
+    # black_litterman_posterior itself) actually executes rather than
+    # trivially skipping BL -- without that, this test would not exercise
+    # the code path it's meant to guard.
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    db_session.commit()
+
+    item = Item(user_id=1, item_id="item-1", access_token_encrypted="x")
+    db_session.add(item)
+    db_session.flush()
+    account = Account(item_id=item.id, plaid_account_id="acc-1", name="Brokerage", type="investment", current_balance=Decimal("2000"))
+    db_session.add(account)
+    db_session.flush()
+
+    sec_a = Security(plaid_security_id="sec-A", ticker_symbol="TICKA", type="equity")
+    sec_z = Security(plaid_security_id="sec-Z", ticker_symbol="TICKZERO", type="equity")
+    db_session.add_all([sec_a, sec_z])
+    db_session.flush()
+
+    db_session.add(Holding(account_id=account.id, security_id=sec_a.id, quantity=Decimal("10"), institution_price=Decimal("100"), institution_value=Decimal("1000")))
+    db_session.add(Holding(account_id=account.id, security_id=sec_z.id, quantity=Decimal("10"), institution_price=Decimal("100"), institution_value=Decimal("1000")))
+
+    db_session.add(TickerClassification(ticker="TICKA", asset_class="etf", sector_weights_json=json.dumps({"technology": 1.0}), market_cap_or_aum=Decimal("1000000000")))
+    db_session.add(TickerClassification(ticker="TICKZERO", asset_class="equity", sector_weights_json=json.dumps({"cash": 1.0}), market_cap_or_aum=Decimal("500000000")))
+
+    start = date.today() - timedelta(days=60)
+    for i in range(60):
+        day = start + timedelta(days=i)
+        db_session.add(MarketPrice(ticker="TICKA", price_date=day, close_price=Decimal(str(100 + i * 0.5))))
+        db_session.add(MarketPrice(ticker="TICKZERO", price_date=day, close_price=Decimal("50.00")))  # constant -> exactly zero variance
+        db_session.add(MarketPrice(ticker="SPY", price_date=day, close_price=Decimal(str(400 + i * 0.3 + (3 if i % 2 == 0 else -3)))))
+    db_session.commit()
+
+    result = build_optimization_suggestion(db_session, lookback_days=90)  # must not raise LinAlgError
+
+    assert result.insufficient_data is False
+    assert result.advanced_enabled is True
+    tickers_present = {t.ticker for t in result.tickers}
+    assert tickers_present == {"TICKA", "TICKZERO"}
