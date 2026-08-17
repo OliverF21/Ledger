@@ -27,7 +27,18 @@ def ledoit_wolf_shrinkage(returns: np.ndarray) -> np.ndarray:
 
     var = np.diag(sample_cov)
     std = np.sqrt(var)
-    corr = sample_cov / np.outer(std, std)
+    # Floor std before dividing: a zero-/near-zero-variance asset (constant,
+    # stale, or halted price series) would otherwise make its row/column
+    # 0/0 = NaN in `corr`, which propagates through the pooled `avg_corr`
+    # scalar into every asset's entry of `target` — not just the degenerate
+    # one. 1e-12 is many orders of magnitude below any realistic daily
+    # return volatility, so this floor only activates for genuinely
+    # zero/near-zero variance assets; `target`'s off-diagonal entries for
+    # such an asset still work out to ~0 below (via the un-floored `std` in
+    # the outer product), and its diagonal is still its true (zero)
+    # variance via `np.fill_diagonal`.
+    std_safe = np.maximum(std, 1e-12)
+    corr = sample_cov / np.outer(std_safe, std_safe)
     avg_corr = (corr.sum() - n) / (n * (n - 1)) if n > 1 else 0.0
     target = avg_corr * np.outer(std, std)
     np.fill_diagonal(target, var)
