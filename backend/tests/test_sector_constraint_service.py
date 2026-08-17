@@ -70,3 +70,27 @@ def test_clip_sector_bounds_clips_unreachable_floor(db_session):
     assert lower[idx] == pytest.approx(0.017 * 0.95, rel=1e-6)  # safety margin
     assert len(clip_log) == 1
     assert clip_log[0]["sector"] == "basicmaterials"
+
+
+def test_clip_sector_bounds_logs_constraint_on_sector_absent_from_matrix(db_session):
+    # Only holding is 100% technology -- "utilities" never appears as a
+    # column in the exposure matrix at all (0% achievable, no held ticker
+    # has any exposure to it). A floor constraint on it is even more
+    # unreachable than the in-matrix clip case, so it must still surface
+    # in clip_log even though sector_names never contains "utilities" and
+    # there's no lower/upper slot for it.
+    _classify(db_session, "AAPL", {"technology": 1.0})
+    db_session.add(SectorConstraint(user_id=1, sector="utilities", floor_pct=5.0, cap_pct=40.0))
+    db_session.commit()
+
+    matrix, sectors = build_sector_exposure_matrix(db_session, ["AAPL"])
+    assert sectors == ["technology"]  # "utilities" never made it into the matrix
+
+    lower, upper, clip_log = clip_sector_bounds(db_session, 1, sectors, matrix, position_cap=0.10)
+
+    assert lower.shape == (1,)  # no bound-vector slot added for "utilities"
+    assert upper.shape == (1,)
+    assert len(clip_log) == 1
+    assert clip_log[0]["sector"] == "utilities"
+    assert clip_log[0]["requested_floor"] == 0.05
+    assert clip_log[0]["clipped_to"] == 0.0

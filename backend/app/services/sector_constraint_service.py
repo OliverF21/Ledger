@@ -60,4 +60,19 @@ def clip_sector_bounds(
             lower[j] = requested_floor
         upper[j] = requested_cap
 
+    # Sectors with a constraint but no column in the exposure matrix (no
+    # held/classified ticker has any exposure to them at all) get no
+    # lower/upper slot -- there's nothing to clip in the bound vectors --
+    # but a requested floor on one is 0% achievable, which is *more*
+    # unreachable than the in-matrix clip case above. Log it for the same
+    # UI-transparency reason, so an explicit floor preference doesn't
+    # silently vanish just because the sector never made it into
+    # sector_names.
+    for sector, constraint in constraints.items():
+        if sector in sector_names:
+            continue
+        requested_floor = float(constraint.floor_pct) / 100
+        if requested_floor > 0:
+            clip_log.append({"sector": sector, "requested_floor": requested_floor, "clipped_to": 0.0})
+
     return lower, upper, clip_log
