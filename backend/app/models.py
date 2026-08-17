@@ -52,7 +52,10 @@ class User(Base):
     # recipient — both must be set for the scheduler to actually send.
     weekly_email_enabled = Column(Boolean, default=False)
     weekly_email_to = Column(String(255), nullable=True)
-    # Portfolio optimization v2 preferences (see docs/superpowers/specs/2026-08-17-portfolio-optimization-v2-design.md)
+    # Portfolio optimization v2 preferences (see docs/superpowers/specs/2026-08-17-portfolio-optimization-v2-design.md).
+    # Note: _ensure_columns()'s ALTER TABLE ADD COLUMN carries no DEFAULT clause, so these land
+    # NULL on existing rows despite the default= below (which only applies to newly-inserted rows) —
+    # callers must coalesce NULL to the documented default themselves, not assume the ORM default has taken effect.
     optimization_advanced_enabled = Column(Boolean, nullable=False, default=False)
     optimization_position_cap_pct = Column(Numeric(5, 2), nullable=False, default=10.0)
     optimization_concentration_strength = Column(Numeric(3, 2), nullable=False, default=0.5)
