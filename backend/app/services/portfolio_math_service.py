@@ -94,7 +94,23 @@ def idzorek_omega(view_confidences: list[float], P: np.ndarray, tau: float, cov:
         confidence = max(1e-6, min(1.0 - 1e-6, view_confidences[i]))
         # Idzorek's closed-form: uncertainty scales as (1/confidence - 1)
         # times the tau-scaled prior variance of the view portfolio.
-        omega[i, i] = view_variance_at_100pct_confidence * (1.0 / confidence - 1.0)
+        raw_omega_ii = view_variance_at_100pct_confidence * (1.0 / confidence - 1.0)
+        # Floor at a tiny epsilon: view_variance_at_100pct_confidence (and
+        # therefore raw_omega_ii) is exactly 0.0 whenever P's row is all
+        # zero, or whenever the view references only a zero-variance asset
+        # -- not just hypothetically: ledoit_wolf_shrinkage explicitly
+        # supports zero-variance assets (stale/halted/constant price
+        # series) as a first-class input elsewhere in this pipeline, and
+        # leaves their row/column in cov exactly zero. Without this floor,
+        # omega would be exactly singular and black_litterman_posterior's
+        # np.linalg.inv(omega) would raise LinAlgError. 1e-10 is many
+        # orders of magnitude below any realistic tau-scaled view variance
+        # (the values here run ~1e-3 or larger), so it never perturbs a
+        # normal view, while staying far above float64's precision floor
+        # so its reciprocal (taken by black_litterman_posterior) stays a
+        # large-but-finite, numerically well-behaved number rather than
+        # something that risks overflow or a badly ill-conditioned inverse.
+        omega[i, i] = max(raw_omega_ii, 1e-10)
     return omega
 
 

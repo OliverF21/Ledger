@@ -165,3 +165,48 @@ def test_idzorek_omega_lower_confidence_means_higher_uncertainty():
     omega_low_conf = idzorek_omega(view_confidences=[0.1], P=P, tau=tau, cov=cov)
     omega_high_conf = idzorek_omega(view_confidences=[0.9], P=P, tau=tau, cov=cov)
     assert omega_low_conf[0, 0] > omega_high_conf[0, 0]
+
+
+def test_idzorek_omega_zero_variance_asset_view_is_not_singular():
+    # Regression test for a review finding: Task 4's ledoit_wolf_shrinkage
+    # explicitly supports zero-variance assets (stale/halted/constant price
+    # series) as a first-class input (see
+    # test_ledoit_wolf_shrinkage_handles_zero_variance_asset), leaving that
+    # asset's entire row/column in cov exactly zero. If a view's P row is
+    # one-hot on such an asset, view_variance_at_100pct_confidence
+    # (p_i @ tau_cov @ p_i) works out to exactly 0.0 -- not just in theory --
+    # which, pre-fix, made omega[i, i] exactly 0.0 regardless of confidence,
+    # so black_litterman_posterior's np.linalg.inv(omega) raised
+    # LinAlgError: Singular matrix.
+    zero_var_cov = np.array([[0.0, 0.0], [0.0, 0.09]])  # asset 0 has 0 variance
+    P = np.array([[1.0, 0.0]])  # view is entirely on the zero-variance asset
+    omega = idzorek_omega(view_confidences=[0.5], P=P, tau=0.05, cov=zero_var_cov)
+
+    assert np.isfinite(omega).all()
+    assert omega[0, 0] > 0.0
+    omega_inv = np.linalg.inv(omega)  # must not raise LinAlgError
+    assert np.isfinite(omega_inv).all()
+
+
+def test_black_litterman_posterior_does_not_raise_on_zero_variance_view_omega():
+    # Feeds the exact degenerate omega from the test above through the full
+    # black_litterman_posterior pipeline end-to-end, paired with a normal,
+    # well-conditioned cov/pi/P/Q matching the brief's own test fixtures --
+    # black_litterman_posterior itself is out of scope for this fix, so its
+    # cov must stay invertible for (tau*cov)^-1 regardless of omega's
+    # origin. Confirms the floor added to idzorek_omega is sufficient to
+    # keep the whole posterior computation finite instead of raising
+    # LinAlgError.
+    zero_var_cov = np.array([[0.0, 0.0], [0.0, 0.09]])
+    degenerate_P = np.array([[1.0, 0.0]])
+    omega = idzorek_omega(view_confidences=[0.5], P=degenerate_P, tau=0.05, cov=zero_var_cov)
+
+    cov = np.array([[0.04, 0.01], [0.01, 0.09]])
+    pi = np.array([0.08, 0.10])
+    P = np.array([[1.0, 0.0]])
+    Q = np.array([0.20])
+
+    mu_bl, sigma_bl = black_litterman_posterior(cov, pi, P, Q, omega, tau=0.05)
+
+    assert np.isfinite(mu_bl).all()
+    assert np.isfinite(sigma_bl).all()
