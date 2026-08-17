@@ -4,7 +4,7 @@ Defines User, Item, Account, Transaction, Category, CategoryRule, BalanceSnapsho
 """
 
 from datetime import datetime, date
-from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, ForeignKey, Text, Numeric, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, ForeignKey, Text, Numeric, UniqueConstraint, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -52,6 +52,10 @@ class User(Base):
     # recipient — both must be set for the scheduler to actually send.
     weekly_email_enabled = Column(Boolean, default=False)
     weekly_email_to = Column(String(255), nullable=True)
+    # Portfolio optimization v2 preferences (see docs/superpowers/specs/2026-08-17-portfolio-optimization-v2-design.md)
+    optimization_advanced_enabled = Column(Boolean, nullable=False, default=False)
+    optimization_position_cap_pct = Column(Numeric(5, 2), nullable=False, default=10.0)
+    optimization_concentration_strength = Column(Numeric(3, 2), nullable=False, default=0.5)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -316,6 +320,58 @@ class MarketPrice(Base):
     price_date = Column(Date, nullable=False)
     close_price = Column(Numeric(19, 6), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class TickerClassification(Base):
+    """Cached sector/asset-class lookup per ticker, refreshed weekly by
+    sector_sync_service.py — mirrors MarketPrice's keying-by-ticker-string
+    rationale (benchmark/reference tickers have no Security row). Individual
+    stocks get a single-sector 100% weighting; ETFs get fractional look-
+    through exposure across sectors (or all weight in "commodities" for
+    non-equity funds like GLD/SLV, since yfinance returns no sector data
+    for those)."""
+    __tablename__ = "ticker_classifications"
+
+    id = Column(Integer, primary_key=True)
+    ticker = Column(String(32), unique=True, nullable=False)
+    asset_class = Column(String(32), nullable=False, default="unknown")
+    sector_weights_json = Column(Text, nullable=True)
+    market_cap_or_aum = Column(Numeric(20, 2), nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    sync_error = Column(Text, nullable=True)
+
+
+class SectorConstraint(Base):
+    """User-curated per-sector floor/cap for the advanced optimizer —
+    mirrors CategoryRule's shape (stable, user-edited rules, not evolving
+    proposal data, hence ledger.db not budgets.db). Only sectors with a row
+    here are constrained; absent sectors are unconstrained."""
+    __tablename__ = "sector_constraints"
+    __table_args__ = (UniqueConstraint("user_id", "sector", name="uq_sector_constraint_user_sector"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sector = Column(String(64), nullable=False)
+    floor_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    cap_pct = Column(Numeric(5, 2), nullable=False, default=100)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class TickerConstraint(Base):
+    """User-curated per-ticker floor/cap (e.g. "VOO needs at least 5%") —
+    same shape as SectorConstraint, kept as a separate table rather than a
+    'scope' column so each stays a simple flat CRUD mirroring CategoryRule."""
+    __tablename__ = "ticker_constraints"
+    __table_args__ = (UniqueConstraint("user_id", "ticker", name="uq_ticker_constraint_user_ticker"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    ticker = Column(String(32), nullable=False)
+    floor_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    cap_pct = Column(Numeric(5, 2), nullable=False, default=100)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class Holding(Base):
