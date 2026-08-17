@@ -7,8 +7,13 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Base, SectorConstraint, TickerClassification, User
-from app.services.sector_constraint_service import build_sector_exposure_matrix, clip_sector_bounds
+from app.models import Base, SectorConstraint, TickerClassification, TickerConstraint, User
+from app.services.sector_constraint_service import (
+    build_sector_exposure_matrix,
+    build_ticker_bounds,
+    clip_sector_bounds,
+    relax_position_cap_if_needed,
+)
 
 
 @pytest.fixture
@@ -94,3 +99,78 @@ def test_clip_sector_bounds_logs_constraint_on_sector_absent_from_matrix(db_sess
     assert clip_log[0]["sector"] == "utilities"
     assert clip_log[0]["requested_floor"] == 0.05
     assert clip_log[0]["clipped_to"] == 0.0
+
+
+def test_relax_position_cap_when_too_few_holdings():
+    # 5 holdings, 10% cap -> max 50%, can't reach sum=1. Must relax toward 1/n.
+    effective_cap, log_entry = relax_position_cap_if_needed(n_tickers=5, requested_cap=0.10)
+    assert effective_cap >= 1 / 5
+    assert log_entry is not None
+    assert log_entry["requested_cap"] == 0.10
+
+
+def test_relax_position_cap_no_relax_when_feasible():
+    effective_cap, log_entry = relax_position_cap_if_needed(n_tickers=30, requested_cap=0.10)
+    assert effective_cap == 0.10
+    assert log_entry is None
+
+
+def test_relax_position_cap_returns_unchanged_for_zero_tickers():
+    # No holdings at all -- nothing to relax the cap against (would be a
+    # ZeroDivisionError in 1/n_tickers without the explicit guard). Should
+    # be a no-op: pass the requested cap straight through, no log entry.
+    effective_cap, log_entry = relax_position_cap_if_needed(n_tickers=0, requested_cap=0.10)
+    assert effective_cap == 0.10
+    assert log_entry is None
+
+
+def test_relax_position_cap_clamps_to_full_allocation_for_single_holding():
+    # 1 holding -> min_feasible_cap = (1/1)/0.95 ~= 1.0526, which exceeds
+    # 100%. The relaxed cap must still clamp at 1.0 -- a position "cap"
+    # above 100% is meaningless.
+    effective_cap, log_entry = relax_position_cap_if_needed(n_tickers=1, requested_cap=0.5)
+    assert effective_cap == 1.0
+    assert log_entry == {"requested_cap": 0.5, "relaxed_to": 1.0, "reason": "too few holdings for cap"}
+
+
+def test_build_ticker_bounds_applies_ticker_floor_on_top_of_position_cap(db_session):
+    db_session.add(TickerConstraint(user_id=1, ticker="VOO", floor_pct=5.0, cap_pct=100.0))
+    db_session.commit()
+
+    lower, upper = build_ticker_bounds(db_session, 1, ["VOO", "AAPL"], position_cap=0.10)
+
+    assert lower[0] == 0.05  # VOO floor
+    assert upper[0] == 0.10  # position cap still applies as the effective ceiling
+    assert lower[1] == 0.0
+    assert upper[1] == 0.10
+
+
+def test_build_ticker_bounds_ignores_constraint_for_ticker_outside_universe(db_session):
+    # A TickerConstraint on "TSLA" exists, but "TSLA" isn't in the tickers
+    # being optimized over -- there's no bounds slot for it (arrays are
+    # sized to len(tickers)), so it must have zero effect: no crash, no
+    # misapplied bound on the one ticker that IS in the list.
+    db_session.add(TickerConstraint(user_id=1, ticker="TSLA", floor_pct=20.0, cap_pct=100.0))
+    db_session.commit()
+
+    lower, upper = build_ticker_bounds(db_session, 1, ["AAPL"], position_cap=0.10)
+
+    assert lower.shape == (1,)
+    assert upper.shape == (1,)
+    assert lower[0] == 0.0
+    assert upper[0] == 0.10
+
+
+def test_build_ticker_bounds_applies_tighter_ticker_cap_below_position_cap(db_session):
+    # The ticker's own cap_pct (3%) is tighter than the global position cap
+    # (20%) -- it should bind directly, not get overridden by the wider
+    # global cap. Covers the other direction of the cap_pct clamp from the
+    # brief's own test, which only exercises cap_pct=100 always losing to
+    # the (tighter) position cap.
+    db_session.add(TickerConstraint(user_id=1, ticker="BOND", floor_pct=0.0, cap_pct=3.0))
+    db_session.commit()
+
+    lower, upper = build_ticker_bounds(db_session, 1, ["BOND"], position_cap=0.20)
+
+    assert lower[0] == 0.0
+    assert upper[0] == 0.03

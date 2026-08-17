@@ -12,7 +12,7 @@ import json
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.models import SectorConstraint, TickerClassification
+from app.models import SectorConstraint, TickerClassification, TickerConstraint
 
 SAFETY_MARGIN = 0.95
 
@@ -76,3 +76,44 @@ def clip_sector_bounds(
             clip_log.append({"sector": sector, "requested_floor": requested_floor, "clipped_to": 0.0})
 
     return lower, upper, clip_log
+
+
+def relax_position_cap_if_needed(n_tickers: int, requested_cap: float) -> tuple[float, dict | None]:
+    """If n_tickers * requested_cap < 1.0, sum(weights)=1 is unreachable --
+    relax the cap toward 1/n with the same safety-margin philosophy as
+    clip_sector_bounds, rather than letting the solve fail outright."""
+    if n_tickers == 0:
+        return requested_cap, None
+    min_feasible_cap = (1.0 / n_tickers) / SAFETY_MARGIN
+    if requested_cap >= min_feasible_cap:
+        return requested_cap, None
+    effective_cap = min(1.0, min_feasible_cap)
+    return effective_cap, {"requested_cap": requested_cap, "relaxed_to": effective_cap, "reason": "too few holdings for cap"}
+
+
+def build_ticker_bounds(
+    db: Session, user_id: int, tickers: list[str], position_cap: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-ticker (lower, upper) bounds combining the global position cap
+    with any user-set TickerConstraint (e.g. 'VOO needs >= 5%'). A ticker
+    constraint's cap_pct is clamped to the global position cap, never above
+    it -- per-ticker floors can raise the minimum, but the position cap is
+    still the ceiling. A TickerConstraint whose ticker isn't in `tickers`
+    (e.g. a stale constraint on a ticker no longer in the candidate
+    universe) has no bound-vector slot to occupy and is filtered out at the
+    query level -- it's simply not applicable to this run, not a clip worth
+    logging (unlike clip_sector_bounds's sector case, this function has no
+    log channel in its return signature)."""
+    constraints = {
+        c.ticker: c
+        for c in db.query(TickerConstraint).filter(TickerConstraint.user_id == user_id, TickerConstraint.ticker.in_(tickers)).all()
+    }
+    lower = np.zeros(len(tickers))
+    upper = np.full(len(tickers), position_cap)
+    for i, ticker in enumerate(tickers):
+        constraint = constraints.get(ticker)
+        if constraint is None:
+            continue
+        lower[i] = min(float(constraint.floor_pct) / 100, position_cap)
+        upper[i] = min(float(constraint.cap_pct) / 100, position_cap)
+    return lower, upper
