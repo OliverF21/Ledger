@@ -568,6 +568,23 @@ def test_advanced_mode_returns_both_objectives_with_different_weights(db_session
     utility_weights = next(o for o in result.objectives if o.name == "max_quadratic_utility").tickers
     assert sharpe_weights != utility_weights  # different objectives should generally diverge
 
+    # Task 12 review fix round: assert on frontier_points' actual content
+    # through the FULL integration path (a real build_optimization_suggestion
+    # call wiring mu_bl/sigma_bl, ticker bounds, and sector_scipy_constraints
+    # into sweep_efficient_frontier), not just the basic-mode `is None` check
+    # elsewhere in this file. This is the only place in this test file that
+    # would catch a future regression that broke the sweep call's wiring --
+    # e.g. accidentally passing mean_returns/cov (the basic-mode inputs)
+    # instead of mu_bl/sigma_bl, or advanced_constraints (which already
+    # contains its own sum-to-one equality constraint) instead of
+    # sector_scipy_constraints.
+    assert result.frontier_points is not None
+    assert len(result.frontier_points) > 0
+    for point in result.frontier_points:
+        assert set(point.keys()) == {"volatility_pct", "return_pct"}
+    frontier_vols = [p["volatility_pct"] for p in result.frontier_points]
+    assert frontier_vols == sorted(frontier_vols)  # non-decreasing, matching sweep_efficient_frontier's own contract
+
 
 def test_concentration_strength_zero_produces_no_penalty(db_session, seeded_price_history, seeded_ticker_classifications):
     user = db_session.query(User).filter_by(id=1).one()
