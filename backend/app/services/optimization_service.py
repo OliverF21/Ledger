@@ -11,8 +11,9 @@ single max-Sharpe solve over historical-mean returns and a Ledoit-Wolf-
 shrunk covariance, bounded by a user-configurable position cap. Advanced
 mode blends Black-Litterman returns (market-implied prior + ETF trailing-
 mean views via Idzorek) with sector/ticker constraints, a concentration
-(HHI-style) penalty, and two solves -- max-Sharpe and max-quadratic-utility
-(Tasks 10-11); the efficient-frontier sweep lands in Task 12.
+(HHI-style) penalty, two solves -- max-Sharpe and max-quadratic-utility
+(Tasks 10-11) -- and an efficient-frontier sweep across target
+volatilities (Task 12).
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.models import TickerClassification, User
 from app.risk_free_rate import get_cached_risk_free_rate
+from app.services.efficient_frontier_service import sweep_efficient_frontier
 from app.services.investment_service import _investment_accounts
 from app.services.portfolio_math_service import (
     TRADING_DAYS_PER_YEAR as LEDOIT_WOLF_ANNUALIZATION_DAYS,
@@ -230,11 +232,10 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
     effective_cap, cap_relax_log = relax_position_cap_if_needed(n, requested_cap)
 
     if advanced:
-        # Concentration penalty + Max Quadratic Utility objective (Task 11);
-        # the efficient-frontier sweep (Task 12) still lands in a later
-        # task. This branch returns two BL-driven ObjectiveResults
-        # (max_sharpe, max_quadratic_utility) with sector_breakdown
-        # populated.
+        # Concentration penalty + Max Quadratic Utility objective (Task 11)
+        # plus the efficient-frontier sweep (Task 12). This branch returns
+        # two BL-driven ObjectiveResults (max_sharpe, max_quadratic_utility)
+        # with sector_breakdown and frontier_points populated.
         spy_dates, spy_prices = price_matrix(db, ["SPY"], start, end)
         if len(spy_dates) < 2:
             # SPY is a guaranteed benchmark ticker per price_sync_service.py's
@@ -351,7 +352,14 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
             utility = weights @ mu_bl - 0.5 * delta * weights @ sigma_bl @ weights
             return -utility + gamma_utility * np.sum(weights**2)
 
-        advanced_constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
+        # Per-sector inequality constraints live in their own list (rather
+        # than being appended straight into advanced_constraints) because
+        # Task 12's frontier sweep (sweep_efficient_frontier, below) also
+        # needs them standalone: it prepends its own sum-to-one equality
+        # constraint internally, so handing it advanced_constraints
+        # (which already has one) would duplicate that equality constraint
+        # into every one of the sweep's solves.
+        sector_scipy_constraints = []
         for j in range(len(sector_names)):
             col = exposure_matrix[:, j]
             lo = sector_lower[j]
@@ -365,8 +373,9 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
             # sector. Default args are evaluated once, at lambda-definition
             # time (i.e. per-iteration here), so each constraint keeps its
             # own sector's values independently.
-            advanced_constraints.append({"type": "ineq", "fun": lambda w, col=col, lo=lo: col @ w - lo})
-            advanced_constraints.append({"type": "ineq", "fun": lambda w, col=col, hi=hi: hi - col @ w})
+            sector_scipy_constraints.append({"type": "ineq", "fun": lambda w, col=col, lo=lo: col @ w - lo})
+            sector_scipy_constraints.append({"type": "ineq", "fun": lambda w, col=col, hi=hi: hi - col @ w})
+        advanced_constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}] + sector_scipy_constraints
 
         bounds = list(zip(ticker_lower, ticker_upper))
         initial = np.array([1.0 / n] * n)
@@ -403,6 +412,19 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         )
         objectives = [max_sharpe_objective, max_utility_objective]
 
+        # Efficient-frontier sweep (Task 12): independent SLSQP solves at a
+        # range of target volatilities spanning the achievable min-volatility
+        # portfolio through the max-return portfolio's volatility, using the
+        # same BL posterior (mu_bl/sigma_bl) and ticker/sector constraints as
+        # both solves above. Passes sector_scipy_constraints (the per-sector
+        # inequalities only) rather than advanced_constraints -- see the
+        # comment where sector_scipy_constraints is built above --
+        # sweep_efficient_frontier prepends its own sum-to-one equality
+        # constraint internally.
+        frontier_points = sweep_efficient_frontier(
+            mu_bl, sigma_bl, bounds, sector_scipy_constraints, n_points=20,
+        )
+
         # floor_pct/cap_pct reuse the lower/upper vectors clip_sector_bounds
         # already returned above (rather than re-reading the raw
         # SectorConstraint rows) so the reported figures reflect any
@@ -434,7 +456,7 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
             position_cap_pct=round(effective_cap * 100, 2),
             cap_relaxed=cap_relax_log,
             objectives=objectives,
-            frontier_points=None,
+            frontier_points=frontier_points,
             sector_breakdown=sector_breakdown,
             clip_log=clip_log,
         )
