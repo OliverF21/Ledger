@@ -552,3 +552,39 @@ def test_advanced_mode_handles_ticker_with_no_classification_row(db_session, see
     assert result.sector_breakdown is not None
     for row in result.sector_breakdown:
         assert 0.0 <= row["weight_pct"] <= 100.0 + 1e-6
+
+
+def test_advanced_mode_returns_both_objectives_with_different_weights(db_session, seeded_price_history, seeded_ticker_classifications):
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    user.optimization_concentration_strength = 0.5
+    db_session.commit()
+
+    result = build_optimization_suggestion(db_session)
+
+    names = {o.name for o in result.objectives}
+    assert names == {"max_sharpe", "max_quadratic_utility"}
+    sharpe_weights = next(o for o in result.objectives if o.name == "max_sharpe").tickers
+    utility_weights = next(o for o in result.objectives if o.name == "max_quadratic_utility").tickers
+    assert sharpe_weights != utility_weights  # different objectives should generally diverge
+
+
+def test_concentration_strength_zero_produces_no_penalty(db_session, seeded_price_history, seeded_ticker_classifications):
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    user.optimization_concentration_strength = 0.0
+    db_session.commit()
+    baseline = build_optimization_suggestion(db_session)
+
+    user.optimization_concentration_strength = 1.0
+    db_session.commit()
+    concentrated_penalty = build_optimization_suggestion(db_session)
+
+    def effective_n(objective_tickers):
+        import numpy as np
+        w = np.array([t.suggested_weight_pct for t in objective_tickers]) / 100
+        return 1 / (w ** 2).sum() if (w ** 2).sum() > 0 else 0
+
+    baseline_n = effective_n(next(o for o in baseline.objectives if o.name == "max_sharpe").tickers)
+    penalized_n = effective_n(next(o for o in concentrated_penalty.objectives if o.name == "max_sharpe").tickers)
+    assert penalized_n >= baseline_n  # higher strength should never concentrate MORE

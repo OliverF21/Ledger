@@ -114,6 +114,22 @@ def idzorek_omega(view_confidences: list[float], P: np.ndarray, tau: float, cov:
     return omega
 
 
+GAMMA_SHARPE_SCALE = 2.0       # calibrated so strength=1.0 gives a visible
+GAMMA_UTILITY_SCALE = 0.3      # but not dominant pull toward diversification
+                                # on each objective's own natural scale
+                                # (Sharpe ~O(0.1-3), utility ~O(0.01-0.5)).
+
+
+def concentration_gammas(strength: float) -> tuple[float, float]:
+    """Maps the single user-facing 0-1 'diversification strength' slider to
+    two independently-scaled gamma values, one per objective -- the two
+    objectives have different natural magnitudes, so one raw gamma would
+    mean very different things to each (see design doc, gamma scale
+    mismatch section)."""
+    strength = max(0.0, min(1.0, strength))
+    return strength * GAMMA_SHARPE_SCALE, strength * GAMMA_UTILITY_SCALE
+
+
 def black_litterman_posterior(
     cov: np.ndarray, pi: np.ndarray, P: np.ndarray, Q: np.ndarray, omega: np.ndarray, tau: float = 0.05
 ) -> tuple[np.ndarray, np.ndarray]:

@@ -10,9 +10,9 @@ Basic mode (User.optimization_advanced_enabled == False, the default): a
 single max-Sharpe solve over historical-mean returns and a Ledoit-Wolf-
 shrunk covariance, bounded by a user-configurable position cap. Advanced
 mode blends Black-Litterman returns (market-implied prior + ETF trailing-
-mean views via Idzorek) with sector/ticker constraints for a single
-max-Sharpe solve (Task 10); the concentration penalty, max-quadratic-
-utility objective, and efficient-frontier sweep land in Tasks 11-12.
+mean views via Idzorek) with sector/ticker constraints, a concentration
+(HHI-style) penalty, and two solves -- max-Sharpe and max-quadratic-utility
+(Tasks 10-11); the efficient-frontier sweep lands in Task 12.
 """
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ from app.services.investment_service import _investment_accounts
 from app.services.portfolio_math_service import (
     TRADING_DAYS_PER_YEAR as LEDOIT_WOLF_ANNUALIZATION_DAYS,
     black_litterman_posterior,
+    concentration_gammas,
     idzorek_omega,
     ledoit_wolf_shrinkage,
     market_implied_prior,
@@ -58,6 +59,10 @@ MIN_LOOKBACK_ROWS = 30
 # ones, so callers must coalesce NULL explicitly rather than trust the ORM
 # default has taken effect.
 DEFAULT_POSITION_CAP_PCT = 10.0
+# Documented default for User.optimization_concentration_strength (models.py).
+# Same NULL-on-pre-existing-rows rationale/mechanism as DEFAULT_POSITION_CAP_PCT
+# above -- see models.py:55-58.
+DEFAULT_CONCENTRATION_STRENGTH = 0.5
 
 
 @dataclass(frozen=True)
@@ -225,10 +230,11 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
     effective_cap, cap_relax_log = relax_position_cap_if_needed(n, requested_cap)
 
     if advanced:
-        # Max Quadratic Utility objective + concentration penalty (Task 11)
-        # and the efficient-frontier sweep (Task 12) land in later tasks;
-        # this branch currently returns a single BL-driven max_sharpe
-        # ObjectiveResult with sector_breakdown populated.
+        # Concentration penalty + Max Quadratic Utility objective (Task 11);
+        # the efficient-frontier sweep (Task 12) still lands in a later
+        # task. This branch returns two BL-driven ObjectiveResults
+        # (max_sharpe, max_quadratic_utility) with sector_breakdown
+        # populated.
         spy_dates, spy_prices = price_matrix(db, ["SPY"], start, end)
         if len(spy_dates) < 2:
             # SPY is a guaranteed benchmark ticker per price_sync_service.py's
@@ -313,12 +319,37 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         sector_lower, sector_upper, clip_log = clip_sector_bounds(db, 1, sector_names, exposure_matrix, effective_cap)
         ticker_lower, ticker_upper = build_ticker_bounds(db, 1, tickers, effective_cap)
 
+        # NULL-coalesce, same pattern/rationale as `advanced`/`requested_cap_pct`
+        # in the shared preamble above (models.py:55-58): a pre-existing DB
+        # row predating this column's migration reads NULL here too, despite
+        # the column's declared ORM default (0.5).
+        concentration_strength = (
+            DEFAULT_CONCENTRATION_STRENGTH if user.optimization_concentration_strength is None
+            else float(user.optimization_concentration_strength)
+        )
+        gamma_sharpe, gamma_utility = concentration_gammas(concentration_strength)
+
         def neg_sharpe_bl(weights: np.ndarray) -> float:
             ret = np.dot(weights, mu_bl) * TRADING_DAYS_PER_YEAR
             vol = np.sqrt(weights @ sigma_bl @ weights) * np.sqrt(TRADING_DAYS_PER_YEAR)
             if vol == 0:
                 return 0.0
-            return -(ret - risk_free_rate_pct / 100) / vol
+            return -(ret - risk_free_rate_pct / 100) / vol + gamma_sharpe * np.sum(weights**2)
+
+        def neg_utility_bl(weights: np.ndarray) -> float:
+            # Max Quadratic Utility: -(w'mu - 0.5*delta*w'Sigma*w), the
+            # standard mean-variance utility an investor with risk-aversion
+            # `delta` (already computed above from the SPY benchmark, per
+            # market_implied_risk_aversion's own docstring: "Used both to
+            # build the Black-Litterman prior AND as the quadratic-utility
+            # objective's risk-aversion parameter") would maximize -- a
+            # second, differently-shaped view of the same mu_bl/sigma_bl
+            # BL-posterior inputs the max-Sharpe solve above uses, not a
+            # variant of Sharpe itself. Same concentration-penalty idiom as
+            # neg_sharpe_bl, independently scaled via gamma_utility since
+            # this objective's natural magnitude differs from Sharpe's.
+            utility = weights @ mu_bl - 0.5 * delta * weights @ sigma_bl @ weights
+            return -utility + gamma_utility * np.sum(weights**2)
 
         advanced_constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
         for j in range(len(sector_names)):
@@ -347,7 +378,30 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         ticker_weights, max_sharpe_objective, suggested_sharpe_rounded = _build_ticker_weights_and_objective(
             "max_sharpe", tickers, current_weights_pct, suggested_weights, suggested_return, suggested_vol, suggested_sharpe,
         )
-        objectives = [max_sharpe_objective]
+
+        # Second, independent solve: same bounds/constraints (sector floors/
+        # caps, ticker minimums, sum-to-1) as the max-Sharpe solve above, but
+        # a different objective function (neg_utility_bl) -- so it's
+        # expected to (and, per this task's own verification, empirically
+        # does) generally converge to a different weight vector.
+        utility_result = minimize(neg_utility_bl, initial, method="SLSQP", bounds=bounds, constraints=advanced_constraints)
+        suggested_weights_utility = utility_result.x if utility_result.success else initial
+        suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility = portfolio_stats(
+            suggested_weights_utility, mu_bl, sigma_bl, risk_free_rate_pct,
+        )
+        # Reuses _build_ticker_weights_and_objective (Task 10's fix-round
+        # helper, added specifically so this task wouldn't need a third
+        # near-duplicate ticker-weights/ObjectiveResult construction block).
+        # Its ticker-weights/rounded-sharpe return values aren't needed here:
+        # the top-level OptimizationData.tickers/suggested_* fields stay
+        # tied to the max_sharpe objective (unchanged from Task 10), and
+        # this objective's own tickers already live inside
+        # max_utility_objective.tickers.
+        _, max_utility_objective, _ = _build_ticker_weights_and_objective(
+            "max_quadratic_utility", tickers, current_weights_pct, suggested_weights_utility,
+            suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility,
+        )
+        objectives = [max_sharpe_objective, max_utility_objective]
 
         # floor_pct/cap_pct reuse the lower/upper vectors clip_sector_bounds
         # already returned above (rather than re-reading the raw
