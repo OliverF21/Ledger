@@ -468,3 +468,87 @@ def test_advanced_mode_handles_zero_variance_ticker_without_crashing(db_session)
     assert result.advanced_enabled is True
     tickers_present = {t.ticker for t in result.tickers}
     assert tickers_present == {"TICKA", "TICKZERO"}
+
+
+def test_advanced_mode_handles_ticker_with_no_classification_row(db_session, seeded_price_history):
+    # Regression test pinning a behavior a reviewer verified only by READING
+    # the code, not by a test: a held, priceable ticker with NO
+    # TickerClassification row at all -- genuinely absent from the table,
+    # not a row with an empty/null sector_weights_json -- must not crash
+    # advanced mode. Three call sites in the advanced branch each handle
+    # this the same way, all traced by reading optimization_service.py and
+    # sector_constraint_service.py:
+    #   1. market_caps: `classification_by_ticker[t]...if t in
+    #      classification_by_ticker...else 0.0` -> the ticker gets 0 market
+    #      weight in the Black-Litterman prior (a plain delta*cov@w product,
+    #      well-defined for any weight vector including zero entries).
+    #   2. etf_indices: `classification_by_ticker.get(t) is not None and
+    #      ...asset_class == "etf"` -> None short-circuits False, so the
+    #      ticker is silently excluded from the ETF-views pool rather than
+    #      raising a KeyError.
+    #   3. build_sector_exposure_matrix (sector_constraint_service.py):
+    #      `weights_by_ticker.get(ticker, {})` -> an absent ticker defaults
+    #      to an empty dict, leaving its entire exposure-matrix row at 0 for
+    #      every sector, rather than a KeyError.
+    # This test exercises all three with a real solve instead of relying on
+    # the code-reading argument alone.
+    #
+    # Reuses seeded_price_history (12 held+priced tickers, with TICKF10
+    # pre-destined to be the sole ETF per _SECTOR_BY_TICKER's docstring
+    # above) but does NOT use the seeded_ticker_classifications fixture,
+    # since that fixture classifies every single ticker -- instead builds
+    # the same rows inline, deliberately skipping TICKF01 so it alone ends
+    # up with zero classification rows.
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    db_session.commit()
+
+    unclassified_ticker = "TICKF01"
+    assert unclassified_ticker in seeded_price_history  # sanity: it's actually held+priced
+
+    classifications = [
+        TickerClassification(
+            ticker=_ETF_TICKER,
+            asset_class="etf",
+            sector_weights_json=json.dumps({"technology": 0.4, "financials": 0.3, "utilities": 0.3}),
+            market_cap_or_aum=Decimal("6000000000"),
+        ),
+    ]
+    for i, (ticker, sector) in enumerate(_SECTOR_BY_TICKER.items()):
+        if ticker == unclassified_ticker:
+            continue  # deliberately left with NO TickerClassification row
+        classifications.append(
+            TickerClassification(
+                ticker=ticker,
+                asset_class="equity",
+                sector_weights_json=json.dumps({sector: 1.0}),
+                market_cap_or_aum=Decimal(str(5_000_000_000 + i * 300_000_000)),
+            )
+        )
+    db_session.add_all(classifications)
+    db_session.commit()
+
+    # Confirm the setup actually produced the intended gap before exercising
+    # the code under test -- otherwise a fixture typo could silently turn
+    # this into a vacuous test that passes for the wrong reason.
+    assert db_session.query(TickerClassification).filter_by(ticker=unclassified_ticker).first() is None
+
+    result = build_optimization_suggestion(db_session)  # must not raise
+
+    assert result.insufficient_data is False
+    assert result.advanced_enabled is True
+    tickers_present = {t.ticker for t in result.tickers}
+    assert unclassified_ticker in tickers_present
+    unclassified_weight = next(t for t in result.tickers if t.ticker == unclassified_ticker)
+    assert 0.0 <= unclassified_weight.suggested_weight_pct <= 100.0
+
+    weights_sum = sum(t.suggested_weight_pct for t in result.tickers)
+    assert weights_sum == pytest.approx(100.0, abs=0.1)
+
+    # sector_breakdown must still compute cleanly (no KeyError/crash) with
+    # every reported sector weight a sane percentage -- the unclassified
+    # ticker's all-zero exposure row simply contributes nothing to any
+    # sector, rather than blowing up the matrix build.
+    assert result.sector_breakdown is not None
+    for row in result.sector_breakdown:
+        assert 0.0 <= row["weight_pct"] <= 100.0 + 1e-6

@@ -125,6 +125,47 @@ def _empty_result(data_points: int = 0) -> OptimizationData:
     )
 
 
+def _build_ticker_weights_and_objective(
+    name: str,
+    tickers: list[str],
+    current_weights_pct: dict[str, float],
+    suggested_weights: np.ndarray,
+    suggested_return: float,
+    suggested_vol: float,
+    suggested_sharpe: float | None,
+) -> tuple[list[TickerWeight], ObjectiveResult, float | None]:
+    """Shared by both basic mode and advanced mode's Max Sharpe solve: turns
+    a solved weight vector into the paired TickerWeight list and its single
+    ObjectiveResult. The only inputs that differ between the two current
+    call sites are the stats themselves (basic mode's plain mean/cov-derived
+    numbers vs. advanced mode's BL-derived mu_bl/sigma_bl-derived numbers)
+    and `name` -- both currently pass "max_sharpe", but Tasks 11-12 add a
+    second objective ("max_quadratic_utility") to the advanced branch, which
+    is why `name` is a parameter rather than hardcoded here.
+
+    Also returns `suggested_sharpe_rounded` separately (not just embedded in
+    the returned ObjectiveResult) since both call sites additionally thread
+    that same rounded value through to the top-level
+    `OptimizationData.suggested_sharpe` field."""
+    ticker_weights = [
+        TickerWeight(
+            ticker=t,
+            current_weight_pct=round(current_weights_pct[t], 2),
+            suggested_weight_pct=round(float(suggested_weights[i]) * 100, 2),
+        )
+        for i, t in enumerate(tickers)
+    ]
+    suggested_sharpe_rounded = round(suggested_sharpe, 2) if suggested_sharpe is not None else None
+    objective = ObjectiveResult(
+        name=name,
+        tickers=ticker_weights,
+        expected_return_pct=round(suggested_return, 2),
+        volatility_pct=round(suggested_vol, 2),
+        sharpe=suggested_sharpe_rounded,
+    )
+    return ticker_weights, objective, suggested_sharpe_rounded
+
+
 def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> OptimizationData:
     lookback_days = max(90, min(int(lookback_days), 1825))
     end = date.today()
@@ -303,24 +344,10 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         suggested_weights = result.x if result.success else initial
         suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mu_bl, sigma_bl, risk_free_rate_pct)
 
-        ticker_weights = [
-            TickerWeight(
-                ticker=t,
-                current_weight_pct=round(current_weights_pct[t], 2),
-                suggested_weight_pct=round(float(suggested_weights[i]) * 100, 2),
-            )
-            for i, t in enumerate(tickers)
-        ]
-        suggested_sharpe_rounded = round(suggested_sharpe, 2) if suggested_sharpe is not None else None
-        objectives = [
-            ObjectiveResult(
-                name="max_sharpe",
-                tickers=ticker_weights,
-                expected_return_pct=round(suggested_return, 2),
-                volatility_pct=round(suggested_vol, 2),
-                sharpe=suggested_sharpe_rounded,
-            )
-        ]
+        ticker_weights, max_sharpe_objective, suggested_sharpe_rounded = _build_ticker_weights_and_objective(
+            "max_sharpe", tickers, current_weights_pct, suggested_weights, suggested_return, suggested_vol, suggested_sharpe,
+        )
+        objectives = [max_sharpe_objective]
 
         # floor_pct/cap_pct reuse the lower/upper vectors clip_sector_bounds
         # already returned above (rather than re-reading the raw
@@ -373,24 +400,10 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
     suggested_weights = result.x if result.success else initial
     suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mean_returns, cov, risk_free_rate_pct)
 
-    ticker_weights = [
-        TickerWeight(
-            ticker=t,
-            current_weight_pct=round(current_weights_pct[t], 2),
-            suggested_weight_pct=round(float(suggested_weights[i]) * 100, 2),
-        )
-        for i, t in enumerate(tickers)
-    ]
-    suggested_sharpe_rounded = round(suggested_sharpe, 2) if suggested_sharpe is not None else None
-    objectives = [
-        ObjectiveResult(
-            name="max_sharpe",
-            tickers=ticker_weights,
-            expected_return_pct=round(suggested_return, 2),
-            volatility_pct=round(suggested_vol, 2),
-            sharpe=suggested_sharpe_rounded,
-        )
-    ]
+    ticker_weights, max_sharpe_objective, suggested_sharpe_rounded = _build_ticker_weights_and_objective(
+        "max_sharpe", tickers, current_weights_pct, suggested_weights, suggested_return, suggested_vol, suggested_sharpe,
+    )
+    objectives = [max_sharpe_objective]
 
     return OptimizationData(
         tickers=ticker_weights,
