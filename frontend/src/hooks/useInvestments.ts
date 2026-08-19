@@ -178,6 +178,39 @@ export interface AllocationWeight {
   suggested_weight_pct: number
 }
 
+export interface ObjectiveResponse {
+  name: string
+  tickers: AllocationWeight[]
+  expected_return_pct: number | null
+  volatility_pct: number | null
+  sharpe: number | null
+}
+
+export interface FrontierPoint {
+  volatility_pct: number
+  return_pct: number
+}
+
+export interface SectorBreakdownRow {
+  sector: string
+  weight_pct: number
+  floor_pct: number
+  cap_pct: number
+}
+
+// Shared by cap_relaxed (a single entry-or-null, from relax_position_cap_if_needed)
+// and clip_log (a list of entries, from clip_sector_bounds) -- two different
+// producers with different shapes, hence every field is optional rather than
+// this being two types. Mirrors backend ClipLogEntry (routes/portfolio_risk.py).
+export interface ClipLogEntry {
+  sector: string | null
+  requested_floor: number | null
+  clipped_to: number | null
+  requested_cap: number | null
+  relaxed_to: number | null
+  reason: string | null
+}
+
 export interface OptimizationSuggestion {
   tickers: AllocationWeight[]
   current_expected_return_pct: number | null
@@ -188,6 +221,13 @@ export interface OptimizationSuggestion {
   suggested_sharpe: number | null
   data_points: number
   insufficient_data: boolean
+  advanced_enabled: boolean
+  position_cap_pct: number
+  cap_relaxed: ClipLogEntry | null
+  objectives: ObjectiveResponse[]
+  frontier_points: FrontierPoint[] | null
+  sector_breakdown: SectorBreakdownRow[] | null
+  clip_log: ClipLogEntry[]
 }
 
 export function useInvestmentsOptimization(lookbackDays: number = 365) {
@@ -204,4 +244,136 @@ export function useInvestmentsOptimization(lookbackDays: number = 365) {
   }, [lookbackDays])
 
   return { data, loading }
+}
+
+export interface OptimizationSettings {
+  advanced_enabled: boolean
+  position_cap_pct: number
+  concentration_strength: number
+}
+
+export function useOptimizationPreferences() {
+  const [data, setData] = useState<OptimizationSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const refetch = useCallback(() => {
+    setLoading(true)
+    apiFetch('/api/investments/optimization-settings')
+      .then(r => r.json()).then(setData).catch(() => setData(null)).finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { refetch() }, [refetch])
+
+  const update = useCallback(async (patch: Partial<OptimizationSettings>) => {
+    const response = await apiFetch('/api/investments/optimization-settings', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    })
+    const updated = await response.json()
+    setData(updated)
+    return updated
+  }, [])
+
+  return { data, loading, update, refetch }
+}
+
+export interface SectorConstraint {
+  id: number
+  sector: string
+  floor_pct: number
+  cap_pct: number
+}
+
+export function useSectorConstraints() {
+  const [data, setData] = useState<SectorConstraint[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refetch = useCallback(() => {
+    setLoading(true)
+    return apiFetch('/api/investments/sector-constraints')
+      .then(r => r.json()).then(setData).catch(() => setData([])).finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { refetch() }, [refetch])
+
+  const create = useCallback(async (input: Omit<SectorConstraint, 'id'>): Promise<SectorConstraint> => {
+    const res = await apiFetch('/api/investments/sector-constraints', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.detail || `Create failed (HTTP ${res.status})`)
+    await refetch()
+    return json as SectorConstraint
+  }, [refetch])
+
+  const update = useCallback(async (id: number, input: Omit<SectorConstraint, 'id'>): Promise<SectorConstraint> => {
+    const res = await apiFetch(`/api/investments/sector-constraints/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.detail || `Update failed (HTTP ${res.status})`)
+    await refetch()
+    return json as SectorConstraint
+  }, [refetch])
+
+  const remove = useCallback(async (id: number): Promise<void> => {
+    const res = await apiFetch(`/api/investments/sector-constraints/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      throw new Error(json.detail || `Delete failed (HTTP ${res.status})`)
+    }
+    await refetch()
+  }, [refetch])
+
+  return { data, loading, create, update, remove, refetch }
+}
+
+export interface TickerConstraint {
+  id: number
+  ticker: string
+  floor_pct: number
+  cap_pct: number
+}
+
+export function useTickerConstraints() {
+  const [data, setData] = useState<TickerConstraint[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refetch = useCallback(() => {
+    setLoading(true)
+    return apiFetch('/api/investments/ticker-constraints')
+      .then(r => r.json()).then(setData).catch(() => setData([])).finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { refetch() }, [refetch])
+
+  const create = useCallback(async (input: Omit<TickerConstraint, 'id'>): Promise<TickerConstraint> => {
+    const res = await apiFetch('/api/investments/ticker-constraints', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.detail || `Create failed (HTTP ${res.status})`)
+    await refetch()
+    return json as TickerConstraint
+  }, [refetch])
+
+  const update = useCallback(async (id: number, input: Omit<TickerConstraint, 'id'>): Promise<TickerConstraint> => {
+    const res = await apiFetch(`/api/investments/ticker-constraints/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.detail || `Update failed (HTTP ${res.status})`)
+    await refetch()
+    return json as TickerConstraint
+  }, [refetch])
+
+  const remove = useCallback(async (id: number): Promise<void> => {
+    const res = await apiFetch(`/api/investments/ticker-constraints/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      throw new Error(json.detail || `Delete failed (HTTP ${res.status})`)
+    }
+    await refetch()
+  }, [refetch])
+
+  return { data, loading, create, update, remove, refetch }
 }
