@@ -60,6 +60,17 @@ def client(tmp_path, monkeypatch):
 
     with TestClient(main.app) as c:
         yield c
+    # Without this, these two overrides (bound to this test's throwaway
+    # tmp_path engines) stay registered on `main.app` after the test ends.
+    # `main` is only reloaded here and in test_auth.py, not by every test
+    # file, so a LATER file that does a plain `import main` (no reload)
+    # reuses this SAME app instance -- and if that file's own `Depends(get_db)`
+    # happens to resolve to this exact (pre-reload) `get_db` object too, its
+    # requests get silently routed through this already-torn-down database
+    # instead of its own. Confirmed to actually happen: test_optimization_
+    # settings_api.py's first test failed with a spurious NoResultFound on
+    # the User row until this clear() was added.
+    main.app.dependency_overrides.clear()
 
 
 def _auth_headers():
