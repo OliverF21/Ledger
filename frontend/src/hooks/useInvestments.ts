@@ -268,7 +268,8 @@ export function useOptimizationPreferences() {
     const response = await apiFetch('/api/investments/optimization-settings', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
     })
-    const updated = await response.json()
+    const updated = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(updated.detail || `Update failed (HTTP ${response.status})`)
     setData(updated)
     return updated
   }, [])
