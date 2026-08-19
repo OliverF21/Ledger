@@ -25,6 +25,7 @@ from app.services.analytics_service import (
     search_transactions as search_transaction_data,
 )
 from app.services.investment_service import build_investment_performance
+from app.services.optimization_service import build_optimization_suggestion
 from mcp_server.proposals import create_budget_proposal
 from mcp_server.sankey import build_cash_flow_sankey_payload, build_cash_flow_sankey_svg
 from mcp_server.visuals import cash_flow_chart_result
@@ -48,6 +49,8 @@ from mcp_server.schemas import (
     InvestmentPerformanceResult,
     InvestmentPositionResult,
     MonthlySpendingResult,
+    ObjectiveResult,
+    PortfolioOptimizationResult,
     RecentTransactionResult,
     ProposalResult,
     RecurringSpendItemResult,
@@ -73,6 +76,8 @@ mcp = FastMCP(
         "- budget_status — budget vs actual\n"
         "- recurring_subscriptions — recurring charges\n"
         "- investment_performance — portfolio metrics\n"
+        "- portfolio_optimization — suggested allocation (Max Sharpe, and Max Quadratic "
+        "Utility + efficient frontier in advanced mode)\n"
         "- transaction_search — evidence rows\n"
         "- net_worth_data — net worth history and account breakdown (JSON)\n"
         "- trends_data — monthly spending vs income series (JSON)\n\n"
@@ -655,6 +660,32 @@ def get_investment_performance(
             for item in result.history
         ],
     )
+
+
+@mcp.tool(name="portfolio_optimization", tags={"analytics", "investments"})
+def portfolio_optimization() -> PortfolioOptimizationResult:
+    """Suggested portfolio allocation (Max Sharpe, and Max Quadratic Utility
+    + efficient frontier if advanced mode is enabled), computed from the
+    user's current holdings and preferences. Read-only -- structured metrics
+    only, no generated explanation; summarize/explain the numbers yourself."""
+    with ledger_session() as db:
+        data = build_optimization_suggestion(db)
+        return PortfolioOptimizationResult(
+            advanced_enabled=data.advanced_enabled,
+            position_cap_pct=data.position_cap_pct,
+            objectives=[
+                ObjectiveResult(
+                    name=o.name, tickers=[vars(t) for t in o.tickers],
+                    expected_return_pct=o.expected_return_pct, volatility_pct=o.volatility_pct, sharpe=o.sharpe,
+                )
+                for o in data.objectives
+            ],
+            frontier_points=data.frontier_points,
+            sector_breakdown=data.sector_breakdown,
+            clip_log=data.clip_log,
+            data_points=data.data_points,
+            insufficient_data=data.insufficient_data,
+        )
 
 
 def _resolve_month_window(month: str | None) -> tuple[int, int, date, date, str]:
