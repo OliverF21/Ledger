@@ -30,7 +30,13 @@ from app.models import (  # noqa: E402
     TickerClassification,
     User,
 )
-from app.services.optimization_service import build_optimization_suggestion  # noqa: E402
+import numpy as np  # noqa: E402
+
+from app.services.optimization_service import (  # noqa: E402
+    TRADING_DAYS_PER_YEAR,
+    build_optimization_suggestion,
+    neg_utility_bl,
+)
 
 
 @pytest.fixture
@@ -598,10 +604,131 @@ def test_concentration_strength_zero_produces_no_penalty(db_session, seeded_pric
     concentrated_penalty = build_optimization_suggestion(db_session)
 
     def effective_n(objective_tickers):
-        import numpy as np
         w = np.array([t.suggested_weight_pct for t in objective_tickers]) / 100
         return 1 / (w ** 2).sum() if (w ** 2).sum() > 0 else 0
 
     baseline_n = effective_n(next(o for o in baseline.objectives if o.name == "max_sharpe").tickers)
     penalized_n = effective_n(next(o for o in concentrated_penalty.objectives if o.name == "max_sharpe").tickers)
     assert penalized_n >= baseline_n  # higher strength should never concentrate MORE
+
+
+# ─── Quadratic-utility objective: annualization ─────────────────────────────
+
+def test_neg_utility_bl_annualizes_both_terms_hand_computed():
+    """Pins neg_utility_bl's exact annualization against a hand-worked
+    example, in the style of test_portfolio_math_service.py's formula tests.
+
+    mu_bl/sigma_bl are DAILY (build_optimization_suggestion divides `cov`
+    back to daily terms before every BL call), so BOTH terms annualize by
+    x TRADING_DAYS_PER_YEAR -- returns because means scale linearly with
+    time, variance because the variance of an i.i.d. sum does too. `delta`
+    is already an annual coefficient (annual excess return / annual
+    variance) and must NOT be rescaled.
+
+        w             = [0.6, 0.4]
+        mu_bl         = [0.001, 0.0005]                 (daily)
+        sigma_bl      = diag(0.0004, 0.0001)            (daily)
+        delta         = 3.0                             (annual, unscaled)
+        gamma_utility = 0.15
+
+        w'mu          = 0.6*0.001 + 0.4*0.0005 = 0.0008
+        annual return = 0.0008 * 365           = 0.292
+        w'Sigma w     = 0.36*0.0004 + 0.16*0.0001 = 0.00016
+        annual var    = 0.00016 * 365          = 0.0584
+        utility       = 0.292 - 0.5*3.0*0.0584 = 0.2044
+        penalty       = 0.15 * (0.36 + 0.16)   = 0.078
+        returned      = -0.2044 + 0.078        = -0.1264
+    """
+    assert TRADING_DAYS_PER_YEAR == 365  # the arithmetic above is pinned to this
+
+    weights = np.array([0.6, 0.4])
+    mu_bl = np.array([0.001, 0.0005])
+    sigma_bl = np.diag([0.0004, 0.0001])
+
+    result = neg_utility_bl(weights, mu_bl, sigma_bl, delta=3.0, gamma_utility=0.15)
+
+    assert result == pytest.approx(-0.1264, abs=1e-9)
+
+
+def test_neg_utility_bl_scales_variance_linearly_not_by_sqrt():
+    """Guards the specific mistake the annualization fix had to avoid:
+    reaching for sqrt(TRADING_DAYS_PER_YEAR) on the variance term because
+    neg_sharpe_bl uses a sqrt. neg_sharpe_bl's sqrt is there because its
+    denominator is a standard DEVIATION; quadratic utility penalizes
+    VARIANCE directly, which scales linearly with time.
+
+    Isolate the variance term by zeroing mu_bl and gamma_utility, so the
+    returned value is exactly 0.5*delta*annual_variance.
+    """
+    weights = np.array([1.0, 0.0])
+    sigma_bl = np.diag([0.0004, 0.0001])
+
+    result = neg_utility_bl(
+        weights, mu_bl=np.zeros(2), sigma_bl=sigma_bl, delta=2.0, gamma_utility=0.0,
+    )
+
+    linear = 0.5 * 2.0 * 0.0004 * TRADING_DAYS_PER_YEAR          # 0.146
+    sqrt_scaled = 0.5 * 2.0 * 0.0004 * np.sqrt(TRADING_DAYS_PER_YEAR)  # 0.00764
+    assert result == pytest.approx(linear, abs=1e-9)
+    assert result != pytest.approx(sqrt_scaled, abs=1e-6)
+
+
+def test_quadratic_utility_objective_is_not_collapsed_to_equal_weights(
+    db_session, seeded_price_history, seeded_ticker_classifications,
+):
+    """Regression test for the missing annualization in neg_utility_bl.
+
+    GAMMA_UTILITY_SCALE = 0.3 is calibrated against an ANNUAL-scale utility
+    (portfolio_math_service.py's own comment: "utility ~O(0.01-0.5)"). While
+    the objective was computed on raw DAILY mu_bl/sigma_bl it ran ~1/365th of
+    that scale, so the concentration penalty dominated by ~2 orders of
+    magnitude and this solve collapsed toward pure equal-weighting -- making
+    the two "differentiated" objectives effectively one.
+
+    The comparison is against the max-Sharpe objective solved from IDENTICAL
+    inputs in the same run -- which was already annualized and so is
+    unaffected by this fix -- rather than an absolute pp threshold, so it
+    stays meaningful if the fixture's price series ever drift. Measured on
+    this fixture at the default concentration_strength=0.5 (12 tickers,
+    equal weight = 8.33%), max deviation from equal weight:
+
+        objective              before fix   after fix
+        max_sharpe               7.803pp      7.803pp   (unaffected)
+        max_quadratic_utility    0.427pp      1.107pp
+        utility / sharpe           5.5%        14.2%
+
+    Note the bug bites in two compounding ways, which is why the
+    unannualized figure is so small: the ~1/365 scale both lets the
+    concentration penalty dominate the objective AND drops the whole
+    objective near SLSQP's absolute `ftol`, so the solver converges almost
+    immediately, barely off its equal-weight starting point.
+    """
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    user.optimization_concentration_strength = 0.5
+    db_session.commit()
+
+    result = build_optimization_suggestion(db_session)
+
+    def max_deviation_from_equal_weight(name):
+        objective = next(o for o in result.objectives if o.name == name)
+        weights = np.array([t.suggested_weight_pct for t in objective.tickers])
+        return float(np.abs(weights - 100.0 / len(weights)).max())
+
+    sharpe_dispersion = max_deviation_from_equal_weight("max_sharpe")
+    utility_dispersion = max_deviation_from_equal_weight("max_quadratic_utility")
+
+    assert sharpe_dispersion > 0  # sanity: the reference objective isn't itself flat
+    assert utility_dispersion / sharpe_dispersion >= 0.10, (
+        f"quadratic-utility solve looks collapsed toward equal weights: "
+        f"{utility_dispersion:.3f}pp vs max_sharpe's {sharpe_dispersion:.3f}pp "
+        f"on identical inputs"
+    )
+
+    # ...and it must not have collapsed onto the max-Sharpe solve's answer
+    # either -- the two objectives are meant to disagree.
+    sharpe_objective = next(o for o in result.objectives if o.name == "max_sharpe")
+    utility_objective = next(o for o in result.objectives if o.name == "max_quadratic_utility")
+    assert [t.suggested_weight_pct for t in sharpe_objective.tickers] != [
+        t.suggested_weight_pct for t in utility_objective.tickers
+    ]

@@ -132,6 +132,55 @@ def _empty_result(data_points: int = 0) -> OptimizationData:
     )
 
 
+def neg_utility_bl(
+    weights: np.ndarray, mu_bl: np.ndarray, sigma_bl: np.ndarray, delta: float, gamma_utility: float
+) -> float:
+    """Max Quadratic Utility, negated for scipy's minimizer:
+    -(w'mu - 0.5*delta*w'Sigma*w) + gamma*sum(w^2), the standard mean-
+    variance utility an investor with risk-aversion `delta` would maximize.
+    A second, differently-shaped view of the same mu_bl/sigma_bl BL-posterior
+    inputs the max-Sharpe solve uses, not a variant of Sharpe itself. Same
+    concentration-penalty idiom as neg_sharpe_bl, independently scaled via
+    gamma_utility since this objective's natural magnitude differs from
+    Sharpe's.
+
+    `mu_bl`/`sigma_bl` are DAILY-scale (build_optimization_suggestion divides
+    `cov` back to daily terms before any BL call, and portfolio_stats /
+    neg_sharpe_bl both annualize them themselves). Both terms are annualized
+    here to match that convention. That is load-bearing, not cosmetic:
+    GAMMA_UTILITY_SCALE = 0.3 is calibrated against an ANNUAL-scale utility
+    (portfolio_math_service.py's own comment pins the assumed range at
+    "utility ~O(0.01-0.5)"). Left unannualized, utility ran ~1/365th of that,
+    so the gamma_utility concentration penalty dominated the objective by
+    ~2 orders of magnitude and collapsed this solve to near-equal-weighting
+    at every concentration_strength -- measured at the 0.5 default: 0.43pp
+    max deviation from equal weight, vs. the max-Sharpe solve's 7.80pp on
+    identical inputs. That defeated the point of running two differentiated
+    objectives at all.
+
+    Mean returns annualize LINEARLY (x TRADING_DAYS_PER_YEAR); so does
+    variance, since the variance of an i.i.d. sum scales with time -- it is
+    x TRADING_DAYS_PER_YEAR, NOT x sqrt(...). The sqrt in neg_sharpe_bl is
+    there because Sharpe's denominator is a standard deviation, not a
+    variance; there is no sqrt here because quadratic utility penalizes
+    variance directly.
+
+    `delta` is deliberately NOT rescaled: market_implied_risk_aversion
+    computes it as (annual excess return) / (annual variance), so it is
+    already an annual-terms coefficient and multiplying an annualized
+    variance by it is dimensionally correct as-is.
+
+    Module-level (unlike neg_sharpe_bl, which stays a closure inside
+    build_optimization_suggestion) specifically so this annualization
+    convention can be pinned by a direct hand-computed unit test -- see
+    tests/test_optimization_service.py::test_neg_utility_bl_annualizes_*.
+    """
+    annual_return = float(weights @ mu_bl) * TRADING_DAYS_PER_YEAR
+    annual_variance = float(weights @ sigma_bl @ weights) * TRADING_DAYS_PER_YEAR
+    utility = annual_return - 0.5 * delta * annual_variance
+    return -utility + gamma_utility * float(np.sum(weights**2))
+
+
 def _build_ticker_weights_and_objective(
     name: str,
     tickers: list[str],
@@ -337,20 +386,13 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
                 return 0.0
             return -(ret - risk_free_rate_pct / 100) / vol + gamma_sharpe * np.sum(weights**2)
 
-        def neg_utility_bl(weights: np.ndarray) -> float:
-            # Max Quadratic Utility: -(w'mu - 0.5*delta*w'Sigma*w), the
-            # standard mean-variance utility an investor with risk-aversion
-            # `delta` (already computed above from the SPY benchmark, per
-            # market_implied_risk_aversion's own docstring: "Used both to
-            # build the Black-Litterman prior AND as the quadratic-utility
-            # objective's risk-aversion parameter") would maximize -- a
-            # second, differently-shaped view of the same mu_bl/sigma_bl
-            # BL-posterior inputs the max-Sharpe solve above uses, not a
-            # variant of Sharpe itself. Same concentration-penalty idiom as
-            # neg_sharpe_bl, independently scaled via gamma_utility since
-            # this objective's natural magnitude differs from Sharpe's.
-            utility = weights @ mu_bl - 0.5 * delta * weights @ sigma_bl @ weights
-            return -utility + gamma_utility * np.sum(weights**2)
+        # The quadratic-utility objective itself lives at module level
+        # (neg_utility_bl, above) rather than as a closure here -- see its
+        # docstring for why. `delta` is the same SPY-derived risk-aversion
+        # coefficient computed near the top of this branch, per
+        # market_implied_risk_aversion's own docstring: "Used both to build
+        # the Black-Litterman prior AND as the quadratic-utility objective's
+        # risk-aversion parameter".
 
         # Per-sector inequality constraints live in their own list (rather
         # than being appended straight into advanced_constraints) because
@@ -393,7 +435,10 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         # a different objective function (neg_utility_bl) -- so it's
         # expected to (and, per this task's own verification, empirically
         # does) generally converge to a different weight vector.
-        utility_result = minimize(neg_utility_bl, initial, method="SLSQP", bounds=bounds, constraints=advanced_constraints)
+        utility_result = minimize(
+            neg_utility_bl, initial, args=(mu_bl, sigma_bl, delta, gamma_utility),
+            method="SLSQP", bounds=bounds, constraints=advanced_constraints,
+        )
         suggested_weights_utility = utility_result.x if utility_result.success else initial
         suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility = portfolio_stats(
             suggested_weights_utility, mu_bl, sigma_bl, risk_free_rate_pct,
