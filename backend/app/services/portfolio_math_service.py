@@ -134,11 +134,41 @@ def black_litterman_posterior(
     cov: np.ndarray, pi: np.ndarray, P: np.ndarray, Q: np.ndarray, omega: np.ndarray, tau: float = 0.05
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Standard Black-Litterman posterior (He & Litterman 1999 formulation):
-      Σ_hat = [(τΣ)⁻¹ + PᵀΩ⁻¹P]⁻¹ [(τΣ)⁻¹π + PᵀΩ⁻¹Q]
-      μ_BL = π + (Σ_hat - π-term already folded in above; see below)
-      Σ_BL = Σ + [(τΣ)⁻¹ + PᵀΩ⁻¹P]⁻¹
-    Returns (mu_bl, sigma_bl) as an (n,) vector and (n,n) matrix.
+    Standard Black-Litterman posterior (He & Litterman 1999 formulation).
+
+    Treats the equilibrium prior π and the views Q as two independent noisy
+    observations of the same unknown mean-return vector, and combines them
+    by precision (inverse-covariance) weighting:
+
+      M    = (τΣ)⁻¹ + PᵀΩ⁻¹P            posterior precision of the mean
+      μ_BL = M⁻¹ [(τΣ)⁻¹π + PᵀΩ⁻¹Q]     precision-weighted blend of π and Q
+      Σ_BL = Σ + M⁻¹                     asset covariance + mean uncertainty
+
+    Each source is weighted by its own precision, so μ_BL slides between the
+    two ends: as Ω → ∞ (no confidence in the views) PᵀΩ⁻¹P → 0 and μ_BL → π,
+    the pure equilibrium prior; as Ω → 0 (full confidence) the view terms
+    dominate and μ_BL is pulled to satisfy Pμ = Q.
+
+    M⁻¹ is the posterior covariance OF THE ESTIMATED MEAN, not of returns,
+    which is why Σ_BL adds it to Σ rather than replacing Σ: an investor
+    holding this portfolio bears both the assets' own return variance and
+    the residual uncertainty about where their mean actually sits.
+
+    Args:
+      cov:   (n,n) asset return covariance Σ.
+      pi:    (n,)  equilibrium prior returns, e.g. from market_implied_prior.
+      P:     (k,n) view pick matrix -- row i selects the assets view i is about.
+      Q:     (k,)  the views' asserted returns.
+      omega: (k,k) view uncertainty Ω, e.g. from idzorek_omega.
+      tau:   scalar scaling the prior's uncertainty relative to Σ.
+
+    Returns (mu_bl, sigma_bl) as an (n,) vector and an (n,n) matrix.
+
+    Raises np.linalg.LinAlgError if `tau * cov` or `omega` is singular --
+    notably when cov contains a zero-variance asset, which forces that whole
+    row/column to zero. Callers are expected to floor the covariance diagonal
+    first; optimization_service.build_optimization_suggestion does exactly
+    that before every call here.
     """
     tau_cov_inv = np.linalg.inv(tau * cov)
     omega_inv = np.linalg.inv(omega)
