@@ -223,14 +223,17 @@ export default function OptimizationPreferencesPanel() {
     <div className="glass-card p-[16px]">
       <div className="flex items-center justify-between mb-[16px]">
         <span className="text-[14px] text-ledger-text-primary">Advanced optimization</span>
-        <Toggle enabled={prefs.advanced_enabled} onToggle={() => update({ advanced_enabled: !prefs.advanced_enabled })} />
+        <Toggle enabled={prefs.advanced_enabled} onToggle={() => update({ advanced_enabled: !prefs.advanced_enabled })
+          .catch(err => console.error('Failed to update optimization preferences:', err))} />
       </div>
       {prefs.advanced_enabled && (
         <div className="space-y-[16px]">
           <RangeSlider label="Position cap" value={prefs.position_cap_pct} min={2} max={50} step={1}
-            onChange={v => update({ position_cap_pct: v })} />
+            onChange={v => update({ position_cap_pct: v })
+              .catch(err => console.error('Failed to update optimization preferences:', err))} />
           <RangeSlider label="Diversification strength" value={prefs.concentration_strength * 100} min={0} max={100} step={5}
-            onChange={v => update({ concentration_strength: v / 100 })} />
+            onChange={v => update({ concentration_strength: v / 100 })
+              .catch(err => console.error('Failed to update optimization preferences:', err))} />
 
           <div>
             <div className="text-[13px] font-semibold text-ledger-text-primary mb-[10px]">Sector constraints</div>
