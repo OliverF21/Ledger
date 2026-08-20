@@ -14,7 +14,7 @@ HTTPException-passthrough-then-log_and_raise convention.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -22,6 +22,29 @@ from app.errors import log_and_raise
 from app.models import SectorConstraint, TickerConstraint, User
 
 router = APIRouter(prefix="/investments", tags=["investments"])
+
+
+def _validate_floor_cap(floor_pct: float, cap_pct: float) -> None:
+    """Enforce 0 <= floor_pct <= cap_pct <= 100 on an incoming constraint
+    payload. Shared by SectorConstraintPayload and TickerConstraintPayload,
+    whose floor/cap semantics are identical.
+
+    This is load-bearing, not cosmetic: both floor/cap pairs flow straight
+    into scipy.optimize.minimize's `bounds` (via
+    sector_constraint_service.build_ticker_bounds / clip_sector_bounds), and
+    scipy raises `ValueError: An upper bound is less than the corresponding
+    lower bound` on an inverted pair -- uncaught, that surfaced as an HTTP
+    500 from /api/investments/risk/optimize, i.e. one bad slider drag in the
+    UI (the floor and cap sliders have independent 0-100 ranges and no
+    cross-validation between them) broke the whole Investments page.
+
+    Raising ValueError from a Pydantic validator is enough: FastAPI turns a
+    request-body validation failure into a 422 automatically, so neither
+    route handler needs to catch this itself."""
+    if floor_pct < 0 or cap_pct > 100:
+        raise ValueError("floor_pct and cap_pct must be between 0 and 100")
+    if floor_pct > cap_pct:
+        raise ValueError("floor_pct must be <= cap_pct")
 
 
 # ─── Optimization settings (User.optimization_* preference columns) ──────────
@@ -104,8 +127,25 @@ class SectorConstraintPayload(BaseModel):
     floor_pct: float
     cap_pct: float
 
+    @model_validator(mode="after")
+    def _check_floor_cap(self):
+        _validate_floor_cap(self.floor_pct, self.cap_pct)
+        return self
 
-class SectorConstraintResponse(SectorConstraintPayload):
+
+class SectorConstraintResponse(BaseModel):
+    """Deliberately does NOT inherit SectorConstraintPayload (which it did
+    before the floor/cap validator was added). FastAPI runs `response_model`
+    through the same validation on the way out, so inheriting would make the
+    GET list endpoint 500 on any PRE-EXISTING inverted row -- rows created
+    before this validation existed, or written directly to the DB -- leaving
+    the user unable to even see the bad constraint, let alone PUT a fix over
+    it. Validation belongs on the way in only; the read path stays permissive
+    (and sector_constraint_service clamps such rows defensively before they
+    reach the solver)."""
+    sector: str
+    floor_pct: float
+    cap_pct: float
     id: int
 
 
@@ -175,8 +215,18 @@ class TickerConstraintPayload(BaseModel):
     floor_pct: float
     cap_pct: float
 
+    @model_validator(mode="after")
+    def _check_floor_cap(self):
+        _validate_floor_cap(self.floor_pct, self.cap_pct)
+        return self
 
-class TickerConstraintResponse(TickerConstraintPayload):
+
+class TickerConstraintResponse(BaseModel):
+    """Not a subclass of TickerConstraintPayload -- same read-path-stays-
+    permissive rationale as SectorConstraintResponse above."""
+    ticker: str
+    floor_pct: float
+    cap_pct: float
     id: int
 
 

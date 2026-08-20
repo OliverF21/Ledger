@@ -212,6 +212,121 @@ def test_sector_constraint_duplicate_sector_returns_409(client, auth_headers):
     assert dup.status_code == 409
 
 
+@pytest.mark.parametrize("method", ["post", "put"])
+def test_sector_constraint_rejects_floor_above_cap(client, auth_headers, method):
+    """floor_pct > cap_pct must be a 422, never a 200 (which would persist a
+    row that later crashes the solve) and never a 500.
+
+    Without the payload validator this pair reaches
+    scipy.optimize.minimize's `bounds` as (lower=0.40, upper=0.02), which
+    scipy rejects with `ValueError: An upper bound is less than the
+    corresponding lower bound` -- uncaught, surfacing as an HTTP 500 from
+    /api/investments/risk/optimize and taking the whole Investments page
+    down. It's reachable from the UI with no trickery at all: the floor and
+    cap sliders each span 0-100 independently, with no cross-validation.
+    """
+    created = client.post(
+        "/api/investments/sector-constraints",
+        json={"sector": "technology", "floor_pct": 5.0, "cap_pct": 30.0},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+    bad_payload = {"sector": "technology", "floor_pct": 40.0, "cap_pct": 2.0}
+
+    if method == "post":
+        response = client.post("/api/investments/sector-constraints", json=bad_payload, headers=auth_headers)
+    else:
+        response = client.put(
+            f"/api/investments/sector-constraints/{created.json()['id']}", json=bad_payload, headers=auth_headers,
+        )
+
+    assert response.status_code == 422
+
+    # The rejected write must not have taken effect -- the stored row keeps
+    # its original, valid floor/cap.
+    listed = client.get("/api/investments/sector-constraints", headers=auth_headers)
+    assert [(c["floor_pct"], c["cap_pct"]) for c in listed.json()] == [(5.0, 30.0)]
+
+
+@pytest.mark.parametrize("method", ["post", "put"])
+def test_ticker_constraint_rejects_floor_above_cap(client, auth_headers, method):
+    """Ticker mirror of test_sector_constraint_rejects_floor_above_cap --
+    both payloads share the same _validate_floor_cap check, and both feed the
+    same scipy `bounds` argument."""
+    created = client.post(
+        "/api/investments/ticker-constraints",
+        json={"ticker": "VOO", "floor_pct": 5.0, "cap_pct": 30.0},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+    bad_payload = {"ticker": "VOO", "floor_pct": 40.0, "cap_pct": 2.0}
+
+    if method == "post":
+        response = client.post("/api/investments/ticker-constraints", json=bad_payload, headers=auth_headers)
+    else:
+        response = client.put(
+            f"/api/investments/ticker-constraints/{created.json()['id']}", json=bad_payload, headers=auth_headers,
+        )
+
+    assert response.status_code == 422
+
+    listed = client.get("/api/investments/ticker-constraints", headers=auth_headers)
+    assert [(c["floor_pct"], c["cap_pct"]) for c in listed.json()] == [(5.0, 30.0)]
+
+
+@pytest.mark.parametrize(
+    "floor_pct,cap_pct",
+    [(-5.0, 30.0), (5.0, 130.0)],
+    ids=["negative_floor", "cap_above_100"],
+)
+def test_constraints_reject_out_of_range_percentages(client, auth_headers, floor_pct, cap_pct):
+    """The other half of the 0 <= floor <= cap <= 100 invariant. A negative
+    floor or a >100% cap is meaningless as a portfolio weight bound and,
+    unlike floor > cap, would be silently accepted by the solver rather than
+    raising -- producing a nonsense allocation instead of an error."""
+    sector = client.post(
+        "/api/investments/sector-constraints",
+        json={"sector": "energy", "floor_pct": floor_pct, "cap_pct": cap_pct},
+        headers=auth_headers,
+    )
+    assert sector.status_code == 422
+
+    ticker = client.post(
+        "/api/investments/ticker-constraints",
+        json={"ticker": "VTI", "floor_pct": floor_pct, "cap_pct": cap_pct},
+        headers=auth_headers,
+    )
+    assert ticker.status_code == 422
+
+
+def test_sector_constraint_list_still_readable_with_preexisting_inverted_row(client, db_session, auth_headers):
+    """A row that predates the floor/cap validator (or was written straight
+    to the DB) must stay READABLE -- otherwise the new validation would lock
+    the user out of the very row they need to see in order to fix it.
+
+    This pins the reason SectorConstraintResponse no longer inherits
+    SectorConstraintPayload: FastAPI validates `response_model` on the way
+    out too, so an inherited validator would turn this GET into a 500.
+    """
+    from app.models import SectorConstraint
+
+    db_session.add(SectorConstraint(user_id=1, sector="materials", floor_pct=40.0, cap_pct=2.0))
+    db_session.commit()
+
+    listed = client.get("/api/investments/sector-constraints", headers=auth_headers)
+    assert listed.status_code == 200
+    row = next(c for c in listed.json() if c["sector"] == "materials")
+    assert (row["floor_pct"], row["cap_pct"]) == (40.0, 2.0)
+
+    # ...and a corrective PUT over it is accepted.
+    fixed = client.put(
+        f"/api/investments/sector-constraints/{row['id']}",
+        json={"sector": "materials", "floor_pct": 2.0, "cap_pct": 40.0},
+        headers=auth_headers,
+    )
+    assert fixed.status_code == 200
+
+
 def test_sector_constraint_missing_id_returns_404(client, auth_headers):
     updated = client.put(
         "/api/investments/sector-constraints/9999",
