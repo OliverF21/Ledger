@@ -188,12 +188,35 @@ function AddConstraintForm({ fieldLabel, placeholder, transform, onCreate }: {
   )
 }
 
-export default function OptimizationPreferencesPanel() {
+// `onChange` fires after every successful mutation this panel makes. The
+// panel writes through /optimization-settings and the constraint endpoints,
+// but the advanced-mode view around it (frontier chart, per-objective
+// comparison, clip-log banner) is driven by a SEPARATE /optimize response --
+// including its own `advanced_enabled` field, which is what actually gates
+// that view. Investments.tsx wires this to useInvestmentsOptimization's
+// refetch so those results follow the panel instead of staying on the
+// pre-edit snapshot until a page reload.
+export default function OptimizationPreferencesPanel({ onChange }: { onChange?: () => void } = {}) {
   const { data: prefs, update } = useOptimizationPreferences()
   const { data: sectorConstraints, create: createSector, update: updateSector, remove: removeSector } = useSectorConstraints()
   const { data: tickerConstraints, create: createTicker, update: updateTicker, remove: removeTicker } = useTickerConstraints()
   const [removingSectorId, setRemovingSectorId] = useState<number | null>(null)
   const [removingTickerId, setRemovingTickerId] = useState<number | null>(null)
+
+  // Wraps a mutation so onChange runs only after it actually succeeded --
+  // a rejected write leaves the backend unchanged, so re-running /optimize
+  // would just re-fetch identical results. Failures keep the existing
+  // console.error handling.
+  const notifyOnSuccess = async <T,>(mutation: Promise<T>, failureMessage: string): Promise<T | undefined> => {
+    try {
+      const result = await mutation
+      onChange?.()
+      return result
+    } catch (err) {
+      console.error(failureMessage, err)
+      return undefined
+    }
+  }
 
   if (!prefs) return null
 
@@ -201,6 +224,7 @@ export default function OptimizationPreferencesPanel() {
     setRemovingSectorId(id)
     try {
       await removeSector(id)
+      onChange?.()
     } catch (err) {
       console.error('Failed to remove sector constraint:', err)
     } finally {
@@ -212,6 +236,7 @@ export default function OptimizationPreferencesPanel() {
     setRemovingTickerId(id)
     try {
       await removeTicker(id)
+      onChange?.()
     } catch (err) {
       console.error('Failed to remove ticker constraint:', err)
     } finally {
@@ -223,17 +248,21 @@ export default function OptimizationPreferencesPanel() {
     <div className="glass-card p-[16px]">
       <div className="flex items-center justify-between mb-[16px]">
         <span className="text-[14px] text-ledger-text-primary">Advanced optimization</span>
-        <Toggle enabled={prefs.advanced_enabled} onToggle={() => update({ advanced_enabled: !prefs.advanced_enabled })
-          .catch(err => console.error('Failed to update optimization preferences:', err))} />
+        <Toggle enabled={prefs.advanced_enabled} onToggle={() => notifyOnSuccess(
+          update({ advanced_enabled: !prefs.advanced_enabled }),
+          'Failed to update optimization preferences:',
+        )} />
       </div>
       {prefs.advanced_enabled && (
         <div className="space-y-[16px]">
           <RangeSlider label="Position cap" value={prefs.position_cap_pct} min={2} max={50} step={1}
-            onChange={v => update({ position_cap_pct: v })
-              .catch(err => console.error('Failed to update optimization preferences:', err))} />
+            onChange={v => notifyOnSuccess(
+              update({ position_cap_pct: v }), 'Failed to update optimization preferences:',
+            )} />
           <RangeSlider label="Diversification strength" value={prefs.concentration_strength * 100} min={0} max={100} step={5}
-            onChange={v => update({ concentration_strength: v / 100 })
-              .catch(err => console.error('Failed to update optimization preferences:', err))} />
+            onChange={v => notifyOnSuccess(
+              update({ concentration_strength: v / 100 }), 'Failed to update optimization preferences:',
+            )} />
 
           <div>
             <div className="text-[13px] font-semibold text-ledger-text-primary mb-[10px]">Sector constraints</div>
@@ -250,10 +279,14 @@ export default function OptimizationPreferencesPanel() {
                     floorPct={c.floor_pct}
                     capPct={c.cap_pct}
                     removing={removingSectorId === c.id}
-                    onFloorChange={v => updateSector(c.id, { sector: c.sector, floor_pct: v, cap_pct: c.cap_pct })
-                      .catch(err => console.error('Failed to update sector constraint:', err))}
-                    onCapChange={v => updateSector(c.id, { sector: c.sector, floor_pct: c.floor_pct, cap_pct: v })
-                      .catch(err => console.error('Failed to update sector constraint:', err))}
+                    onFloorChange={v => notifyOnSuccess(
+                      updateSector(c.id, { sector: c.sector, floor_pct: v, cap_pct: c.cap_pct }),
+                      'Failed to update sector constraint:',
+                    )}
+                    onCapChange={v => notifyOnSuccess(
+                      updateSector(c.id, { sector: c.sector, floor_pct: c.floor_pct, cap_pct: v }),
+                      'Failed to update sector constraint:',
+                    )}
                     onRemove={() => handleRemoveSector(c.id)}
                   />
                 ))}
@@ -263,7 +296,15 @@ export default function OptimizationPreferencesPanel() {
               fieldLabel="Sector"
               placeholder="e.g. Technology"
               transform={normalizeSectorName}
-              onCreate={(sector, floor_pct, cap_pct) => createSector({ sector, floor_pct, cap_pct })}
+              // Not wrapped in notifyOnSuccess: AddConstraintForm awaits this
+              // and renders a rejection as an inline error under the form, so
+              // the error must keep propagating rather than being swallowed
+              // into console.error.
+              onCreate={async (sector, floor_pct, cap_pct) => {
+                const created = await createSector({ sector, floor_pct, cap_pct })
+                onChange?.()
+                return created
+              }}
             />
           </div>
 
@@ -282,10 +323,14 @@ export default function OptimizationPreferencesPanel() {
                     floorPct={c.floor_pct}
                     capPct={c.cap_pct}
                     removing={removingTickerId === c.id}
-                    onFloorChange={v => updateTicker(c.id, { ticker: c.ticker, floor_pct: v, cap_pct: c.cap_pct })
-                      .catch(err => console.error('Failed to update ticker constraint:', err))}
-                    onCapChange={v => updateTicker(c.id, { ticker: c.ticker, floor_pct: c.floor_pct, cap_pct: v })
-                      .catch(err => console.error('Failed to update ticker constraint:', err))}
+                    onFloorChange={v => notifyOnSuccess(
+                      updateTicker(c.id, { ticker: c.ticker, floor_pct: v, cap_pct: c.cap_pct }),
+                      'Failed to update ticker constraint:',
+                    )}
+                    onCapChange={v => notifyOnSuccess(
+                      updateTicker(c.id, { ticker: c.ticker, floor_pct: c.floor_pct, cap_pct: v }),
+                      'Failed to update ticker constraint:',
+                    )}
                     onRemove={() => handleRemoveTicker(c.id)}
                   />
                 ))}
@@ -295,7 +340,13 @@ export default function OptimizationPreferencesPanel() {
               fieldLabel="Ticker"
               placeholder="e.g. VOO"
               transform={normalizeTicker}
-              onCreate={(ticker, floor_pct, cap_pct) => createTicker({ ticker, floor_pct, cap_pct })}
+              // Same as the sector form above -- errors must reach
+              // AddConstraintForm's inline error state.
+              onCreate={async (ticker, floor_pct, cap_pct) => {
+                const created = await createTicker({ ticker, floor_pct, cap_pct })
+                onChange?.()
+                return created
+              }}
             />
           </div>
         </div>

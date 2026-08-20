@@ -1,6 +1,29 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '../api/client'
 
+// Shared read helper for every GET hook in this file.
+//
+// Each of them used to do a bare `apiFetch(...).then(r => r.json())` with no
+// `r.ok` check, so a non-2xx response's error body -- FastAPI's
+// `{"detail": ...}` -- was handed to setState as though it were valid data.
+// The UI then rendered against a shape that doesn't exist, which is a crash
+// rather than a degraded view: `optimization.tickers.map(...)` on an object
+// with no `tickers` throws, taking down the whole Investments page. A single
+// backend 500 was enough to do it.
+//
+// Throwing on !ok mirrors the convention the write paths in this file
+// already use (`if (!res.ok) throw new Error(json.detail || ...)`) and routes
+// failures into each hook's existing `.catch(...)`, which resets that hook to
+// its empty/null state -- the established read-path convention here.
+async function fetchJson<T>(path: string): Promise<T> {
+  const res = await apiFetch(path)
+  if (!res.ok) {
+    const body: { detail?: string } = await res.json().catch(() => ({}))
+    throw new Error(body.detail || `Request failed (HTTP ${res.status})`)
+  }
+  return res.json() as Promise<T>
+}
+
 export interface AllocationSlice {
   type: string
   value: number
@@ -25,8 +48,7 @@ export function useInvestmentsSummary() {
   const refetch = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await apiFetch('/api/investments/summary')
-      setData(await res.json())
+      setData(await fetchJson<InvestmentsSummary>('/api/investments/summary'))
     } catch {
       setData(null)
     } finally {
@@ -68,8 +90,7 @@ export function useInvestmentsHoldings() {
   const refetch = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await apiFetch('/api/investments/holdings')
-      const data = await res.json()
+      const data = await fetchJson<{ accounts?: AccountHoldings[] }>('/api/investments/holdings')
       setAccounts(data.accounts ?? [])
     } catch {
       setAccounts([])
@@ -100,8 +121,7 @@ export function useInvestmentsHistory(months: number) {
 
   useEffect(() => {
     setLoading(true)
-    apiFetch(`/api/investments/history?months=${months}`)
-      .then(r => r.json())
+    fetchJson<InvestmentsHistory>(`/api/investments/history?months=${months}`)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false))
@@ -129,8 +149,7 @@ export function useInvestmentTransactions(months: number) {
 
   useEffect(() => {
     setLoading(true)
-    apiFetch(`/api/investments/transactions?months=${months}`)
-      .then(r => r.json())
+    fetchJson<{ transactions?: InvestmentActivityItem[] }>(`/api/investments/transactions?months=${months}`)
       .then(d => setTransactions(d.transactions ?? []))
       .catch(() => setTransactions([]))
       .finally(() => setLoading(false))
@@ -162,8 +181,7 @@ export function useInvestmentsRisk(lookbackDays: number = 365) {
 
   useEffect(() => {
     setLoading(true)
-    apiFetch(`/api/investments/risk/metrics?lookback_days=${lookbackDays}`)
-      .then(r => r.json())
+    fetchJson<RiskMetrics>(`/api/investments/risk/metrics?lookback_days=${lookbackDays}`)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false))
@@ -234,16 +252,33 @@ export function useInvestmentsOptimization(lookbackDays: number = 365) {
   const [data, setData] = useState<OptimizationSuggestion | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    setLoading(true)
-    apiFetch(`/api/investments/risk/optimize?lookback_days=${lookbackDays}`)
-      .then(r => r.json())
+  // Exposes `refetch` (mirroring useOptimizationPreferences' useCallback
+  // shape below) because the advanced-mode view in Investments.tsx is gated
+  // on THIS response's `advanced_enabled`, while the toggle that flips it
+  // lives in OptimizationPreferencesPanel and writes through
+  // useOptimizationPreferences. Without a refetch the panel updated its own
+  // state instantly while the frontier chart, comparison tables and clip-log
+  // banner kept showing the pre-edit snapshot until a full page reload --
+  // i.e. the toggle looked broken on first use.
+  //
+  // Deliberately does NOT set `loading` back to true: `loading` here means
+  // "initial load in flight", and Investments.tsx gates the entire
+  // optimization section (the preferences panel included) on
+  // !optimizationLoading. Flipping it during a panel-triggered refetch would
+  // unmount the very panel the user is interacting with -- dropping an open
+  // add-constraint form and stealing focus mid-slider-drag. Keeping the
+  // previous data visible until the new response lands is the right
+  // behaviour for a background refresh.
+  const refetch = useCallback(() => {
+    return fetchJson<OptimizationSuggestion>(`/api/investments/risk/optimize?lookback_days=${lookbackDays}`)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false))
   }, [lookbackDays])
 
-  return { data, loading }
+  useEffect(() => { refetch() }, [refetch])
+
+  return { data, loading, refetch }
 }
 
 export interface OptimizationSettings {
@@ -258,8 +293,8 @@ export function useOptimizationPreferences() {
 
   const refetch = useCallback(() => {
     setLoading(true)
-    apiFetch('/api/investments/optimization-settings')
-      .then(r => r.json()).then(setData).catch(() => setData(null)).finally(() => setLoading(false))
+    return fetchJson<OptimizationSettings>('/api/investments/optimization-settings')
+      .then(setData).catch(() => setData(null)).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { refetch() }, [refetch])
@@ -290,8 +325,8 @@ export function useSectorConstraints() {
 
   const refetch = useCallback(() => {
     setLoading(true)
-    return apiFetch('/api/investments/sector-constraints')
-      .then(r => r.json()).then(setData).catch(() => setData([])).finally(() => setLoading(false))
+    return fetchJson<SectorConstraint[]>('/api/investments/sector-constraints')
+      .then(setData).catch(() => setData([])).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { refetch() }, [refetch])
@@ -341,8 +376,8 @@ export function useTickerConstraints() {
 
   const refetch = useCallback(() => {
     setLoading(true)
-    return apiFetch('/api/investments/ticker-constraints')
-      .then(r => r.json()).then(setData).catch(() => setData([])).finally(() => setLoading(false))
+    return fetchJson<TickerConstraint[]>('/api/investments/ticker-constraints')
+      .then(setData).catch(() => setData([])).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { refetch() }, [refetch])

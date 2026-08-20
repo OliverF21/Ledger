@@ -88,7 +88,7 @@ export default function Investments() {
   const [historyRange, setHistoryRange] = useState<'6M' | '1Y'>('6M')
   const { data: history, loading: historyLoading } = useInvestmentsHistory(historyRange === '6M' ? 6 : 12)
   const { data: risk, loading: riskLoading } = useInvestmentsRisk(365)
-  const { data: optimization, loading: optimizationLoading } = useInvestmentsOptimization(365)
+  const { data: optimization, loading: optimizationLoading, refetch: refetchOptimization } = useInvestmentsOptimization(365)
   const [allocationView, setAllocationView] = useState<AllocationView>('security')
   const [activeSlice, setActiveSlice] = useState<number | null>(null)
   const [activityExpanded, setActivityExpanded] = useState(false)
@@ -500,7 +500,14 @@ export default function Investments() {
           vs. Max Quadratic Utility) comparison instead. */}
       {!optimizationLoading && optimization && !optimization.insufficient_data && (
         <>
-          <OptimizationPreferencesPanel />
+          {/* onChange re-runs the /optimize request after every successful
+              preference or constraint mutation. The panel writes through
+              /optimization-settings, but everything below (advanced-mode
+              gating, frontier chart, comparison tables, clip-log banner)
+              reads /optimize -- two separate endpoints, so without this the
+              panel updated instantly while the results below stayed on the
+              pre-edit snapshot until a page reload. */}
+          <OptimizationPreferencesPanel onChange={refetchOptimization} />
           {optimization.advanced_enabled ? (
             <div className="glass-card p-4">
               <div className="text-[12px] font-semibold mb-2">Suggested allocation</div>
@@ -524,9 +531,20 @@ export default function Investments() {
                         {optimization.cap_relaxed.reason ? ` (${optimization.cap_relaxed.reason})` : ''}
                       </li>
                     )}
+                    {/* ClipLogEntry is a union-by-optional-fields shape: a
+                        sector-floor clip fills sector/requested_floor/clipped_to,
+                        while the solver-level notes (risk-aversion substitution,
+                        a non-convergent objective solve) carry only a
+                        human-readable `reason`. Branch on which one this is --
+                        rendering a reason-only entry through the floor-clip
+                        template printed "Unknown sector floor clipped from 0.0%
+                        to 0.0% — not achievable within the position cap", which
+                        is simply false. */}
                     {optimization.clip_log.map((entry, i) => (
                       <li key={i} className="text-[11.5px] text-ledger-text-secondary leading-snug">
-                        {entry.sector ?? 'Unknown sector'} floor clipped from {((entry.requested_floor ?? 0) * 100).toFixed(1)}% to {((entry.clipped_to ?? 0) * 100).toFixed(1)}% — not achievable within the position cap
+                        {entry.sector !== null && entry.sector !== undefined
+                          ? `${entry.sector} floor clipped from ${((entry.requested_floor ?? 0) * 100).toFixed(1)}% to ${((entry.clipped_to ?? 0) * 100).toFixed(1)}% — not achievable within the position cap`
+                          : entry.reason ?? 'A constraint was auto-adjusted'}
                       </li>
                     ))}
                   </ul>
