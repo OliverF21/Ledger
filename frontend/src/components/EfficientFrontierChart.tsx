@@ -1,7 +1,7 @@
 import { ComposedChart, Scatter, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, TooltipProps } from 'recharts'
 
 interface FrontierPoint { volatility_pct: number; return_pct: number }
-interface ObjectiveMarker { name: string; volatility_pct: number; return_pct: number; color: string }
+export interface ObjectiveMarker { name: string; volatility_pct: number; return_pct: number; color: string }
 
 interface Props {
   frontierPoints: FrontierPoint[]
@@ -20,7 +20,13 @@ export default function EfficientFrontierChart({ frontierPoints, markers }: Prop
   // own props — ignoring Recharts' broken per-row `payload` values — is the verified fix.
   const renderTooltip = ({ active, label }: TooltipProps<number, string>) => {
     if (!active || label == null) return null
-    let nearest = frontierPoints[0]
+    // frontierPoints can be [] while markers is still populated -- advanced mode
+    // always produces both objective markers, but the separate frontier-sweep
+    // step can independently come back empty if every swept target volatility
+    // failed to converge. Guard nearest as possibly-null (rather than seeding
+    // it from frontierPoints[0]) so hovering a marker in that scenario still
+    // renders the marker rows instead of throwing on nearest.return_pct.
+    let nearest: FrontierPoint | null = null
     let best = Infinity
     for (const p of frontierPoints) {
       const d = Math.abs(p.volatility_pct - label)
@@ -29,7 +35,9 @@ export default function EfficientFrontierChart({ frontierPoints, markers }: Prop
     return (
       <div style={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px', padding: 8, fontSize: 12 }}>
         <div style={{ color: '#999', marginBottom: 4 }}>{label}</div>
-        <div style={{ color: '#5b8def' }}>Efficient Frontier : {nearest.return_pct.toFixed(2)}%</div>
+        {nearest && (
+          <div style={{ color: '#5b8def' }}>Efficient Frontier : {nearest.return_pct.toFixed(2)}%</div>
+        )}
         {markers.map(m => (
           <div key={m.name} style={{ color: m.color }}>{OBJECTIVE_LABELS[m.name] ?? m.name} : {m.return_pct.toFixed(2)}%</div>
         ))}

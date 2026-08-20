@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { ArrowUp, ArrowDown, RefreshCw } from 'lucide-react'
+import { ArrowUp, ArrowDown, RefreshCw, AlertTriangle } from 'lucide-react'
 import { PieChart, Pie, Cell, Sector, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { apiFetch } from '../api/client'
 import {
@@ -10,7 +10,10 @@ import {
   useInvestmentsRisk,
   useInvestmentsOptimization,
   type AllocationSlice,
+  type ObjectiveResponse,
 } from '../hooks/useInvestments'
+import EfficientFrontierChart, { type ObjectiveMarker } from '../components/EfficientFrontierChart'
+import OptimizationPreferencesPanel from '../components/OptimizationPreferencesPanel'
 
 import { alphaColor, mixHex } from '../utils/color'
 
@@ -38,6 +41,20 @@ const ALLOCATION_PALETTE = [
   '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
   '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
 ]
+
+// Mirrors EfficientFrontierChart's internal OBJECTIVE_LABELS (not exported from
+// there) -- used here for the per-objective comparison table's row/section labels.
+const OBJECTIVE_LABELS: Record<string, string> = {
+  max_sharpe: 'Max Sharpe',
+  max_quadratic_utility: 'Max Quadratic Utility',
+}
+
+function buildMarkers(objectives: ObjectiveResponse[]): ObjectiveMarker[] {
+  const colors: Record<string, string> = { max_sharpe: '#e7705f', max_quadratic_utility: '#d9a85b' }
+  return objectives
+    .filter(o => o.volatility_pct != null && o.expected_return_pct != null)
+    .map(o => ({ name: o.name, volatility_pct: o.volatility_pct!, return_pct: o.expected_return_pct!, color: colors[o.name] ?? '#5b8def' }))
+}
 
 type AllocationView = 'type' | 'security'
 
@@ -475,32 +492,134 @@ export default function Investments() {
 
       {/* Suggested allocation — depends only on Holding + MarketPrice data (populated
           after the first nightly sync), not on the BalanceSnapshot history the risk
-          card above needs, so it's gated independently rather than nested inside it. */}
+          card above needs, so it's gated independently rather than nested inside it.
+          Basic mode (default) keeps the single max-Sharpe table below unchanged;
+          advanced mode swaps in the preferences panel, efficient frontier chart, and
+          a per-objective (Max Sharpe vs. Max Quadratic Utility) comparison instead. */}
       {!optimizationLoading && optimization && !optimization.insufficient_data && (
-        <div className="glass-card p-4">
-          <div className="text-[12px] font-semibold mb-2">Suggested allocation (max Sharpe)</div>
-          <div className="text-[11px] text-ledger-text-faint mb-2">
-            Current Sharpe (holdings only) {optimization.current_sharpe?.toFixed(2) ?? '—'} · Suggested Sharpe (holdings only) {optimization.suggested_sharpe?.toFixed(2) ?? '—'}
-          </div>
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="text-left text-ledger-text-faint">
-                <th className="font-medium pb-1.5">Ticker</th>
-                <th className="font-medium pb-1.5 text-right">Current</th>
-                <th className="font-medium pb-1.5 text-right">Suggested</th>
-              </tr>
-            </thead>
-            <tbody>
-              {optimization.tickers.map(t => (
-                <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
-                  <td className="py-1.5 font-medium">{t.ticker}</td>
-                  <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
-                  <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
+        optimization.advanced_enabled ? (
+          <>
+            <OptimizationPreferencesPanel />
+            <div className="glass-card p-4">
+              <div className="text-[12px] font-semibold mb-2">Suggested allocation</div>
+              <div className="text-[11px] text-ledger-text-faint mb-3">
+                Black-Litterman blend across {optimization.objectives.length} objectives · position cap {optimization.position_cap_pct.toFixed(0)}%
+              </div>
+
+              {/* Minimal v1 surfacing of auto-adjusted constraints -- full clip-log
+                  UI polish (e.g. per-entry dismissal, linking back to the offending
+                  constraint row in the panel above) is an explicit follow-up. */}
+              {(optimization.cap_relaxed || optimization.clip_log.length > 0) && (
+                <div className="mb-3">
+                  <div className="flex items-center gap-[6px] text-[12px] font-semibold text-ledger-warning">
+                    <AlertTriangle className="w-[13px] h-[13px] flex-shrink-0" strokeWidth={2} />
+                    Some constraints were auto-adjusted
+                  </div>
+                  <ul className="mt-[6px] space-y-[4px]">
+                    {optimization.cap_relaxed && (
+                      <li className="text-[11.5px] text-ledger-text-secondary leading-snug">
+                        Position cap relaxed from {((optimization.cap_relaxed.requested_cap ?? 0) * 100).toFixed(1)}% to {((optimization.cap_relaxed.relaxed_to ?? 0) * 100).toFixed(1)}%
+                        {optimization.cap_relaxed.reason ? ` (${optimization.cap_relaxed.reason})` : ''}
+                      </li>
+                    )}
+                    {optimization.clip_log.map((entry, i) => (
+                      <li key={i} className="text-[11.5px] text-ledger-text-secondary leading-snug">
+                        {entry.sector ?? 'Unknown sector'} floor clipped from {((entry.requested_floor ?? 0) * 100).toFixed(1)}% to {((entry.clipped_to ?? 0) * 100).toFixed(1)}% — not achievable within the position cap
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="mb-3">
+                <EfficientFrontierChart
+                  frontierPoints={optimization.frontier_points ?? []}
+                  markers={buildMarkers(optimization.objectives)}
+                />
+              </div>
+
+              <table className="w-full text-[12px] mb-4">
+                <thead>
+                  <tr className="text-left text-ledger-text-faint">
+                    <th className="font-medium pb-1.5">Objective</th>
+                    <th className="font-medium pb-1.5 text-right">Return</th>
+                    <th className="font-medium pb-1.5 text-right">Volatility</th>
+                    <th className="font-medium pb-1.5 text-right">Sharpe</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {optimization.objectives.map(o => (
+                    <tr key={o.name} className="border-t border-ledger-border-subtle/50">
+                      <td className="py-1.5 font-medium">{OBJECTIVE_LABELS[o.name] ?? o.name}</td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {fmtPct(optimization.current_expected_return_pct)} → <span className="font-semibold">{fmtPct(o.expected_return_pct)}</span>
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {fmtPct(optimization.current_volatility_pct)} → <span className="font-semibold">{fmtPct(o.volatility_pct)}</span>
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {optimization.current_sharpe?.toFixed(2) ?? '—'} → <span className="font-semibold">{o.sharpe?.toFixed(2) ?? '—'}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="space-y-4">
+                {optimization.objectives.map(o => (
+                  <div key={o.name}>
+                    <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
+                      {OBJECTIVE_LABELS[o.name] ?? o.name} — suggested weights
+                    </div>
+                    <table className="w-full text-[12px]">
+                      <thead>
+                        <tr className="text-left text-ledger-text-faint">
+                          <th className="font-medium pb-1.5">Ticker</th>
+                          <th className="font-medium pb-1.5 text-right">Current</th>
+                          <th className="font-medium pb-1.5 text-right">Suggested</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {o.tickers.map(t => (
+                          <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
+                            <td className="py-1.5 font-medium">{t.ticker}</td>
+                            <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
+                            <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="glass-card p-4">
+            <div className="text-[12px] font-semibold mb-2">Suggested allocation (max Sharpe)</div>
+            <div className="text-[11px] text-ledger-text-faint mb-2">
+              Current Sharpe (holdings only) {optimization.current_sharpe?.toFixed(2) ?? '—'} · Suggested Sharpe (holdings only) {optimization.suggested_sharpe?.toFixed(2) ?? '—'}
+            </div>
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-left text-ledger-text-faint">
+                  <th className="font-medium pb-1.5">Ticker</th>
+                  <th className="font-medium pb-1.5 text-right">Current</th>
+                  <th className="font-medium pb-1.5 text-right">Suggested</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {optimization.tickers.map(t => (
+                  <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
+                    <td className="py-1.5 font-medium">{t.ticker}</td>
+                    <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
+                    <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       )}
 
       {/* Per-account holdings */}
