@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.errors import log_and_raise
 from app.models import SectorConstraint, TickerConstraint, User
+from app.sector_data_provider import _norm_sector_name
 
 router = APIRouter(prefix="/investments", tags=["investments"])
 
@@ -128,7 +129,33 @@ class SectorConstraintPayload(BaseModel):
     cap_pct: float
 
     @model_validator(mode="after")
-    def _check_floor_cap(self):
+    def _normalize_and_validate(self):
+        # Normalize `sector` server-side, reusing sector_data_provider's
+        # _norm_sector_name -- the SAME function that normalizes sector keys
+        # on the way in from yfinance, before they're stored in
+        # TickerClassification.sector_weights_json.
+        #
+        # That shared origin is the whole point:
+        # sector_constraint_service.clip_sector_bounds matches constraints to
+        # exposure-matrix columns by exact string equality, so a constraint
+        # stored as "Financial Services" can never match a classification
+        # stored as "financialservices" -- it just silently does nothing
+        # forever. The frontend already normalizes before calling this API,
+        # but that only covers the frontend; a script, the MCP server, or any
+        # future client hitting these endpoints directly would otherwise
+        # write a dead constraint with no error and no way to tell.
+        #
+        # Done here in the validator rather than in each handler so the
+        # normalized value is what BOTH the duplicate-check query and the
+        # stored row see. Normalizing at the point of INSERT only would leave
+        # create_sector_constraint's `filter_by(sector=body.sector)` looking
+        # up the raw string, letting "Technology" and "technology" both
+        # create rows that then collide as duplicates in the DB.
+        #
+        # Deliberately NOT applied to TickerConstraintPayload: tickers are
+        # matched against synced uppercase symbols, a different convention
+        # (see build_ticker_bounds).
+        self.sector = _norm_sector_name(self.sector)
         _validate_floor_cap(self.floor_pct, self.cap_pct)
         return self
 

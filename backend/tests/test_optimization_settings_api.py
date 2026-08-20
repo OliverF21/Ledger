@@ -198,6 +198,63 @@ def test_sector_constraint_crud(client, auth_headers):
     assert not any(c["id"] == constraint_id for c in listed_after.json())
 
 
+def test_sector_constraint_sector_name_is_normalized_server_side(client, auth_headers):
+    """A sector name must be stored in the same normalized form
+    sector_data_provider._norm_sector_name produces for TickerClassification's
+    sector keys -- lowercased with underscores, spaces and hyphens stripped.
+
+    clip_sector_bounds matches constraints to exposure-matrix columns by
+    exact string equality, so an unnormalized name is a constraint that
+    silently never applies to anything. The frontend normalizes before
+    calling, but the API is reachable without it.
+    """
+    created = client.post(
+        "/api/investments/sector-constraints",
+        json={"sector": "Financial Services", "floor_pct": 5.0, "cap_pct": 40.0},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+    assert created.json()["sector"] == "financialservices"
+
+    # Persisted normalized, not just normalized in the echoed response.
+    listed = client.get("/api/investments/sector-constraints", headers=auth_headers)
+    assert [c["sector"] for c in listed.json()] == ["financialservices"]
+
+
+def test_sector_constraint_duplicate_check_uses_the_normalized_name(client, auth_headers):
+    """Normalization has to happen BEFORE the duplicate lookup, not just
+    before the insert -- otherwise "Financial Services" and "financialservices"
+    each pass the duplicate check against the raw string and both land as
+    rows that are in fact the same sector."""
+    first = client.post(
+        "/api/investments/sector-constraints",
+        json={"sector": "financialservices", "floor_pct": 5.0, "cap_pct": 40.0},
+        headers=auth_headers,
+    )
+    assert first.status_code == 200
+
+    dup = client.post(
+        "/api/investments/sector-constraints",
+        json={"sector": "Financial-Services", "floor_pct": 5.0, "cap_pct": 40.0},
+        headers=auth_headers,
+    )
+    assert dup.status_code == 409
+
+
+def test_ticker_constraint_name_is_not_normalized(client, auth_headers):
+    """The sector normalization must NOT leak onto tickers: they're matched
+    against synced uppercase symbols (build_ticker_bounds), a different
+    convention entirely. Lowercasing "VOO" to "voo" would break exactly the
+    matching it's meant to help."""
+    created = client.post(
+        "/api/investments/ticker-constraints",
+        json={"ticker": "VOO", "floor_pct": 5.0, "cap_pct": 40.0},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+    assert created.json()["ticker"] == "VOO"
+
+
 def test_sector_constraint_duplicate_sector_returns_409(client, auth_headers):
     client.post(
         "/api/investments/sector-constraints",
