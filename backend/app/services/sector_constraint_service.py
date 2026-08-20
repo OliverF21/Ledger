@@ -98,7 +98,10 @@ def build_ticker_bounds(
     with any user-set TickerConstraint (e.g. 'VOO needs >= 5%'). A ticker
     constraint's cap_pct is clamped to the global position cap, never above
     it -- per-ticker floors can raise the minimum, but the position cap is
-    still the ceiling. A TickerConstraint whose ticker isn't in `tickers`
+    still the ceiling. An inverted row (floor_pct > cap_pct) is additionally
+    clamped down to its own cap, degrading to "no effective floor" rather
+    than handing scipy an inverted bound -- see the comment at that clamp
+    below. A TickerConstraint whose ticker isn't in `tickers`
     (e.g. a stale constraint on a ticker no longer in the candidate
     universe) has no bound-vector slot to occupy and is filtered out at the
     query level -- it's simply not applicable to this run, not a clip worth
@@ -116,4 +119,22 @@ def build_ticker_bounds(
             continue
         lower[i] = min(float(constraint.floor_pct) / 100, position_cap)
         upper[i] = min(float(constraint.cap_pct) / 100, position_cap)
+        # Defensive clamp against an inverted row (floor_pct > cap_pct).
+        # routes/optimization_settings.py now rejects such a pair with a 422
+        # at write time, but that only protects rows created FROM NOW ON --
+        # a row already sitting in a user's DB from before that validation
+        # existed, or one written straight to SQLite, still reaches here.
+        # scipy.optimize.minimize raises `ValueError: An upper bound is less
+        # than the corresponding lower bound` on an inverted `bounds` entry,
+        # which would take out the entire advanced-mode solve (and, via an
+        # uncaught 500, the whole Investments page) over one malformed row.
+        # Collapsing the floor onto the cap degrades that row to "cap only,
+        # no floor" -- the conservative reading, since the cap is the
+        # risk-limiting half of the pair.
+        #
+        # Placed AFTER the position-cap clamps above so it operates on the
+        # bounds in their final form -- that's what makes lower <= upper an
+        # invariant of the values actually returned, rather than of an
+        # intermediate pair a later clamp could still disturb.
+        lower[i] = min(lower[i], upper[i])
     return lower, upper

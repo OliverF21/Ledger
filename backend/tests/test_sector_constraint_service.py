@@ -161,6 +161,35 @@ def test_build_ticker_bounds_ignores_constraint_for_ticker_outside_universe(db_s
     assert upper[0] == 0.10
 
 
+def test_build_ticker_bounds_clamps_inverted_preexisting_row(db_session):
+    # A row with floor_pct > cap_pct, constructed directly against the ORM to
+    # bypass the API layer -- exactly how a row created BEFORE
+    # routes/optimization_settings.py's floor<=cap validator existed (or one
+    # written straight to SQLite) would look on disk today.
+    #
+    # Without the defensive clamp this produces bounds of (0.40, 0.02), and
+    # scipy.optimize.minimize raises `ValueError: An upper bound is less than
+    # the corresponding lower bound` -- killing the whole advanced-mode solve
+    # over one malformed row. The clamp must degrade it to "cap only, no
+    # floor" instead.
+    db_session.add(TickerConstraint(user_id=1, ticker="BADROW", floor_pct=40.0, cap_pct=2.0))
+    db_session.commit()
+
+    lower, upper = build_ticker_bounds(db_session, 1, ["BADROW"], position_cap=0.50)
+
+    assert lower[0] <= upper[0]
+    assert upper[0] == 0.02  # the cap (the risk-limiting half) is what survives
+    assert lower[0] == 0.02  # floor collapsed onto it rather than staying inverted
+
+    # The bounds are directly scipy-usable, which is the whole point.
+    from scipy.optimize import minimize
+    result = minimize(
+        lambda w: float(w @ w), np.array([0.02]), method="SLSQP",
+        bounds=list(zip(lower, upper)),
+    )  # must not raise ValueError
+    assert result is not None
+
+
 def test_build_ticker_bounds_applies_tighter_ticker_cap_below_position_cap(db_session):
     # The ticker's own cap_pct (3%) is tighter than the global position cap
     # (20%) -- it should bind directly, not get overridden by the wider
