@@ -31,12 +31,15 @@ from app.models import (  # noqa: E402
     User,
 )
 import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 
 from app.services.optimization_service import (  # noqa: E402
+    FALLBACK_RISK_AVERSION,
     TRADING_DAYS_PER_YEAR,
     build_optimization_suggestion,
     neg_utility_bl,
 )
+from app.services.portfolio_math_service import market_implied_risk_aversion  # noqa: E402
 
 
 @pytest.fixture
@@ -732,3 +735,186 @@ def test_quadratic_utility_objective_is_not_collapsed_to_equal_weights(
     assert [t.suggested_weight_pct for t in sharpe_objective.tickers] != [
         t.suggested_weight_pct for t in utility_objective.tickers
     ]
+
+
+# ─── Risk-aversion (delta) guard ────────────────────────────────────────────
+
+def _make_spy_bear_market(db_session):
+    """Rewrite the SPY rows seeded_price_history created into a DECLINING
+    series over the same window, keeping the same zigzag noise (and therefore
+    a realistic variance -- see seeded_price_history's docstring for why a
+    noise-free series breaks delta entirely, in the other direction).
+
+    Every existing fixture in this file drifts SPY upward, so nothing else
+    here exercises the below-risk-free-rate branch of
+    market_implied_risk_aversion.
+    """
+    start = date.today() - timedelta(days=60)
+    for i in range(60):
+        row = db_session.query(MarketPrice).filter_by(ticker="SPY", price_date=start + timedelta(days=i)).one()
+        row.close_price = Decimal(str(400 - i * 1.2 + (3 if i % 2 == 0 else -3)))
+    db_session.commit()
+
+
+def test_market_implied_risk_aversion_goes_negative_in_a_bear_window():
+    """Pins the premise of the delta guard, isolated from the optimizer.
+
+    delta = (annualized benchmark excess return) / (annualized benchmark
+    variance). The variance is always positive, so delta takes the sign of
+    the numerator -- and the numerator is negative whenever the benchmark's
+    trailing return sits below the risk-free rate. That is an ordinary
+    lookback window (2022, 2018, 2008, anything spanning COVID), not an
+    exotic one.
+    """
+    bear = pd.Series([400 - i * 1.2 + (3 if i % 2 == 0 else -3) for i in range(60)])
+    bull = pd.Series([400 + i * 0.3 + (3 if i % 2 == 0 else -3) for i in range(60)])
+
+    assert market_implied_risk_aversion(bear, 4.0) < 0
+    assert market_implied_risk_aversion(bull, 4.0) > 0
+
+
+def test_bear_market_benchmark_substitutes_risk_aversion_and_logs_it(
+    db_session, seeded_price_history, seeded_ticker_classifications,
+):
+    """With an unguarded negative delta, neg_utility_bl's
+    `- 0.5 * delta * variance` term becomes a POSITIVE coefficient on
+    variance -- the objective stops penalizing risk and starts rewarding it,
+    and market_implied_prior's pi = delta*Sigma*w_mkt flips sign on top of
+    that. The two objectives then disagree wildly (measured elsewhere on
+    identical inputs: +28.66% vs -31.29% expected return).
+
+    The guard substitutes the conventional value and says so in clip_log.
+    """
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    user.optimization_concentration_strength = 0.5
+    db_session.commit()
+    _make_spy_bear_market(db_session)
+
+    # (a) the raw, unguarded delta for this window really is unusable
+    spy_prices = [
+        float(r.close_price)
+        for r in db_session.query(MarketPrice).filter_by(ticker="SPY").order_by(MarketPrice.price_date).all()
+    ]
+    raw_delta = market_implied_risk_aversion(pd.Series(spy_prices), 4.0)
+    assert raw_delta < 0, f"fixture no longer produces a negative delta (got {raw_delta})"
+
+    result = build_optimization_suggestion(db_session)
+
+    # (b) the substitution is surfaced, not silent
+    substitutions = [e for e in result.clip_log if "risk aversion" in (e.get("reason") or "")]
+    assert len(substitutions) == 1, f"expected one risk-aversion note in clip_log, got {result.clip_log}"
+    assert str(FALLBACK_RISK_AVERSION) in substitutions[0]["reason"]
+
+    # (c) the results still look sane. Measured on this fixture:
+    #
+    #                          unguarded (bug)      guarded (fixed)
+    #   max_sharpe        ret -36.96%  vol 46.33%   ret -10.67%  vol 46.33%
+    #   max_quad_utility  ret +34.20%  vol 42.89%   ret  +2.12%  vol  9.18%
+    #   utility vol / sharpe vol       92.6%                     19.8%
+    #   |ret difference|               71.16pp                   12.79pp
+    #
+    # Two independent symptoms, asserted separately:
+    sharpe_objective = next(o for o in result.objectives if o.name == "max_sharpe")
+    utility_objective = next(o for o in result.objectives if o.name == "max_quadratic_utility")
+
+    # c1: a delta-weighted variance penalty should pull the utility solve to
+    # materially LOWER volatility than the max-Sharpe solve, which has no
+    # volatility penalty at all. With the sign flipped the term rewards
+    # variance instead, and the utility solve chases max-Sharpe's volatility
+    # rather than retreating from it.
+    assert utility_objective.volatility_pct < 0.6 * sharpe_objective.volatility_pct, (
+        f"quadratic-utility solve is not behaving risk-aversely: vol "
+        f"{utility_objective.volatility_pct}% against max-Sharpe's "
+        f"{sharpe_objective.volatility_pct}% on identical inputs"
+    )
+
+    # c2: the two objectives are meant to disagree, but not to land on
+    # opposite sides of zero tens of points apart -- that only happens when
+    # one of them is optimizing a sign-inverted prior.
+    return_gap = abs(utility_objective.expected_return_pct - sharpe_objective.expected_return_pct)
+    assert return_gap < 40.0, (
+        f"objectives diverged implausibly: {sharpe_objective.expected_return_pct}% vs "
+        f"{utility_objective.expected_return_pct}% expected return from identical inputs"
+    )
+
+
+def test_healthy_benchmark_leaves_risk_aversion_untouched(
+    db_session, seeded_price_history, seeded_ticker_classifications,
+):
+    """The guard must be inert on a normal window -- no substitution, and
+    nothing added to clip_log. Without this, a guard that always fired would
+    pass the bear-market test above while silently discarding the real
+    market-implied prior on every ordinary request."""
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    db_session.commit()
+
+    result = build_optimization_suggestion(db_session)
+
+    assert not [e for e in result.clip_log if "risk aversion" in (e.get("reason") or "")]
+
+
+# ─── Non-convergent solves are labelled, not silently substituted ───────────
+
+def test_failed_objective_solve_is_surfaced_in_clip_log(
+    db_session, seeded_price_history, seeded_ticker_classifications, monkeypatch,
+):
+    """A solve that doesn't converge falls back to equal weights. That
+    fallback is deliberate (the endpoint has to return SOME allocation), but
+    it used to be completely silent -- so the UI showed a plausible-looking
+    1/n "recommendation" indistinguishable from a real optimization result.
+    That silence is what made the other failure modes in this pipeline
+    invisible.
+
+    Forcing a genuine failure through the real inputs is fragile (SLSQP is
+    stubbornly willing to return success on nearly-infeasible problems), so
+    this drives it directly at the seam: scipy's own success flag, which is
+    the exact condition the production code branches on.
+    """
+    import app.services.optimization_service as optimization_service
+
+    real_minimize = optimization_service.minimize
+
+    def failing_minimize(fun, x0, **kwargs):
+        result = real_minimize(fun, x0, **kwargs)
+        if getattr(fun, "__name__", "") == "neg_utility_bl":
+            result.success = False
+            result.message = "Iteration limit reached"
+        return result
+
+    monkeypatch.setattr(optimization_service, "minimize", failing_minimize)
+
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    db_session.commit()
+
+    result = build_optimization_suggestion(db_session)
+
+    failures = [e for e in result.clip_log if "did not converge" in (e.get("reason") or "")]
+    assert len(failures) == 1, f"expected the failed solve to be logged, got {result.clip_log}"
+    assert "max_quadratic_utility" in failures[0]["reason"]
+    assert "NOT" in failures[0]["reason"]  # explicitly flags these aren't optimized weights
+
+    # ...and the objective really did fall back to equal weights, so the note
+    # is describing what actually happened.
+    utility_objective = next(o for o in result.objectives if o.name == "max_quadratic_utility")
+    weights = [t.suggested_weight_pct for t in utility_objective.tickers]
+    assert all(w == pytest.approx(100.0 / len(weights), abs=0.01) for w in weights)
+
+    # The max-Sharpe solve was left alone and must NOT be labelled.
+    assert not [e for e in result.clip_log if "max_sharpe" in (e.get("reason") or "")]
+
+
+def test_converged_solves_add_nothing_to_clip_log(
+    db_session, seeded_price_history, seeded_ticker_classifications,
+):
+    """Inertness guard for the above -- a clean run must stay clean, so the
+    banner doesn't cry wolf on every request."""
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    db_session.commit()
+
+    result = build_optimization_suggestion(db_session)
+
+    assert not [e for e in result.clip_log if "did not converge" in (e.get("reason") or "")]

@@ -66,6 +66,106 @@ DEFAULT_POSITION_CAP_PCT = 10.0
 # above -- see models.py:55-58.
 DEFAULT_CONCENTRATION_STRENGTH = 0.5
 
+# Fallback risk-aversion coefficient, substituted when the market-implied
+# delta computed from the SPY benchmark comes out non-positive or non-finite
+# (see _guarded_risk_aversion). 2.5 is the conventional "typical investor"
+# value in the Black-Litterman literature and sits mid-range of what a
+# healthy trailing window actually produces here (empirically ~2-4 for SPY
+# on a normal window).
+FALLBACK_RISK_AVERSION = 2.5
+# Below this, delta is treated as unusable rather than merely small. Any
+# delta <= 0 is outright sign-broken (see _guarded_risk_aversion); the small
+# positive margin additionally catches the near-zero case, where delta is
+# technically the right sign but so small that the quadratic-utility
+# objective degenerates to pure return-maximization and the market-implied
+# prior pi = delta*Sigma*w_mkt collapses to ~0. For reference, delta would
+# have to fall below ~0.2% annual excess return on a 15%-vol benchmark to
+# land in this band at all.
+MIN_USABLE_RISK_AVERSION = 0.1
+
+
+def _solved_weights(result, initial: np.ndarray, objective_name: str, clip_log: list[dict]) -> np.ndarray:
+    """Unwrap a scipy solve, falling back to `initial` (equal weights) when
+    it failed to converge -- and RECORDING that fallback in clip_log.
+
+    The fallback itself is deliberate and predates this helper; what's new is
+    that it is no longer silent. A non-convergent solve previously returned
+    the equal-weight starting guess with nothing anywhere in the response to
+    distinguish it from a real optimization result, so the UI rendered a
+    plausible-looking "recommendation" that was in fact just 1/n. That's the
+    failure mode that made every other bug in this pipeline invisible: an
+    inverted sector floor/cap, or a wild Black-Litterman posterior, both
+    surface here as `success=False` and used to vanish without trace.
+
+    efficient_frontier_service.py already takes the stricter line for its own
+    sweep -- it drops non-convergent points entirely rather than substituting
+    one, precisely so a fabricated point can't imply an unachievable
+    risk/return combination is reachable. Dropping isn't available here (the
+    endpoint has to return SOME allocation), so the equivalent honesty is to
+    label the substitution.
+    """
+    if result.success:
+        return result.x
+    clip_log.append({
+        "reason": (
+            f"the {objective_name} solve did not converge "
+            f"({getattr(result, 'message', 'no solver message')}); "
+            f"showing an equal-weight portfolio as a fallback -- these are NOT "
+            f"optimized weights"
+        ),
+    })
+    return initial
+
+
+def _guarded_risk_aversion(delta: float) -> tuple[float, dict | None]:
+    """Clamp a market-implied risk-aversion coefficient to a usable value,
+    returning (delta, clip_log_entry_or_None).
+
+    market_implied_risk_aversion computes delta = (annualized benchmark
+    excess return) / (annualized benchmark variance). The numerator goes
+    NEGATIVE whenever the benchmark's trailing-window return sits below the
+    risk-free rate -- which is not exotic: it happens in any bear-market or
+    correction-spanning lookback (2022, 2018, 2008, any COVID window). A
+    declining synthetic SPY series measured -13.03 against this codebase's
+    own fixtures.
+
+    A negative delta is not merely inaccurate, it inverts the meaning of two
+    downstream formulas:
+      * neg_utility_bl's `- 0.5 * delta * variance` term becomes a POSITIVE
+        coefficient on variance, so the objective REWARDS risk instead of
+        penalizing it -- it stops being risk-averse and starts seeking the
+        most volatile achievable portfolio. Measured on identical inputs,
+        the two objectives diverged to +28.66% vs -31.29% expected return.
+      * market_implied_prior's pi = delta*Sigma*w_mkt flips sign, so the
+        Black-Litterman prior asserts every asset has negative equilibrium
+        expected return.
+
+    Substituting a sane constant is the right call over failing the request:
+    delta is a *prior* about investor risk preference, not a measurement of
+    the user's portfolio. A trailing window that happens to span a drawdown
+    says nothing about how risk-averse the user is, so falling back to the
+    conventional value is closer to the truth than propagating a sign-broken
+    one -- and far better than a 500 on the Investments page. The
+    substitution is surfaced in clip_log so it is visible rather than
+    silent, matching how every other auto-adjustment in this pipeline
+    behaves.
+    """
+    if np.isfinite(delta) and delta >= MIN_USABLE_RISK_AVERSION:
+        return delta, None
+    # `reason` alone: ClipLogEntry's fields are all Optional precisely so
+    # different producers can fill different subsets (clip_sector_bounds
+    # sends sector/requested_floor/clipped_to; relax_position_cap_if_needed
+    # sends requested_cap/relaxed_to/reason). Nothing here is a clipped
+    # bound, so only the human-readable reason applies.
+    return FALLBACK_RISK_AVERSION, {
+        "reason": (
+            f"market-implied risk aversion computed as {delta:.4g} from the SPY benchmark "
+            f"(non-positive or unusable -- the benchmark's trailing return was at or below "
+            f"the risk-free rate); substituted the typical value {FALLBACK_RISK_AVERSION} "
+            f"for the Black-Litterman prior and the quadratic-utility objective"
+        ),
+    }
+
 
 @dataclass(frozen=True)
 class TickerWeight:
@@ -295,7 +395,9 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
             # one to a normal 500 the same way.
             raise ValueError("advanced mode requires SPY benchmark price history")
         spy_series = pd.Series(spy_prices[:, 0])
-        delta = market_implied_risk_aversion(spy_series, risk_free_rate_pct)
+        delta, delta_substitution_log = _guarded_risk_aversion(
+            market_implied_risk_aversion(spy_series, risk_free_rate_pct)
+        )
 
         classifications = db.query(TickerClassification).filter(TickerClassification.ticker.in_(tickers)).all()
         classification_by_ticker = {c.ticker: c for c in classifications}
@@ -369,6 +471,15 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         sector_lower, sector_upper, clip_log = clip_sector_bounds(db, 1, sector_names, exposure_matrix, effective_cap)
         ticker_lower, ticker_upper = build_ticker_bounds(db, 1, tickers, effective_cap)
 
+        # clip_log is the pipeline's single "we auto-adjusted something you
+        # asked for" channel, and it's first created above -- so the delta
+        # substitution decided back at the top of this branch (where no
+        # clip_log existed yet to append to) is folded in here. Prepended
+        # rather than appended: it describes an input to the whole solve,
+        # not one constraint's clipping, so it reads first in the UI banner.
+        if delta_substitution_log is not None:
+            clip_log = [delta_substitution_log] + clip_log
+
         # NULL-coalesce, same pattern/rationale as `advanced`/`requested_cap_pct`
         # in the shared preamble above (models.py:55-58): a pre-existing DB
         # row predating this column's migration reads NULL here too, despite
@@ -423,7 +534,7 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         initial = np.array([1.0 / n] * n)
 
         result = minimize(neg_sharpe_bl, initial, method="SLSQP", bounds=bounds, constraints=advanced_constraints)
-        suggested_weights = result.x if result.success else initial
+        suggested_weights = _solved_weights(result, initial, "max_sharpe", clip_log)
         suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mu_bl, sigma_bl, risk_free_rate_pct)
 
         ticker_weights, max_sharpe_objective, suggested_sharpe_rounded = _build_ticker_weights_and_objective(
@@ -439,7 +550,7 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
             neg_utility_bl, initial, args=(mu_bl, sigma_bl, delta, gamma_utility),
             method="SLSQP", bounds=bounds, constraints=advanced_constraints,
         )
-        suggested_weights_utility = utility_result.x if utility_result.success else initial
+        suggested_weights_utility = _solved_weights(utility_result, initial, "max_quadratic_utility", clip_log)
         suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility = portfolio_stats(
             suggested_weights_utility, mu_bl, sigma_bl, risk_free_rate_pct,
         )
@@ -517,8 +628,14 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
     bounds = [(0.0, effective_cap)] * n
     initial = np.array([1.0 / n] * n)
 
+    # Basic mode has no sector/ticker constraints to clip, so its clip_log
+    # was previously hardcoded empty. It still has the same silent
+    # non-convergence fallback the advanced branch does, though, so it gets
+    # the same visibility -- an unlabeled equal-weight "recommendation" is
+    # exactly as misleading here as it is there.
+    basic_clip_log: list[dict] = []
     result = minimize(neg_sharpe, initial, method="SLSQP", bounds=bounds, constraints=constraints)
-    suggested_weights = result.x if result.success else initial
+    suggested_weights = _solved_weights(result, initial, "max_sharpe", basic_clip_log)
     suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mean_returns, cov, risk_free_rate_pct)
 
     ticker_weights, max_sharpe_objective, suggested_sharpe_rounded = _build_ticker_weights_and_objective(
@@ -542,5 +659,5 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         objectives=objectives,
         frontier_points=None,
         sector_breakdown=None,
-        clip_log=[],
+        clip_log=basic_clip_log,
     )
