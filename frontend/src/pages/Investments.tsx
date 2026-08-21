@@ -493,22 +493,22 @@ export default function Investments() {
       {/* Suggested allocation — depends only on Holding + MarketPrice data (populated
           after the first nightly sync), not on the BalanceSnapshot history the risk
           card above needs, so it's gated independently rather than nested inside it.
-          The preferences panel (which owns the advanced-mode toggle itself) always
-          renders here so advanced mode is reachable from a cold start; basic mode
-          (default) keeps the single max-Sharpe table below unchanged, while advanced
-          mode swaps in the efficient frontier chart and a per-objective (Max Sharpe
-          vs. Max Quadratic Utility) comparison instead. */}
-      {!optimizationLoading && optimization && !optimization.insufficient_data && (
+          There is exactly one optimizer engine (Black-Litterman); the preferences
+          panel's toggle turns its output on/off entirely rather than choosing between
+          engines. The panel itself (which owns that toggle) always renders here so
+          it's reachable from a cold start; the card below it appears only once the
+          toggle is on and the engine has actually run. */}
+      {!optimizationLoading && optimization && (
         <>
           {/* onChange re-runs the /optimize request after every successful
               preference or constraint mutation. The panel writes through
-              /optimization-settings, but everything below (advanced-mode
-              gating, frontier chart, comparison tables, clip-log banner)
-              reads /optimize -- two separate endpoints, so without this the
-              panel updated instantly while the results below stayed on the
-              pre-edit snapshot until a page reload. */}
+              /optimization-settings, but everything below (frontier chart,
+              comparison tables, clip-log banner) reads /optimize -- two
+              separate endpoints, so without this the panel updated
+              instantly while the results below stayed on the pre-edit
+              snapshot until a page reload. */}
           <OptimizationPreferencesPanel onChange={refetchOptimization} />
-          {optimization.advanced_enabled ? (
+          {optimization.advanced_enabled && !optimization.insufficient_data && (
             <div className="glass-card p-4">
               <div className="text-[12px] font-semibold mb-2">Suggested allocation</div>
               <div className="text-[11px] text-ledger-text-faint mb-3">
@@ -612,31 +612,6 @@ export default function Investments() {
                   </div>
                 ))}
               </div>
-            </div>
-          ) : (
-            <div className="glass-card p-4">
-              <div className="text-[12px] font-semibold mb-2">Suggested allocation (max Sharpe)</div>
-              <div className="text-[11px] text-ledger-text-faint mb-2">
-                Current Sharpe (holdings only) {optimization.current_sharpe?.toFixed(2) ?? '—'} · Suggested Sharpe (holdings only) {optimization.suggested_sharpe?.toFixed(2) ?? '—'}
-              </div>
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="text-left text-ledger-text-faint">
-                    <th className="font-medium pb-1.5">Ticker</th>
-                    <th className="font-medium pb-1.5 text-right">Current</th>
-                    <th className="font-medium pb-1.5 text-right">Suggested</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {optimization.tickers.map(t => (
-                    <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
-                      <td className="py-1.5 font-medium">{t.ticker}</td>
-                      <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
-                      <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           )}
         </>

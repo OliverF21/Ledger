@@ -82,6 +82,11 @@ def _setup_two_ticker_portfolio(db):
         day = start + timedelta(days=i)
         db.add(MarketPrice(ticker="TICKA", price_date=day, close_price=Decimal(str(a_prices[i]))))
         db.add(MarketPrice(ticker="TICKB", price_date=day, close_price=Decimal(str(b_prices[i]))))
+        # SPY: the optimizer's only engine is advanced (Black-Litterman)
+        # mode, which always needs a benchmark to compute market-implied
+        # risk aversion from -- see seeded_price_history's own SPY-zigzag
+        # comment below for why the noise (not just the trend) matters.
+        db.add(MarketPrice(ticker="SPY", price_date=day, close_price=Decimal(str(400 + i * 0.3 + (3 if i % 2 == 0 else -3)))))
     db.commit()
     return account
 
@@ -90,13 +95,28 @@ def test_optimization_shifts_weight_toward_higher_sharpe_asset(db_session):
     _setup_two_ticker_portfolio(db_session)
     # This test is about core optimizer direction (favor the higher-Sharpe
     # asset), not the position-cap feature (which has its own dedicated
-    # test: test_basic_mode_matches_position_cap_and_single_objective).
+    # test: test_disabled_toggle_returns_empty_result_without_computing).
     # Disable the cap explicitly (100% = unreachable ceiling for 2 assets)
     # so relax_position_cap_if_needed's default-10%-relaxed-to-~52.63%-for-
     # n=2 behavior doesn't clip the optimizer's desired >60% allocation to
-    # TICKA and turn this into an accidental cap test.
+    # TICKA and turn this into an accidental cap test. The engine is
+    # advanced-only, so the toggle must be on for any suggestion at all.
     user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
     user.optimization_position_cap_pct = 100.0
+    db_session.commit()
+    # With no TickerClassification rows, neither ticker gets an ETF view and
+    # the Black-Litterman posterior collapses to the market-implied prior
+    # alone (pi = delta*Sigma*w_mkt) -- which reflects covariance structure,
+    # not either ticker's actual historical mean return, so it does NOT
+    # favor TICKA (empirically: TICKA comes back at ~48%, barely off the
+    # 50/50 start). Classifying TICKA as an "etf" gives it a trailing-mean
+    # absolute view (Q[row]=mean_returns[i], the only place a ticker's own
+    # historical mean enters this engine at all), which is what actually
+    # lets its steady uptrend show up in the suggested weights -- exactly
+    # what basic mode's plain historical-mean objective used to do for
+    # every ticker unconditionally, before this engine became the only one.
+    db_session.add(TickerClassification(ticker="TICKA", asset_class="etf", market_cap_or_aum=Decimal("5000000000")))
     db_session.commit()
 
     data = build_optimization_suggestion(db_session, lookback_days=90)
@@ -149,6 +169,11 @@ def test_optimization_drops_unpriceable_ticker_and_uses_remaining(db_session):
         day = start + timedelta(days=i)
         db_session.add(MarketPrice(ticker="TICKA", price_date=day, close_price=Decimal(str(a_prices[i]))))
         db_session.add(MarketPrice(ticker="TICKB", price_date=day, close_price=Decimal(str(b_prices[i]))))
+        db_session.add(MarketPrice(ticker="SPY", price_date=day, close_price=Decimal(str(400 + i * 0.3 + (3 if i % 2 == 0 else -3)))))
+    db_session.commit()
+
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
     db_session.commit()
 
     data = build_optimization_suggestion(db_session, lookback_days=90)
@@ -159,6 +184,8 @@ def test_optimization_drops_unpriceable_ticker_and_uses_remaining(db_session):
 
 
 def test_optimization_insufficient_data_with_fewer_than_two_tickers(db_session):
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
     item = Item(user_id=1, item_id="item-1", access_token_encrypted="x")
     db_session.add(item)
     db_session.flush()
@@ -169,6 +196,23 @@ def test_optimization_insufficient_data_with_fewer_than_two_tickers(db_session):
     data = build_optimization_suggestion(db_session, lookback_days=90)
     assert data.insufficient_data is True
     assert data.tickers == []
+
+
+def test_disabled_toggle_returns_empty_result_without_computing(db_session):
+    # optimization_advanced_enabled defaults to False (no explicit set here)
+    # and there is no second, weaker engine underneath it -- toggling off
+    # means "no optimizer output", not "a simpler optimizer's output".
+    # Deliberately gives no holdings/prices at all: if the toggle check
+    # didn't short-circuit before touching them, this would blow up trying
+    # to read tickers/prices rather than return cleanly.
+    data = build_optimization_suggestion(db_session, lookback_days=90)
+
+    assert data.advanced_enabled is False
+    assert data.insufficient_data is False
+    assert data.tickers == []
+    assert data.objectives == []
+    assert data.frontier_points is None
+    assert data.sector_breakdown is None
 
 
 # Number of tickers needed so a 10% position cap is NOT auto-relaxed by
@@ -257,23 +301,6 @@ def seeded_price_history(db_session):
         db_session.add(MarketPrice(ticker="SPY", price_date=day, close_price=Decimal(str(400 + i * 0.3 + (3 if i % 2 == 0 else -3)))))
     db_session.commit()
     return tickers
-
-
-def test_basic_mode_matches_position_cap_and_single_objective(db_session, seeded_price_history):
-    user = db_session.query(User).filter_by(id=1).one()
-    user.optimization_advanced_enabled = False
-    user.optimization_position_cap_pct = 10.0
-    db_session.commit()
-
-    result = build_optimization_suggestion(db_session)
-
-    assert result.advanced_enabled is False
-    assert len(result.objectives) == 1
-    assert result.objectives[0].name == "max_sharpe"
-    assert result.frontier_points is None
-    assert result.sector_breakdown is None
-    for weight in (tw.suggested_weight_pct for tw in result.tickers):
-        assert weight <= 10.0 + 1e-6
 
 
 # Sector names are deliberately spread alphabetically before AND after

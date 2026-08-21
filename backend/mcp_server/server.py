@@ -76,8 +76,9 @@ mcp = FastMCP(
         "- budget_status — budget vs actual\n"
         "- recurring_subscriptions — recurring charges\n"
         "- investment_performance — portfolio metrics\n"
-        "- portfolio_optimization — suggested allocation (Max Sharpe, and Max Quadratic "
-        "Utility + efficient frontier in advanced mode)\n"
+        "- portfolio_optimization — suggested allocation (Max Sharpe + Max Quadratic "
+        "Utility + efficient frontier); empty unless the user has advanced optimization "
+        "enabled in Settings\n"
         "- transaction_search — evidence rows\n"
         "- net_worth_data — net worth history and account breakdown (JSON)\n"
         "- trends_data — monthly spending vs income series (JSON)\n\n"
@@ -664,10 +665,12 @@ def get_investment_performance(
 
 @mcp.tool(name="portfolio_optimization", tags={"analytics", "investments"})
 def portfolio_optimization() -> PortfolioOptimizationResult:
-    """Suggested portfolio allocation (Max Sharpe, and Max Quadratic Utility
-    + efficient frontier if advanced mode is enabled), computed from the
-    user's current holdings and preferences. Read-only -- structured metrics
-    only, no generated explanation; summarize/explain the numbers yourself."""
+    """Suggested portfolio allocation (Max Sharpe, Max Quadratic Utility, and
+    an efficient frontier), computed from the user's current holdings and
+    preferences. Returns empty objectives/advanced_enabled=False unless the
+    user has advanced optimization enabled in Settings -- there is no
+    separate, always-on basic engine. Read-only -- structured metrics only,
+    no generated explanation; summarize/explain the numbers yourself."""
     with ledger_session() as db:
         data = build_optimization_suggestion(db)
         return PortfolioOptimizationResult(

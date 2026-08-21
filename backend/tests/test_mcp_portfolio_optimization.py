@@ -121,22 +121,22 @@ def _seed_two_ticker_portfolio(
 
 
 def test_portfolio_optimization_tool_returns_structured_result(db_session, patch_ledger_session):
-    """Basic mode (User.optimization_advanced_enabled defaults to False) --
-    covers the plan brief's Step 1 illustrative assertions plus the
-    single-objective/no-frontier shape basic mode guarantees."""
-    _seed_two_ticker_portfolio(db_session)
+    """Covers the plan brief's Step 1 illustrative assertions: valid shape
+    and correct ticker set per objective, with advanced mode on (the only
+    engine there is -- off produces no objectives at all, see
+    test_portfolio_optimization_tool_disabled_toggle_returns_empty_result)."""
+    _seed_two_ticker_portfolio(db_session, with_spy=True)
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    db_session.commit()
 
     result = mcp_server_module.portfolio_optimization()
 
-    assert result.advanced_enabled is False
+    assert result.advanced_enabled is True
     assert isinstance(result.objectives, list)
-    assert len(result.objectives) == 1
-    assert result.objectives[0].name == "max_sharpe"
+    assert len(result.objectives) == 2
     tickers_seen = {t["ticker"] for t in result.objectives[0].tickers}
     assert tickers_seen == {"TICKA", "TICKB"}
-    assert result.frontier_points is None
-    assert result.sector_breakdown is None
-    assert result.clip_log == []
     assert result.insufficient_data is False
     assert result.data_points == 60
     assert result.position_cap_pct > 0
@@ -162,11 +162,30 @@ def test_portfolio_optimization_tool_advanced_mode_returns_two_objectives(db_ses
 
 
 def test_portfolio_optimization_tool_reports_insufficient_data_with_no_holdings(db_session, patch_ledger_session):
-    """No investment holdings at all -- the tool must still return a valid
-    PortfolioOptimizationResult (empty objectives), not raise."""
+    """No investment holdings at all, advanced mode on -- the tool must
+    still return a valid PortfolioOptimizationResult (empty objectives),
+    not raise."""
+    db_session.query(User).filter_by(id=1).one().optimization_advanced_enabled = True
+    db_session.commit()
+
     result = mcp_server_module.portfolio_optimization()
 
+    assert result.advanced_enabled is True
     assert result.insufficient_data is True
     assert result.objectives == []
     assert result.frontier_points is None
     assert result.sector_breakdown is None
+
+
+def test_portfolio_optimization_tool_disabled_toggle_returns_empty_result(db_session, patch_ledger_session):
+    """optimization_advanced_enabled defaults to False -- there is no
+    separate weaker engine underneath it, so off means no optimizer output
+    at all, distinct from insufficient_data (which means the engine ran and
+    didn't have enough data)."""
+    _seed_two_ticker_portfolio(db_session, with_spy=True)
+
+    result = mcp_server_module.portfolio_optimization()
+
+    assert result.advanced_enabled is False
+    assert result.insufficient_data is False
+    assert result.objectives == []

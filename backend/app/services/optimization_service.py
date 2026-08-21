@@ -6,14 +6,20 @@ plan doc for why: cvxpy's solver backends are a known headache to bundle into
 the PyInstaller desktop build, and SLSQP is more than sufficient for this
 book's size, ~5-30 holdings).
 
-Basic mode (User.optimization_advanced_enabled == False, the default): a
-single max-Sharpe solve over historical-mean returns and a Ledoit-Wolf-
-shrunk covariance, bounded by a user-configurable position cap. Advanced
-mode blends Black-Litterman returns (market-implied prior + ETF trailing-
-mean views via Idzorek) with sector/ticker constraints, a concentration
-(HHI-style) penalty, two solves -- max-Sharpe and max-quadratic-utility
-(Tasks 10-11) -- and an efficient-frontier sweep across target
-volatilities (Task 12).
+There is exactly one optimizer engine: Black-Litterman return blending
+(market-implied prior + ETF trailing-mean views via Idzorek) with
+sector/ticker constraints, a concentration (HHI-style) penalty, two
+solves -- max-Sharpe and max-quadratic-utility -- and an efficient-
+frontier sweep across target volatilities.
+
+User.optimization_advanced_enabled (default False) does not select a
+different, weaker engine -- it gates whether this module runs at all.
+Off means "don't compute or show any optimizer output"; simple portfolio
+metrics (Sharpe, VaR, beta, ...) live in risk_service.py and are
+unaffected either way. build_optimization_suggestion short-circuits to
+_disabled_result() before touching prices/holdings when the toggle is
+off, so turning it off is also a real compute saving, not just a UI
+hide.
 """
 from __future__ import annotations
 
@@ -176,9 +182,8 @@ class TickerWeight:
 
 @dataclass(frozen=True)
 class ObjectiveResult:
-    """One optimizer solve's output. Basic mode always produces exactly one
-    ObjectiveResult (name="max_sharpe"); advanced mode (Task 10+) adds a
-    second ("max_quadratic_utility"). `tickers` reuses TickerWeight (current
+    """One optimizer solve's output. Each run produces two: max_sharpe and
+    max_quadratic_utility. `tickers` reuses TickerWeight (current
     + suggested paired together) rather than a leaner ticker/weight-only
     shape: each objective is meant to be a self-contained "current vs. this
     objective's suggestion" view a caller/UI can render on its own (e.g. one
@@ -223,10 +228,29 @@ class OptimizationData:
 
 
 def _empty_result(data_points: int = 0) -> OptimizationData:
+    """Advanced mode is on, but there isn't enough priceable holding data to
+    run the solve (fewer than two tickers, or too few overlapping price
+    rows)."""
     return OptimizationData(
         tickers=[], current_expected_return_pct=None, current_volatility_pct=None, current_sharpe=None,
         suggested_expected_return_pct=None, suggested_volatility_pct=None, suggested_sharpe=None,
         data_points=data_points, insufficient_data=True,
+        advanced_enabled=True, position_cap_pct=0.0, cap_relaxed=None,
+        objectives=[], frontier_points=None, sector_breakdown=None, clip_log=[],
+    )
+
+
+def _disabled_result() -> OptimizationData:
+    """User.optimization_advanced_enabled is off. Distinct from
+    _empty_result(): insufficient_data communicates "the engine ran and
+    couldn't", this communicates "the engine didn't run at all" -- the
+    caller (routes/portfolio_risk.py, Investments.tsx) uses advanced_enabled
+    to decide whether to show the optimizer section, not insufficient_data,
+    so this must not be mistaken for a data problem."""
+    return OptimizationData(
+        tickers=[], current_expected_return_pct=None, current_volatility_pct=None, current_sharpe=None,
+        suggested_expected_return_pct=None, suggested_volatility_pct=None, suggested_sharpe=None,
+        data_points=0, insufficient_data=False,
         advanced_enabled=False, position_cap_pct=0.0, cap_relaxed=None,
         objectives=[], frontier_points=None, sector_breakdown=None, clip_log=[],
     )
@@ -290,14 +314,10 @@ def _build_ticker_weights_and_objective(
     suggested_vol: float,
     suggested_sharpe: float | None,
 ) -> tuple[list[TickerWeight], ObjectiveResult, float | None]:
-    """Shared by both basic mode and advanced mode's Max Sharpe solve: turns
+    """Shared by both the max-Sharpe and max-quadratic-utility solves: turns
     a solved weight vector into the paired TickerWeight list and its single
-    ObjectiveResult. The only inputs that differ between the two current
-    call sites are the stats themselves (basic mode's plain mean/cov-derived
-    numbers vs. advanced mode's BL-derived mu_bl/sigma_bl-derived numbers)
-    and `name` -- both currently pass "max_sharpe", but Tasks 11-12 add a
-    second objective ("max_quadratic_utility") to the advanced branch, which
-    is why `name` is a parameter rather than hardcoded here.
+    ObjectiveResult. `name` is a parameter (not hardcoded) since the two
+    call sites pass "max_sharpe" and "max_quadratic_utility" respectively.
 
     Also returns `suggested_sharpe_rounded` separately (not just embedded in
     the returned ObjectiveResult) since both call sites additionally thread
@@ -323,6 +343,14 @@ def _build_ticker_weights_and_objective(
 
 
 def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> OptimizationData:
+    user = db.query(User).filter_by(id=1).one()
+    # NULL-coalesce: this column lands NULL (not its declared ORM default of
+    # False) on any pre-existing DB row that predates the migration adding
+    # it -- see models.py:55-58.
+    advanced = False if user.optimization_advanced_enabled is None else bool(user.optimization_advanced_enabled)
+    if not advanced:
+        return _disabled_result()
+
     lookback_days = max(90, min(int(lookback_days), 1825))
     end = date.today()
     start = end - timedelta(days=lookback_days)
@@ -366,13 +394,6 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
 
     n = len(tickers)
 
-    user = db.query(User).filter_by(id=1).one()
-    # NULL-coalesce: these columns land NULL (not their declared ORM
-    # defaults) on any pre-existing DB row that predates the migration
-    # adding them -- see models.py:55-58. The documented default for
-    # optimization_advanced_enabled is False, so NULL -> False is correct
-    # and matches intent (not just "None is falsy" incidentally).
-    advanced = False if user.optimization_advanced_enabled is None else bool(user.optimization_advanced_enabled)
     requested_cap_pct = (
         DEFAULT_POSITION_CAP_PCT if user.optimization_position_cap_pct is None else float(user.optimization_position_cap_pct)
     )
@@ -380,268 +401,214 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
 
     effective_cap, cap_relax_log = relax_position_cap_if_needed(n, requested_cap)
 
-    if advanced:
-        # Concentration penalty + Max Quadratic Utility objective (Task 11)
-        # plus the efficient-frontier sweep (Task 12). This branch returns
-        # two BL-driven ObjectiveResults (max_sharpe, max_quadratic_utility)
-        # with sector_breakdown and frontier_points populated.
-        spy_dates, spy_prices = price_matrix(db, ["SPY"], start, end)
-        if len(spy_dates) < 2:
-            # SPY is a guaranteed benchmark ticker per price_sync_service.py's
-            # BENCHMARK_TICKERS -- this should only happen if the initial
-            # price sync hasn't run yet. Fail loud with a clear diagnostic
-            # rather than an IndexError from indexing an empty price matrix
-            # below; routes/portfolio_risk.py's try/except degrades either
-            # one to a normal 500 the same way.
-            raise ValueError("advanced mode requires SPY benchmark price history")
-        spy_series = pd.Series(spy_prices[:, 0])
-        delta, delta_substitution_log = _guarded_risk_aversion(
-            market_implied_risk_aversion(spy_series, risk_free_rate_pct)
-        )
+    # Returns two BL-driven ObjectiveResults (max_sharpe, max_quadratic_utility)
+    # with sector_breakdown and frontier_points populated.
+    spy_dates, spy_prices = price_matrix(db, ["SPY"], start, end)
+    if len(spy_dates) < 2:
+        # SPY is a guaranteed benchmark ticker per price_sync_service.py's
+        # BENCHMARK_TICKERS -- this should only happen if the initial
+        # price sync hasn't run yet. Fail loud with a clear diagnostic
+        # rather than an IndexError from indexing an empty price matrix
+        # below; routes/portfolio_risk.py's try/except degrades either
+        # one to a normal 500 the same way.
+        raise ValueError("advanced mode requires SPY benchmark price history")
+    spy_series = pd.Series(spy_prices[:, 0])
+    delta, delta_substitution_log = _guarded_risk_aversion(
+        market_implied_risk_aversion(spy_series, risk_free_rate_pct)
+    )
 
-        classifications = db.query(TickerClassification).filter(TickerClassification.ticker.in_(tickers)).all()
-        classification_by_ticker = {c.ticker: c for c in classifications}
+    classifications = db.query(TickerClassification).filter(TickerClassification.ticker.in_(tickers)).all()
+    classification_by_ticker = {c.ticker: c for c in classifications}
 
-        # Market-cap/AUM-weighted "market portfolio" over the same tickers
-        # as cov's rows/columns -- the AUM-fallback fix validated in the
-        # example script (ETFs report AUM via a different yfinance field
-        # than ordinary equities' market cap; TickerClassification already
-        # coalesces both into one market_cap_or_aum column upstream, so no
-        # separate fallback is needed here beyond treating a missing
-        # classification or a NULL value as 0 exposure). If nothing has
-        # been classified yet (e.g. sector_sync_service.py hasn't run),
-        # fall back to an equally-weighted market rather than dividing by
-        # zero -- this only shifts the BL prior's starting point; the
-        # sector/ticker constraints below read TickerClassification
-        # independently and are unaffected.
-        market_caps = np.array([
-            float(classification_by_ticker[t].market_cap_or_aum)
-            if t in classification_by_ticker and classification_by_ticker[t].market_cap_or_aum is not None
-            else 0.0
-            for t in tickers
-        ])
-        total_market_cap = market_caps.sum()
-        market_weights = market_caps / total_market_cap if total_market_cap > 0 else np.full(n, 1.0 / n)
+    # Market-cap/AUM-weighted "market portfolio" over the same tickers
+    # as cov's rows/columns -- the AUM-fallback fix validated in the
+    # example script (ETFs report AUM via a different yfinance field
+    # than ordinary equities' market cap; TickerClassification already
+    # coalesces both into one market_cap_or_aum column upstream, so no
+    # separate fallback is needed here beyond treating a missing
+    # classification or a NULL value as 0 exposure). If nothing has
+    # been classified yet (e.g. sector_sync_service.py hasn't run),
+    # fall back to an equally-weighted market rather than dividing by
+    # zero -- this only shifts the BL prior's starting point; the
+    # sector/ticker constraints below read TickerClassification
+    # independently and are unaffected.
+    market_caps = np.array([
+        float(classification_by_ticker[t].market_cap_or_aum)
+        if t in classification_by_ticker and classification_by_ticker[t].market_cap_or_aum is not None
+        else 0.0
+        for t in tickers
+    ])
+    total_market_cap = market_caps.sum()
+    market_weights = market_caps / total_market_cap if total_market_cap > 0 else np.full(n, 1.0 / n)
 
-        # black_litterman_posterior inverts (tau * cov) directly via
-        # np.linalg.inv, which raises LinAlgError: Singular matrix if cov
-        # contains ANY zero-variance asset. This is a real, expected input
-        # class here, not a hypothetical: ledoit_wolf_shrinkage's own test
-        # suite establishes zero-variance tickers (stale/halted/constant-
-        # price securities) as first-class supported input, and a PSD
-        # covariance matrix with one zero-variance asset is guaranteed to
-        # have that asset's entire row/column be exactly zero -- which
-        # makes tau*cov singular regardless of every other asset's data
-        # quality. idzorek_omega's existing epsilon-floor guard (Task 5)
-        # only protects omega's own inversion, not this separate one.
-        # Floor the covariance diagonal before any BL call rather than
-        # letting one degenerate ticker crash the whole advanced-mode solve
-        # for the entire book, or silently dropping it from advanced mode's
-        # output only (which basic mode would still show -- a confusing
-        # inconsistency for a user toggling the mode). Off-diagonal entries
-        # are left untouched: a true zero-variance asset has zero
-        # covariance with everything by definition (Cov(X,Y)=0 when
-        # Var(X)=0), so only the diagonal needs nudging off of exactly
-        # zero. Mirrors the same floor-before-inverting idiom
-        # ledoit_wolf_shrinkage (std floor) and idzorek_omega (omega floor)
-        # already use elsewhere in this pipeline.
-        cov_for_bl = cov.copy()
-        np.fill_diagonal(cov_for_bl, np.maximum(np.diag(cov_for_bl), 1e-10))
+    # black_litterman_posterior inverts (tau * cov) directly via
+    # np.linalg.inv, which raises LinAlgError: Singular matrix if cov
+    # contains ANY zero-variance asset. This is a real, expected input
+    # class here, not a hypothetical: ledoit_wolf_shrinkage's own test
+    # suite establishes zero-variance tickers (stale/halted/constant-
+    # price securities) as first-class supported input, and a PSD
+    # covariance matrix with one zero-variance asset is guaranteed to
+    # have that asset's entire row/column be exactly zero -- which
+    # makes tau*cov singular regardless of every other asset's data
+    # quality. idzorek_omega's existing epsilon-floor guard (Task 5)
+    # only protects omega's own inversion, not this separate one.
+    # Floor the covariance diagonal before any BL call rather than
+    # letting one degenerate ticker crash the whole solve for the
+    # entire book. Off-diagonal entries are left untouched: a true
+    # zero-variance asset has zero covariance with everything by
+    # definition (Cov(X,Y)=0 when Var(X)=0), so only the diagonal
+    # needs nudging off of exactly zero. Mirrors the same
+    # floor-before-inverting idiom ledoit_wolf_shrinkage (std floor)
+    # and idzorek_omega (omega floor) already use elsewhere in this
+    # pipeline.
+    cov_for_bl = cov.copy()
+    np.fill_diagonal(cov_for_bl, np.maximum(np.diag(cov_for_bl), 1e-10))
 
-        pi = market_implied_prior(cov_for_bl, market_weights, delta)
+    pi = market_implied_prior(cov_for_bl, market_weights, delta)
 
-        etf_indices = [
-            i for i, t in enumerate(tickers)
-            if classification_by_ticker.get(t) is not None and classification_by_ticker[t].asset_class == "etf"
-        ]
-        if etf_indices:
-            P = np.zeros((len(etf_indices), n))
-            Q = np.zeros(len(etf_indices))
-            for row, i in enumerate(etf_indices):
-                P[row, i] = 1.0
-                Q[row] = mean_returns[i]
-            omega = idzorek_omega([0.3] * len(etf_indices), P, tau=0.05, cov=cov_for_bl)
-            mu_bl, sigma_bl = black_litterman_posterior(cov_for_bl, pi, P, Q, omega, tau=0.05)
-        else:
-            # No ETF held -> no views to blend; Black-Litterman with zero
-            # views collapses to the market-implied prior itself.
-            mu_bl, sigma_bl = pi, cov_for_bl
+    etf_indices = [
+        i for i, t in enumerate(tickers)
+        if classification_by_ticker.get(t) is not None and classification_by_ticker[t].asset_class == "etf"
+    ]
+    if etf_indices:
+        P = np.zeros((len(etf_indices), n))
+        Q = np.zeros(len(etf_indices))
+        for row, i in enumerate(etf_indices):
+            P[row, i] = 1.0
+            Q[row] = mean_returns[i]
+        omega = idzorek_omega([0.3] * len(etf_indices), P, tau=0.05, cov=cov_for_bl)
+        mu_bl, sigma_bl = black_litterman_posterior(cov_for_bl, pi, P, Q, omega, tau=0.05)
+    else:
+        # No ETF held -> no views to blend; Black-Litterman with zero
+        # views collapses to the market-implied prior itself.
+        mu_bl, sigma_bl = pi, cov_for_bl
 
-        exposure_matrix, sector_names = build_sector_exposure_matrix(db, tickers)
-        sector_lower, sector_upper, clip_log = clip_sector_bounds(db, 1, sector_names, exposure_matrix, effective_cap)
-        ticker_lower, ticker_upper = build_ticker_bounds(db, 1, tickers, effective_cap)
+    exposure_matrix, sector_names = build_sector_exposure_matrix(db, tickers)
+    sector_lower, sector_upper, clip_log = clip_sector_bounds(db, 1, sector_names, exposure_matrix, effective_cap)
+    ticker_lower, ticker_upper = build_ticker_bounds(db, 1, tickers, effective_cap)
 
-        # clip_log is the pipeline's single "we auto-adjusted something you
-        # asked for" channel, and it's first created above -- so the delta
-        # substitution decided back at the top of this branch (where no
-        # clip_log existed yet to append to) is folded in here. Prepended
-        # rather than appended: it describes an input to the whole solve,
-        # not one constraint's clipping, so it reads first in the UI banner.
-        if delta_substitution_log is not None:
-            clip_log = [delta_substitution_log] + clip_log
+    # clip_log is the pipeline's single "we auto-adjusted something you
+    # asked for" channel, and it's first created above -- so the delta
+    # substitution decided back at the top of this branch (where no
+    # clip_log existed yet to append to) is folded in here. Prepended
+    # rather than appended: it describes an input to the whole solve,
+    # not one constraint's clipping, so it reads first in the UI banner.
+    if delta_substitution_log is not None:
+        clip_log = [delta_substitution_log] + clip_log
 
-        # NULL-coalesce, same pattern/rationale as `advanced`/`requested_cap_pct`
-        # in the shared preamble above (models.py:55-58): a pre-existing DB
-        # row predating this column's migration reads NULL here too, despite
-        # the column's declared ORM default (0.5).
-        concentration_strength = (
-            DEFAULT_CONCENTRATION_STRENGTH if user.optimization_concentration_strength is None
-            else float(user.optimization_concentration_strength)
-        )
-        gamma_sharpe, gamma_utility = concentration_gammas(concentration_strength)
+    # NULL-coalesce, same pattern/rationale as `requested_cap_pct` above
+    # (models.py:55-58): a pre-existing DB row predating this column's
+    # migration reads NULL here too, despite the column's declared ORM
+    # default (0.5).
+    concentration_strength = (
+        DEFAULT_CONCENTRATION_STRENGTH if user.optimization_concentration_strength is None
+        else float(user.optimization_concentration_strength)
+    )
+    gamma_sharpe, gamma_utility = concentration_gammas(concentration_strength)
 
-        def neg_sharpe_bl(weights: np.ndarray) -> float:
-            ret = np.dot(weights, mu_bl) * TRADING_DAYS_PER_YEAR
-            vol = np.sqrt(weights @ sigma_bl @ weights) * np.sqrt(TRADING_DAYS_PER_YEAR)
-            if vol == 0:
-                return 0.0
-            return -(ret - risk_free_rate_pct / 100) / vol + gamma_sharpe * np.sum(weights**2)
-
-        # The quadratic-utility objective itself lives at module level
-        # (neg_utility_bl, above) rather than as a closure here -- see its
-        # docstring for why. `delta` is the same SPY-derived risk-aversion
-        # coefficient computed near the top of this branch, per
-        # market_implied_risk_aversion's own docstring: "Used both to build
-        # the Black-Litterman prior AND as the quadratic-utility objective's
-        # risk-aversion parameter".
-
-        # Per-sector inequality constraints live in their own list (rather
-        # than being appended straight into advanced_constraints) because
-        # Task 12's frontier sweep (sweep_efficient_frontier, below) also
-        # needs them standalone: it prepends its own sum-to-one equality
-        # constraint internally, so handing it advanced_constraints
-        # (which already has one) would duplicate that equality constraint
-        # into every one of the sweep's solves.
-        sector_scipy_constraints = []
-        for j in range(len(sector_names)):
-            col = exposure_matrix[:, j]
-            lo = sector_lower[j]
-            hi = sector_upper[j]
-            # Bind col/lo/hi as default args, not a bare closure over the
-            # loop variables -- scipy only calls these `fun`s AFTER this
-            # loop finishes building the whole constraints list, so a bare
-            # `lambda w: col @ w - lo` would have every constraint
-            # reference the SAME (final) col/lo/hi from the last iteration,
-            # silently applying only the last sector's bounds to every
-            # sector. Default args are evaluated once, at lambda-definition
-            # time (i.e. per-iteration here), so each constraint keeps its
-            # own sector's values independently.
-            sector_scipy_constraints.append({"type": "ineq", "fun": lambda w, col=col, lo=lo: col @ w - lo})
-            sector_scipy_constraints.append({"type": "ineq", "fun": lambda w, col=col, hi=hi: hi - col @ w})
-        advanced_constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}] + sector_scipy_constraints
-
-        bounds = list(zip(ticker_lower, ticker_upper))
-        initial = np.array([1.0 / n] * n)
-
-        result = minimize(neg_sharpe_bl, initial, method="SLSQP", bounds=bounds, constraints=advanced_constraints)
-        suggested_weights = _solved_weights(result, initial, "max_sharpe", clip_log)
-        suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mu_bl, sigma_bl, risk_free_rate_pct)
-
-        ticker_weights, max_sharpe_objective, suggested_sharpe_rounded = _build_ticker_weights_and_objective(
-            "max_sharpe", tickers, current_weights_pct, suggested_weights, suggested_return, suggested_vol, suggested_sharpe,
-        )
-
-        # Second, independent solve: same bounds/constraints (sector floors/
-        # caps, ticker minimums, sum-to-1) as the max-Sharpe solve above, but
-        # a different objective function (neg_utility_bl) -- so it's
-        # expected to (and, per this task's own verification, empirically
-        # does) generally converge to a different weight vector.
-        utility_result = minimize(
-            neg_utility_bl, initial, args=(mu_bl, sigma_bl, delta, gamma_utility),
-            method="SLSQP", bounds=bounds, constraints=advanced_constraints,
-        )
-        suggested_weights_utility = _solved_weights(utility_result, initial, "max_quadratic_utility", clip_log)
-        suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility = portfolio_stats(
-            suggested_weights_utility, mu_bl, sigma_bl, risk_free_rate_pct,
-        )
-        # Reuses _build_ticker_weights_and_objective (Task 10's fix-round
-        # helper, added specifically so this task wouldn't need a third
-        # near-duplicate ticker-weights/ObjectiveResult construction block).
-        # Its ticker-weights/rounded-sharpe return values aren't needed here:
-        # the top-level OptimizationData.tickers/suggested_* fields stay
-        # tied to the max_sharpe objective (unchanged from Task 10), and
-        # this objective's own tickers already live inside
-        # max_utility_objective.tickers.
-        _, max_utility_objective, _ = _build_ticker_weights_and_objective(
-            "max_quadratic_utility", tickers, current_weights_pct, suggested_weights_utility,
-            suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility,
-        )
-        objectives = [max_sharpe_objective, max_utility_objective]
-
-        # Efficient-frontier sweep (Task 12): independent SLSQP solves at a
-        # range of target volatilities spanning the achievable min-volatility
-        # portfolio through the max-return portfolio's volatility, using the
-        # same BL posterior (mu_bl/sigma_bl) and ticker/sector constraints as
-        # both solves above. Passes sector_scipy_constraints (the per-sector
-        # inequalities only) rather than advanced_constraints -- see the
-        # comment where sector_scipy_constraints is built above --
-        # sweep_efficient_frontier prepends its own sum-to-one equality
-        # constraint internally.
-        frontier_points = sweep_efficient_frontier(
-            mu_bl, sigma_bl, bounds, sector_scipy_constraints, n_points=20,
-        )
-
-        # floor_pct/cap_pct reuse the lower/upper vectors clip_sector_bounds
-        # already returned above (rather than re-reading the raw
-        # SectorConstraint rows) so the reported figures reflect any
-        # auto-clipping that happened -- e.g. a floor request that exceeded
-        # what's achievable given the position cap shows the ACHIEVABLE
-        # (clipped) floor here, matching what the solver was actually asked
-        # to enforce, not the user's original unclipped request.
-        sector_breakdown = [
-            {
-                "sector": s,
-                "weight_pct": float(exposure_matrix[:, j] @ suggested_weights * 100),
-                "floor_pct": float(sector_lower[j] * 100),
-                "cap_pct": float(sector_upper[j] * 100),
-            }
-            for j, s in enumerate(sector_names)
-        ]
-
-        return OptimizationData(
-            tickers=ticker_weights,
-            current_expected_return_pct=round(current_return, 2),
-            current_volatility_pct=round(current_vol, 2),
-            current_sharpe=round(current_sharpe, 2) if current_sharpe is not None else None,
-            suggested_expected_return_pct=round(suggested_return, 2),
-            suggested_volatility_pct=round(suggested_vol, 2),
-            suggested_sharpe=suggested_sharpe_rounded,
-            data_points=len(dates),
-            insufficient_data=False,
-            advanced_enabled=True,
-            position_cap_pct=round(effective_cap * 100, 2),
-            cap_relaxed=cap_relax_log,
-            objectives=objectives,
-            frontier_points=frontier_points,
-            sector_breakdown=sector_breakdown,
-            clip_log=clip_log,
-        )
-
-    def neg_sharpe(weights: np.ndarray) -> float:
-        ret = np.dot(weights, mean_returns) * TRADING_DAYS_PER_YEAR
-        vol = np.sqrt(weights @ cov @ weights) * np.sqrt(TRADING_DAYS_PER_YEAR)
+    def neg_sharpe_bl(weights: np.ndarray) -> float:
+        ret = np.dot(weights, mu_bl) * TRADING_DAYS_PER_YEAR
+        vol = np.sqrt(weights @ sigma_bl @ weights) * np.sqrt(TRADING_DAYS_PER_YEAR)
         if vol == 0:
             return 0.0
-        return -(ret - risk_free_rate_pct / 100) / vol
+        return -(ret - risk_free_rate_pct / 100) / vol + gamma_sharpe * np.sum(weights**2)
 
-    constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
-    bounds = [(0.0, effective_cap)] * n
+    # The quadratic-utility objective itself lives at module level
+    # (neg_utility_bl, above) rather than as a closure here -- see its
+    # docstring for why. `delta` is the same SPY-derived risk-aversion
+    # coefficient computed above, per market_implied_risk_aversion's own
+    # docstring: "Used both to build the Black-Litterman prior AND as
+    # the quadratic-utility objective's risk-aversion parameter".
+
+    # Per-sector inequality constraints live in their own list (rather
+    # than being appended straight into advanced_constraints) because
+    # the frontier sweep (sweep_efficient_frontier, below) also needs
+    # them standalone: it prepends its own sum-to-one equality
+    # constraint internally, so handing it advanced_constraints (which
+    # already has one) would duplicate that equality constraint into
+    # every one of the sweep's solves.
+    sector_scipy_constraints = []
+    for j in range(len(sector_names)):
+        col = exposure_matrix[:, j]
+        lo = sector_lower[j]
+        hi = sector_upper[j]
+        # Bind col/lo/hi as default args, not a bare closure over the
+        # loop variables -- scipy only calls these `fun`s AFTER this
+        # loop finishes building the whole constraints list, so a bare
+        # `lambda w: col @ w - lo` would have every constraint
+        # reference the SAME (final) col/lo/hi from the last iteration,
+        # silently applying only the last sector's bounds to every
+        # sector. Default args are evaluated once, at lambda-definition
+        # time (i.e. per-iteration here), so each constraint keeps its
+        # own sector's values independently.
+        sector_scipy_constraints.append({"type": "ineq", "fun": lambda w, col=col, lo=lo: col @ w - lo})
+        sector_scipy_constraints.append({"type": "ineq", "fun": lambda w, col=col, hi=hi: hi - col @ w})
+    advanced_constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}] + sector_scipy_constraints
+
+    bounds = list(zip(ticker_lower, ticker_upper))
     initial = np.array([1.0 / n] * n)
 
-    # Basic mode has no sector/ticker constraints to clip, so its clip_log
-    # was previously hardcoded empty. It still has the same silent
-    # non-convergence fallback the advanced branch does, though, so it gets
-    # the same visibility -- an unlabeled equal-weight "recommendation" is
-    # exactly as misleading here as it is there.
-    basic_clip_log: list[dict] = []
-    result = minimize(neg_sharpe, initial, method="SLSQP", bounds=bounds, constraints=constraints)
-    suggested_weights = _solved_weights(result, initial, "max_sharpe", basic_clip_log)
-    suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mean_returns, cov, risk_free_rate_pct)
+    result = minimize(neg_sharpe_bl, initial, method="SLSQP", bounds=bounds, constraints=advanced_constraints)
+    suggested_weights = _solved_weights(result, initial, "max_sharpe", clip_log)
+    suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mu_bl, sigma_bl, risk_free_rate_pct)
 
     ticker_weights, max_sharpe_objective, suggested_sharpe_rounded = _build_ticker_weights_and_objective(
         "max_sharpe", tickers, current_weights_pct, suggested_weights, suggested_return, suggested_vol, suggested_sharpe,
     )
-    objectives = [max_sharpe_objective]
+
+    # Second, independent solve: same bounds/constraints (sector floors/
+    # caps, ticker minimums, sum-to-1) as the max-Sharpe solve above, but
+    # a different objective function (neg_utility_bl) -- so it's
+    # expected to (and, per this task's own verification, empirically
+    # does) generally converge to a different weight vector.
+    utility_result = minimize(
+        neg_utility_bl, initial, args=(mu_bl, sigma_bl, delta, gamma_utility),
+        method="SLSQP", bounds=bounds, constraints=advanced_constraints,
+    )
+    suggested_weights_utility = _solved_weights(utility_result, initial, "max_quadratic_utility", clip_log)
+    suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility = portfolio_stats(
+        suggested_weights_utility, mu_bl, sigma_bl, risk_free_rate_pct,
+    )
+    # Reuses _build_ticker_weights_and_objective. Its ticker-weights/
+    # rounded-sharpe return values aren't needed here: the top-level
+    # OptimizationData.tickers/suggested_* fields stay tied to the
+    # max_sharpe objective, and this objective's own tickers already
+    # live inside max_utility_objective.tickers.
+    _, max_utility_objective, _ = _build_ticker_weights_and_objective(
+        "max_quadratic_utility", tickers, current_weights_pct, suggested_weights_utility,
+        suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility,
+    )
+    objectives = [max_sharpe_objective, max_utility_objective]
+
+    # Efficient-frontier sweep: independent SLSQP solves at a range of
+    # target volatilities spanning the achievable min-volatility
+    # portfolio through the max-return portfolio's volatility, using the
+    # same BL posterior (mu_bl/sigma_bl) and ticker/sector constraints as
+    # both solves above. Passes sector_scipy_constraints (the per-sector
+    # inequalities only) rather than advanced_constraints -- see the
+    # comment where sector_scipy_constraints is built above --
+    # sweep_efficient_frontier prepends its own sum-to-one equality
+    # constraint internally.
+    frontier_points = sweep_efficient_frontier(
+        mu_bl, sigma_bl, bounds, sector_scipy_constraints, n_points=20,
+    )
+
+    # floor_pct/cap_pct reuse the lower/upper vectors clip_sector_bounds
+    # already returned above (rather than re-reading the raw
+    # SectorConstraint rows) so the reported figures reflect any
+    # auto-clipping that happened -- e.g. a floor request that exceeded
+    # what's achievable given the position cap shows the ACHIEVABLE
+    # (clipped) floor here, matching what the solver was actually asked
+    # to enforce, not the user's original unclipped request.
+    sector_breakdown = [
+        {
+            "sector": s,
+            "weight_pct": float(exposure_matrix[:, j] @ suggested_weights * 100),
+            "floor_pct": float(sector_lower[j] * 100),
+            "cap_pct": float(sector_upper[j] * 100),
+        }
+        for j, s in enumerate(sector_names)
+    ]
 
     return OptimizationData(
         tickers=ticker_weights,
@@ -653,11 +620,11 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         suggested_sharpe=suggested_sharpe_rounded,
         data_points=len(dates),
         insufficient_data=False,
-        advanced_enabled=False,
+        advanced_enabled=True,
         position_cap_pct=round(effective_cap * 100, 2),
         cap_relaxed=cap_relax_log,
         objectives=objectives,
-        frontier_points=None,
-        sector_breakdown=None,
-        clip_log=basic_clip_log,
+        frontier_points=frontier_points,
+        sector_breakdown=sector_breakdown,
+        clip_log=clip_log,
     )

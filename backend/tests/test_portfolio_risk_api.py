@@ -79,12 +79,32 @@ def test_get_risk_metrics_rejects_out_of_range_lookback(client):
     assert resp.status_code == 422
 
 
-def test_get_optimization_with_no_holdings_returns_insufficient_data(client):
+def test_get_optimization_with_no_holdings_returns_insufficient_data(client, db_session):
+    # Advanced mode must be on to reach the insufficient-data path at all --
+    # off (the default) returns the disabled result instead, which is a
+    # different case (see test_get_optimization_disabled_toggle_returns_empty_result).
+    db_session.query(User).filter_by(id=1).one().optimization_advanced_enabled = True
+    db_session.commit()
+
     resp = client.get("/api/investments/risk/optimize")
     assert resp.status_code == 200
     body = resp.json()
     assert body["insufficient_data"] is True
     assert body["tickers"] == []
+
+
+def test_get_optimization_disabled_toggle_returns_empty_result(client, db_session):
+    # optimization_advanced_enabled defaults to False -- there is no
+    # separate "basic" engine underneath it, so off means no optimizer
+    # output at all, distinct from insufficient_data (which means the
+    # engine ran and didn't have enough data).
+    resp = client.get("/api/investments/risk/optimize")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["advanced_enabled"] is False
+    assert body["insufficient_data"] is False
+    assert body["tickers"] == []
+    assert body["objectives"] == []
 
 
 def test_get_optimization_rejects_out_of_range_lookback(client):
@@ -213,22 +233,22 @@ def seeded_ticker_classifications(db_session, seeded_price_history):
     return classifications
 
 
-def test_optimize_endpoint_basic_mode_shape(client, seeded_price_history):
-    response = client.get("/api/investments/risk/optimize")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["advanced_enabled"] is False
-    assert len(body["objectives"]) == 1
-    assert body["objectives"][0]["name"] == "max_sharpe"
-    assert len(body["objectives"][0]["tickers"]) == 12
-    assert body["frontier_points"] is None
-    assert body["sector_breakdown"] is None
-    assert body["clip_log"] == []
+def test_optimize_endpoint_advanced_mode_shape_without_cap_relax(client, db_session, seeded_price_history, seeded_ticker_classifications):
     # 12 tickers x the default 10% cap is comfortably unrelaxed (relax_
     # position_cap_if_needed only kicks in below n=11 at a 10% cap) -- this
     # confirms cap_relaxed's ordinary "nothing to relax" happy path
     # round-trips through ClipLogEntry as None correctly, complementing the
-    # real auto-relax scenario exercised below in the advanced-mode test.
+    # real auto-relax scenario exercised below.
+    db_session.query(User).filter_by(id=1).one().optimization_advanced_enabled = True
+    db_session.commit()
+
+    response = client.get("/api/investments/risk/optimize")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["advanced_enabled"] is True
+    assert {o["name"] for o in body["objectives"]} == {"max_sharpe", "max_quadratic_utility"}
+    for obj in body["objectives"]:
+        assert len(obj["tickers"]) == 12
     assert body["cap_relaxed"] is None
 
 
