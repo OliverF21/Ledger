@@ -1,7 +1,47 @@
 # backend/tests/test_efficient_frontier_service.py
 import numpy as np
+import pytest
 
-from app.services.efficient_frontier_service import sweep_efficient_frontier
+from app.services.efficient_frontier_service import TRADING_DAYS_PER_YEAR, sweep_efficient_frontier
+
+
+def test_frontier_points_are_annualized_to_match_portfolio_stats():
+    # Regression test for the scale-mismatch bug flagged in PR #23: this
+    # module used to report raw daily-scale mu/cov values (just x100 for a
+    # "percentage" that wasn't actually one), while the objective markers
+    # plotted alongside this curve (EfficientFrontierChart.tsx, fed by
+    # portfolio_stats() in price_matrix_service.py) are annualized --
+    # return x365, volatility x sqrt(365). That put the two objective
+    # markers ~365x/~19x off the curve's scale on the chart.
+    #
+    # Two uncorrelated assets with different means/variances, chosen so
+    # both ends of the swept range are hand-computable exactly:
+    #   - min-vol end: the classical two-asset min-variance weights
+    #     w_A = varB/(varA+varB) = 0.8, w_B = varA/(varA+varB) = 0.2
+    #     (a standard result, independent of mu), giving
+    #     var = 0.8^2*0.01 + 0.2^2*0.04 = 0.008 -> vol = sqrt(0.008).
+    #   - max-vol/max-return end: portfolio variance w^2*varA + (1-w)^2*varB
+    #     is convex in w with its minimum at w=0.8, so its maximum over
+    #     w in [0, 1] is at a boundary -- var(0)=varB=0.04 > var(1)=varA=0.01
+    #     -- making w=(0, 1) (pure asset B, the higher-mean asset) the
+    #     unique point at the top of the swept range, forced by BOTH the
+    #     min/max-volatility bracket step and the return-maximizing solve.
+    mu = np.array([0.20, 0.35])
+    cov = np.array([[0.10**2, 0.0], [0.0, 0.20**2]])
+    bounds = [(0.0, 1.0), (0.0, 1.0)]
+
+    points = sweep_efficient_frontier(mu, cov, bounds, sector_constraints=None, n_points=3)
+
+    assert len(points) == 3
+    expected_min_vol_pct = np.sqrt(0.008) * np.sqrt(TRADING_DAYS_PER_YEAR) * 100
+    expected_min_vol_return_pct = (0.8 * 0.20 + 0.2 * 0.35) * TRADING_DAYS_PER_YEAR * 100
+    assert points[0]["volatility_pct"] == pytest.approx(expected_min_vol_pct, rel=1e-3)
+    assert points[0]["return_pct"] == pytest.approx(expected_min_vol_return_pct, rel=1e-3)
+
+    expected_max_vol_pct = 0.20 * np.sqrt(TRADING_DAYS_PER_YEAR) * 100
+    expected_max_vol_return_pct = 0.35 * TRADING_DAYS_PER_YEAR * 100
+    assert points[-1]["volatility_pct"] == pytest.approx(expected_max_vol_pct, rel=1e-3)
+    assert points[-1]["return_pct"] == pytest.approx(expected_max_vol_return_pct, rel=1e-3)
 
 
 def test_frontier_sweep_returns_monotonic_points():
