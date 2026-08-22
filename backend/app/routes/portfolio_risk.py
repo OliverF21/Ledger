@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.errors import log_and_raise
 from app.services.risk_service import build_risk_metrics
-from app.services.optimization_service import build_optimization_suggestion
+from app.services.optimization_service import DEFAULT_LOOKBACK_DAYS, build_optimization_suggestion
 
 router = APIRouter(prefix="/investments/risk", tags=["investments"])
 
@@ -112,7 +112,7 @@ class OptimizationResponse(BaseModel):
 
 
 @router.get("/optimize", response_model=OptimizationResponse)
-async def get_optimization(lookback_days: int = Query(365, ge=90, le=1825), db: Session = Depends(get_db)):
+async def get_optimization(lookback_days: int = Query(DEFAULT_LOOKBACK_DAYS, ge=90, le=1825), db: Session = Depends(get_db)):
     try:
         data = build_optimization_suggestion(db, lookback_days=lookback_days)
         return OptimizationResponse(

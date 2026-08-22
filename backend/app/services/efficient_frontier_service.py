@@ -12,17 +12,19 @@ against `cov` directly, so annualizing it first would constrain against
 the wrong-scale matrix. Only the OUTPUT points are annualized, right
 before rounding, to match portfolio_stats()'s convention (in
 price_matrix_service.py: return x TRADING_DAYS_PER_YEAR, volatility x
-sqrt(TRADING_DAYS_PER_YEAR), 365 calendar days -- not 252 trading days,
-so the two objective markers Investments.tsx plots alongside this curve
-(both come from portfolio_stats) land on the same scale rather than
-~19x/~365x off on the volatility/return axes respectively.
+sqrt(TRADING_DAYS_PER_YEAR), 252 TRADING days -- see
+portfolio_math_service.TRADING_DAYS_PER_YEAR's own comment for why 252
+and not 365 -- so the two objective markers Investments.tsx plots
+alongside this curve (both come from portfolio_stats) land on the same
+scale rather than off on the volatility/return axes respectively.
 """
 from __future__ import annotations
 
 import numpy as np
 from scipy.optimize import minimize
 
-TRADING_DAYS_PER_YEAR = 365
+from app.services.portfolio_math_service import TRADING_DAYS_PER_YEAR
+
 MAX_FRONTIER_POINTS = 20
 RANDOM_PORTFOLIO_SAMPLES = 1500
 

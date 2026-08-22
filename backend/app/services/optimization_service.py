@@ -36,7 +36,7 @@ from app.risk_free_rate import get_cached_risk_free_rate
 from app.services.efficient_frontier_service import sample_random_portfolios, sweep_efficient_frontier
 from app.services.investment_service import _investment_accounts
 from app.services.portfolio_math_service import (
-    TRADING_DAYS_PER_YEAR as LEDOIT_WOLF_ANNUALIZATION_DAYS,
+    TRADING_DAYS_PER_YEAR,
     black_litterman_posterior,
     concentration_gammas,
     idzorek_omega,
@@ -58,8 +58,30 @@ from app.services.sector_constraint_service import (
     relax_position_cap_if_needed,
 )
 
-TRADING_DAYS_PER_YEAR = 365
+# Single source of truth, imported above from portfolio_math_service (252
+# trading days -- MarketPrice rows exist only on actual trading days for
+# equities/ETFs, confirmed via price_provider.py's yf.download() call, which
+# returns no weekend/holiday rows). Previously this module, price_matrix_
+# service.py, and efficient_frontier_service.py each declared their OWN
+# local `TRADING_DAYS_PER_YEAR = 365`, copied from risk_service.py's
+# genuinely-different, correctly-365 convention (a daily BalanceSnapshot
+# series, observed every calendar day) without checking whether the
+# assumption held for this MarketPrice-derived series -- it didn't, and the
+# three duplicated constants let this module silently drift from
+# portfolio_math_service.py's already-correct 252 (used internally by
+# ledoit_wolf_shrinkage/market_implied_risk_aversion below), producing
+# Sharpe ratios inflated by a mismatched final annualization step. Divide-
+# by/multiply-by the SAME constant everywhere in this pipeline rather than
+# re-declaring it, so this can't happen again.
 MIN_LOOKBACK_ROWS = 30
+# 3 years, matching the reference prototype (framework_portfolio_optimization.py's
+# LOOKBACK_YEARS = 3) rather than the 1-year window this shipped with
+# originally. A 1-year sample of ~252 trading-day returns is noisy enough on
+# its own to swing mean-return/covariance estimates (and therefore the BL
+# posterior and every downstream Sharpe/return figure) run to run; a longer
+# window is standard practice for exactly this reason and was flagged as
+# part of why results felt implausible compared to the pypfopt-based mockup.
+DEFAULT_LOOKBACK_DAYS = 1095
 # Documented default for User.optimization_position_cap_pct (models.py). Used
 # only as a fallback when the column reads NULL -- e.g. a pre-existing DB row
 # from before this migration; see models.py:55-58. Its ORM `default=` only
@@ -275,7 +297,7 @@ def neg_utility_bl(
     here to match that convention. That is load-bearing, not cosmetic:
     GAMMA_UTILITY_SCALE = 0.3 is calibrated against an ANNUAL-scale utility
     (portfolio_math_service.py's own comment pins the assumed range at
-    "utility ~O(0.01-0.5)"). Left unannualized, utility ran ~1/365th of that,
+    "utility ~O(0.01-0.5)"). Left unannualized, utility ran ~1/252nd of that,
     so the gamma_utility concentration penalty dominated the objective by
     ~2 orders of magnitude and collapsed this solve to near-equal-weighting
     at every concentration_strength -- measured at the 0.5 default: 0.43pp
@@ -343,7 +365,7 @@ def _build_ticker_weights_and_objective(
     return ticker_weights, objective, suggested_sharpe_rounded
 
 
-def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> OptimizationData:
+def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> OptimizationData:
     user = db.query(User).filter_by(id=1).one()
     # NULL-coalesce: this column lands NULL (not its declared ORM default of
     # False) on any pre-existing DB row that predates the migration adding
@@ -372,21 +394,13 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
 
     returns = prices[1:] / prices[:-1] - 1
     mean_returns = returns.mean(axis=0)
-    # ledoit_wolf_shrinkage annualizes internally using a 252-trading-day
-    # convention (portfolio_math_service.TRADING_DAYS_PER_YEAR), but
-    # portfolio_stats/neg_sharpe below expect a DAILY covariance and do
-    # their own annualization using this codebase's established 365-
-    # calendar-day convention (TRADING_DAYS_PER_YEAR above -- matches
-    # mean_returns' annualization here and in risk_service.py /
-    # price_matrix_service.py). Feeding the already-annualized output
-    # straight into that unchanged pipeline would double-annualize (vol
-    # inflated by sqrt(252), Sharpe deflated by the same factor -- a
-    # uniform positive rescale, so it wouldn't change which weights win,
-    # but it would corrupt every *reported* volatility/Sharpe number).
-    # Divide back to daily terms so the improved (shrunk) covariance
-    # estimate composes correctly with the unchanged downstream
-    # annualization.
-    cov = ledoit_wolf_shrinkage(returns) / LEDOIT_WOLF_ANNUALIZATION_DAYS
+    # ledoit_wolf_shrinkage annualizes internally (x TRADING_DAYS_PER_YEAR),
+    # but portfolio_stats/neg_sharpe_bl/neg_utility_bl below expect a DAILY
+    # covariance and do their own annualization using the SAME constant --
+    # divide back to daily terms here so the improved (shrunk) covariance
+    # estimate composes correctly with that unchanged downstream
+    # annualization instead of double-annualizing.
+    cov = ledoit_wolf_shrinkage(returns) / TRADING_DAYS_PER_YEAR
     risk_free_rate_pct = get_cached_risk_free_rate(db)
 
     current_weights_pct = current_weights(db, account_ids, tickers)

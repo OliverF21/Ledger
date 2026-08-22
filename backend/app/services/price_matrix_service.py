@@ -23,8 +23,21 @@ from app.services.investment_service import (
     account_gross_holdings,
     scaled_holding_market_value,
 )
+from app.services.portfolio_math_service import TRADING_DAYS_PER_YEAR
 
-TRADING_DAYS_PER_YEAR = 365
+# NOTE: this is 252 (trading days), NOT risk_service.py's 365. That module's
+# series is a daily BalanceSnapshot (observed every calendar day regardless
+# of market hours -- see its own TRADING_DAYS_PER_YEAR comment). This
+# module's series is MarketPrice rows, which for equities/ETFs exist only on
+# actual trading days (confirmed via app/price_provider.py's yf.download()
+# call, which returns no weekend/holiday rows) -- roughly 252/year, not 365.
+# Annualizing a per-trading-day mean/variance by calendar days overstates
+# both by ~365/252 (~1.45x return, ~1.20x volatility), which is exactly the
+# bug that made this engine's Sharpe ratios implausible (50+) compared to
+# the reference mockup script's pypfopt-based numbers (pypfopt defaults to
+# 252 internally). Re-exported from portfolio_math_service so this and
+# optimization_service.py/efficient_frontier_service.py can't drift apart
+# from each other again the way they did before.
 
 
 def priceable_tickers(db: Session, tickers: list[str], start: date, end: date) -> list[str]:

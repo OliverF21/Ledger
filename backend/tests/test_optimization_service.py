@@ -655,6 +655,12 @@ def test_neg_utility_bl_annualizes_both_terms_hand_computed():
     is already an annual coefficient (annual excess return / annual
     variance) and must NOT be rescaled.
 
+    TRADING_DAYS_PER_YEAR is 252 (trading days), not 365 (calendar days):
+    MarketPrice rows -- what mu_bl/sigma_bl are ultimately derived from --
+    exist only on actual trading days for equities/ETFs, so a "daily" return
+    step here is a per-trading-day step, matching portfolio_math_service.py's
+    ledoit_wolf_shrinkage/market_implied_risk_aversion convention.
+
         w             = [0.6, 0.4]
         mu_bl         = [0.001, 0.0005]                 (daily)
         sigma_bl      = diag(0.0004, 0.0001)            (daily)
@@ -662,14 +668,14 @@ def test_neg_utility_bl_annualizes_both_terms_hand_computed():
         gamma_utility = 0.15
 
         w'mu          = 0.6*0.001 + 0.4*0.0005 = 0.0008
-        annual return = 0.0008 * 365           = 0.292
+        annual return = 0.0008 * 252           = 0.2016
         w'Sigma w     = 0.36*0.0004 + 0.16*0.0001 = 0.00016
-        annual var    = 0.00016 * 365          = 0.0584
-        utility       = 0.292 - 0.5*3.0*0.0584 = 0.2044
+        annual var    = 0.00016 * 252          = 0.04032
+        utility       = 0.2016 - 0.5*3.0*0.04032 = 0.14112
         penalty       = 0.15 * (0.36 + 0.16)   = 0.078
-        returned      = -0.2044 + 0.078        = -0.1264
+        returned      = -0.14112 + 0.078       = -0.06312
     """
-    assert TRADING_DAYS_PER_YEAR == 365  # the arithmetic above is pinned to this
+    assert TRADING_DAYS_PER_YEAR == 252  # the arithmetic above is pinned to this
 
     weights = np.array([0.6, 0.4])
     mu_bl = np.array([0.001, 0.0005])
@@ -677,7 +683,7 @@ def test_neg_utility_bl_annualizes_both_terms_hand_computed():
 
     result = neg_utility_bl(weights, mu_bl, sigma_bl, delta=3.0, gamma_utility=0.15)
 
-    assert result == pytest.approx(-0.1264, abs=1e-9)
+    assert result == pytest.approx(-0.06312, abs=1e-9)
 
 
 def test_neg_utility_bl_scales_variance_linearly_not_by_sqrt():

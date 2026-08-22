@@ -33,6 +33,38 @@ function formatSecurityType(t: string | null): string {
   return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ')
 }
 
+function deltaPp(current: number | null, suggested: number | null): number | null {
+  return current === null || suggested === null ? null : suggested - current
+}
+
+function deltaRaw(current: number | null, suggested: number | null | undefined): number | null {
+  return current == null || suggested == null ? null : suggested - current
+}
+
+// Matches the "Risk & performance" card's glass-chip stat tiles above --
+// headline value + a colored delta badge instead of a bare "X% -> Y%"
+// string, reusing the same ArrowUp/ArrowDown + tinted-pill language already
+// used for the portfolio-value header's period-change badge.
+function StatTile({ label, value, delta, deltaGoodDirection }: {
+  label: string; value: string; delta: number | null; deltaGoodDirection: 'up' | 'down'
+}) {
+  const deltaIsGood = delta !== null && ((delta >= 0) === (deltaGoodDirection === 'up'))
+  return (
+    <div className="glass-chip px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">{label}</div>
+      <div className="flex items-baseline gap-[6px] mt-0.5">
+        <div className="text-[15px] font-bold tabular-nums">{value}</div>
+        {delta !== null && Math.abs(delta) >= 0.005 && (
+          <span className={`inline-flex items-center gap-[1px] text-[10.5px] font-semibold ${deltaIsGood ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
+            {delta >= 0 ? <ArrowUp className="w-[9px] h-[9px]" strokeWidth={3} /> : <ArrowDown className="w-[9px] h-[9px]" strokeWidth={3} />}
+            {Math.abs(delta).toFixed(2)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function formatActivityDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -42,6 +74,13 @@ const ALLOCATION_PALETTE = [
   '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
   '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
 ]
+
+// 3 years, matching the backend's own DEFAULT_LOOKBACK_DAYS (optimization_service.py)
+// -- deliberately NOT the page's 6M/1Y history-chart toggle (lookbackDays below).
+// That toggle controls how much of the net-worth chart to show; the optimizer's
+// statistical estimation window is a different concern that should stay long and
+// stable regardless of which period the user happens to be glancing at.
+const OPTIMIZATION_LOOKBACK_DAYS = 1095
 
 // Mirrors EfficientFrontierChart's internal OBJECTIVE_LABELS (not exported from
 // there) -- used here for the per-objective comparison table's row/section labels.
@@ -85,11 +124,13 @@ function buildSecurityAllocation(
 export default function Investments() {
   const { data: summary, loading: summaryLoading, refetch: refetchSummary } = useInvestmentsSummary()
   const { accounts, loading: holdingsLoading, refetch: refetchHoldings } = useInvestmentsHoldings()
-  const { transactions, loading: txnsLoading } = useInvestmentTransactions(6)
   const [historyRange, setHistoryRange] = useState<'6M' | '1Y'>('6M')
-  const { data: history, loading: historyLoading } = useInvestmentsHistory(historyRange === '6M' ? 6 : 12)
-  const { data: risk, loading: riskLoading } = useInvestmentsRisk(365)
-  const { data: optimization, loading: optimizationLoading, refetch: refetchOptimization } = useInvestmentsOptimization(365)
+  const historyMonths = historyRange === '6M' ? 6 : 12
+  const lookbackDays = historyRange === '6M' ? 182 : 365
+  const { transactions, loading: txnsLoading } = useInvestmentTransactions(historyMonths)
+  const { data: history, loading: historyLoading } = useInvestmentsHistory(historyMonths)
+  const { data: risk, loading: riskLoading } = useInvestmentsRisk(lookbackDays)
+  const { data: optimization, loading: optimizationLoading, refetch: refetchOptimization } = useInvestmentsOptimization(OPTIMIZATION_LOOKBACK_DAYS)
   const { data: optimizationPrefs, update: updateOptimizationPrefs } = useOptimizationPreferences()
   const [allocationView, setAllocationView] = useState<AllocationView>('security')
   const [activeSlice, setActiveSlice] = useState<number | null>(null)
@@ -610,32 +651,35 @@ export default function Investments() {
             </div>
           )}
 
-          <table className="w-full text-[12px] mb-4">
-            <thead>
-              <tr className="text-left text-ledger-text-faint">
-                <th className="font-medium pb-1.5">Objective</th>
-                <th className="font-medium pb-1.5 text-right">Return</th>
-                <th className="font-medium pb-1.5 text-right">Volatility</th>
-                <th className="font-medium pb-1.5 text-right">Sharpe</th>
-              </tr>
-            </thead>
-            <tbody>
-              {optimization.objectives.map(o => (
-                <tr key={o.name} className="border-t border-ledger-border-subtle/50">
-                  <td className="py-1.5 font-medium">{OBJECTIVE_LABELS[o.name] ?? o.name}</td>
-                  <td className="py-1.5 text-right tabular-nums">
-                    {fmtPct(optimization.current_expected_return_pct)} → <span className="font-semibold">{fmtPct(o.expected_return_pct)}</span>
-                  </td>
-                  <td className="py-1.5 text-right tabular-nums">
-                    {fmtPct(optimization.current_volatility_pct)} → <span className="font-semibold">{fmtPct(o.volatility_pct)}</span>
-                  </td>
-                  <td className="py-1.5 text-right tabular-nums">
-                    {optimization.current_sharpe?.toFixed(2) ?? '—'} → <span className="font-semibold">{o.sharpe?.toFixed(2) ?? '—'}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {/* Mirrors the "Risk & performance" card's glass-chip stat-tile pattern
+              above, rather than a plain HTML table -- same numbers deserve the
+              same visual language elsewhere on this exact page. Each tile pairs
+              its headline value with a colored delta badge (reusing the ArrowUp/
+              ArrowDown + tinted-pill pattern from the portfolio-value header)
+              instead of a bare "X% → Y%" string. */}
+          <div className="space-y-3 mb-4">
+            {optimization.objectives.map(o => (
+              <div key={o.name}>
+                <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
+                  {OBJECTIVE_LABELS[o.name] ?? o.name}
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  <StatTile
+                    label="Expected return" value={fmtPct(o.expected_return_pct)}
+                    delta={deltaPp(optimization.current_expected_return_pct, o.expected_return_pct)} deltaGoodDirection="up"
+                  />
+                  <StatTile
+                    label="Volatility" value={fmtPct(o.volatility_pct)}
+                    delta={deltaPp(optimization.current_volatility_pct, o.volatility_pct)} deltaGoodDirection="down"
+                  />
+                  <StatTile
+                    label="Sharpe" value={o.sharpe?.toFixed(2) ?? '—'}
+                    delta={deltaRaw(optimization.current_sharpe, o.sharpe)} deltaGoodDirection="up"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
 
           <div className="space-y-4">
             {optimization.objectives.map(o => (
@@ -643,24 +687,33 @@ export default function Investments() {
                 <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
                   {OBJECTIVE_LABELS[o.name] ?? o.name} — suggested weights
                 </div>
-                <table className="w-full text-[12px]">
-                  <thead>
-                    <tr className="text-left text-ledger-text-faint">
-                      <th className="font-medium pb-1.5">Ticker</th>
-                      <th className="font-medium pb-1.5 text-right">Current</th>
-                      <th className="font-medium pb-1.5 text-right">Suggested</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {o.tickers.map(t => (
-                      <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
-                        <td className="py-1.5 font-medium">{t.ticker}</td>
-                        <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
-                        <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {/* Weight bars, not a Current/Suggested number pair: the accent
+                    fill is the suggested weight, the faint tick is where the
+                    ticker sits today -- reuses the exact track+reference-tick
+                    language OptimizationPreferencesPanel's sliders already use,
+                    so "here's the change" reads as a distance on a bar instead
+                    of two numbers the reader has to subtract themselves. */}
+                <div className="space-y-[7px]">
+                  {[...o.tickers].sort((a, b) => b.suggested_weight_pct - a.suggested_weight_pct).map(t => (
+                    <div key={t.ticker} className="flex items-center gap-[10px]">
+                      <span className="w-[52px] shrink-0 text-[11.5px] font-semibold tabular-nums">{t.ticker}</span>
+                      <div className="relative flex-1 h-[5px] rounded-full bg-ledger-track">
+                        <div
+                          className="absolute h-full rounded-full bg-ledger-accent"
+                          style={{ width: `${Math.min(t.suggested_weight_pct, 100)}%` }}
+                        />
+                        <div
+                          title={`Currently ${t.current_weight_pct.toFixed(1)}%`}
+                          className="absolute top-1/2 w-[2px] h-[11px] -translate-y-1/2 bg-ledger-text-primary/70 rounded-full"
+                          style={{ left: `${Math.min(t.current_weight_pct, 100)}%` }}
+                        />
+                      </div>
+                      <span className="w-[44px] shrink-0 text-right text-[11.5px] font-semibold tabular-nums">
+                        {t.suggested_weight_pct.toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
@@ -718,7 +771,7 @@ export default function Investments() {
         <div className="px-4 py-2.5 border-b border-ledger-border-subtle flex items-center justify-between gap-3">
           <div>
             <div className="text-[13px] font-semibold">Recent activity</div>
-            <div className="text-[10px] text-ledger-text-faint mt-[2px]">Last 6 months</div>
+            <div className="text-[10px] text-ledger-text-faint mt-[2px]">Last {historyMonths} months</div>
           </div>
           {!txnsLoading && transactions.length > 4 && (
             <button
@@ -732,7 +785,7 @@ export default function Investments() {
         {txnsLoading ? (
           <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">Loading…</div>
         ) : transactions.length === 0 ? (
-          <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">No investment activity in the last 6 months</div>
+          <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">No investment activity in the last {historyMonths} months</div>
         ) : (
           visibleTransactions.map(t => (
             <div key={t.id} className="flex items-center gap-3 px-4 py-[8px] border-b border-ledger-border-subtle last:border-0">
