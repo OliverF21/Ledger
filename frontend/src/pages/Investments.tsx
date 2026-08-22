@@ -137,6 +137,7 @@ export default function Investments() {
   const [activityExpanded, setActivityExpanded] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [runningOptimization, setRunningOptimization] = useState(false)
+  const [selectedObjective, setSelectedObjective] = useState<string>('max_sharpe')
 
   // Distinct from optimizationLoading, which useInvestmentsOptimization only
   // ever sets true for the INITIAL mount fetch (deliberately -- flipping it
@@ -159,6 +160,15 @@ export default function Investments() {
   // results on screen until the next manual Run, and flipping it on would
   // briefly show the previous OFF-state's empty result.
   const showOptimizationResults = Boolean(optimizationPrefs?.advanced_enabled && optimization?.advanced_enabled)
+
+  // Falls back to the first objective the backend actually returned (rather
+  // than assuming 'max_sharpe' is present) so a stale selectedObjective from
+  // a previous run -- e.g. advanced mode was toggled off and back on with a
+  // different objective set -- can't leave the panel showing nothing.
+  const activeObjective = useMemo(
+    () => optimization?.objectives.find(o => o.name === selectedObjective) ?? optimization?.objectives[0] ?? null,
+    [optimization, selectedObjective],
+  )
 
   const loading = summaryLoading || holdingsLoading
   const typeAllocationData = summary?.allocation ?? []
@@ -567,53 +577,82 @@ export default function Investments() {
           the panel's own "Run optimization" button (onRun below) does, via
           handleRunOptimization.
 
-          Laid out as two side-by-side halves — settings (left, self-contained height
-          via its own internal scroll on the sector grid) and the frontier chart
-          (right) — so configuring and seeing the result read as one glance rather
-          than a long vertical scroll. The detail tables (objective comparison,
-          per-objective suggested weights, clip-log) run full-width below both,
-          since they're read top-to-bottom rather than side-by-side with anything. */}
+          Toggle OFF: just the (collapsed) settings card, full width -- no second
+          column, since there's nothing to show there yet. Toggle ON: grows into two
+          side-by-side halves -- settings (left, self-contained height via its own
+          internal scroll on the sector grid) and the frontier chart or a "run it"
+          placeholder (right) -- so configuring and seeing the result read as one
+          glance rather than a long vertical scroll. The detail tables (objective
+          comparison, per-objective suggested weights, clip-log) run full-width below
+          both, since they're read top-to-bottom rather than side-by-side with
+          anything. */}
       {!optimizationLoading && optimization && (
-        <div className="grid grid-cols-2 gap-3 items-start">
+        optimizationPrefs?.advanced_enabled ? (
+          <div className="grid grid-cols-2 gap-3 items-start">
+            <OptimizationPreferencesPanel
+              prefs={optimizationPrefs}
+              updatePrefs={updateOptimizationPrefs}
+              onRun={handleRunOptimization}
+              running={runningOptimization}
+            />
+            {showOptimizationResults && optimization.insufficient_data && (
+              <div className="glass-card p-4 text-[12px] text-ledger-text-faint">
+                Not enough price history yet to run the optimizer — this needs at least 30 days
+                of overlapping synced price data across your held tickers.
+              </div>
+            )}
+            {showOptimizationResults && !optimization.insufficient_data && (
+              <div className="glass-card p-4">
+                <div className="text-[12px] font-semibold mb-2">Efficient frontier</div>
+                <div className="text-[11px] text-ledger-text-faint mb-3">
+                  {optimization.objectives.length} objectives · position cap {optimization.position_cap_pct.toFixed(0)}%
+                  · faint dots are randomly-weighted portfolios, unconstrained by your position
+                  cap or sector limits — shown for scale, not as suggestions.
+                </div>
+                <EfficientFrontierChart
+                  frontierPoints={optimization.frontier_points ?? []}
+                  markers={buildMarkers(optimization.objectives)}
+                  randomPortfolios={optimization.random_portfolios ?? []}
+                />
+              </div>
+            )}
+            {!showOptimizationResults && (
+              <div className="glass-card p-4 flex items-center justify-center text-center text-[12px] text-ledger-text-faint min-h-[200px]">
+                Click "Run optimization" to see the efficient frontier.
+              </div>
+            )}
+          </div>
+        ) : (
           <OptimizationPreferencesPanel
             prefs={optimizationPrefs}
             updatePrefs={updateOptimizationPrefs}
             onRun={handleRunOptimization}
             running={runningOptimization}
           />
-          {showOptimizationResults && optimization.insufficient_data && (
-            <div className="glass-card p-4 text-[12px] text-ledger-text-faint">
-              Not enough price history yet to run the optimizer — this needs at least 30 days
-              of overlapping synced price data across your held tickers.
-            </div>
-          )}
-          {showOptimizationResults && !optimization.insufficient_data && (
-            <div className="glass-card p-4">
-              <div className="text-[12px] font-semibold mb-2">Efficient frontier</div>
-              <div className="text-[11px] text-ledger-text-faint mb-3">
-                {optimization.objectives.length} objectives · position cap {optimization.position_cap_pct.toFixed(0)}%
-                · faint dots are randomly-weighted portfolios, unconstrained by your position
-                cap or sector limits — shown for scale, not as suggestions.
-              </div>
-              <EfficientFrontierChart
-                frontierPoints={optimization.frontier_points ?? []}
-                markers={buildMarkers(optimization.objectives)}
-                randomPortfolios={optimization.random_portfolios ?? []}
-              />
-            </div>
-          )}
-          {!showOptimizationResults && (
-            <div className="glass-card p-4 flex items-center justify-center text-center text-[12px] text-ledger-text-faint min-h-[200px]">
-              {optimizationPrefs?.advanced_enabled
-                ? 'Click "Run optimization" to see the efficient frontier.'
-                : 'Turn on advanced optimization to see the efficient frontier.'}
-            </div>
-          )}
-        </div>
+        )
       )}
       {showOptimizationResults && !optimization?.insufficient_data && optimization && (
         <div className="glass-card p-4">
-          <div className="text-[12px] font-semibold mb-2">Suggested allocation</div>
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="text-[12px] font-semibold">Suggested allocation</div>
+            {optimization.objectives.length > 1 && (
+              <div className="flex gap-[5px] shrink-0">
+                {optimization.objectives.map(o => (
+                  <button
+                    key={o.name}
+                    onClick={() => setSelectedObjective(o.name)}
+                    className={`text-[11.5px] px-[8px] py-[3px] rounded-[6px] font-semibold transition-all ${
+                      (activeObjective?.name ?? optimization.objectives[0].name) === o.name
+                        ? 'bg-ledger-accent text-ledger-accent-on'
+                        : 'glass-chip text-ledger-text-faint hover:text-ledger-text-primary'
+                    }`}
+                  >
+                    {OBJECTIVE_LABELS[o.name] ?? o.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Minimal v1 surfacing of auto-adjusted constraints -- full clip-log
               UI polish (e.g. per-entry dismissal, linking back to the offending
@@ -657,66 +696,69 @@ export default function Investments() {
               its headline value with a colored delta badge (reusing the ArrowUp/
               ArrowDown + tinted-pill pattern from the portfolio-value header)
               instead of a bare "X% → Y%" string. */}
-          <div className="space-y-3 mb-4">
-            {optimization.objectives.map(o => (
-              <div key={o.name}>
-                <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
-                  {OBJECTIVE_LABELS[o.name] ?? o.name}
-                </div>
+          {activeObjective && (
+            <>
+              <div className="space-y-3 mb-4">
                 <div className="grid grid-cols-3 gap-2.5">
                   <StatTile
-                    label="Expected return" value={fmtPct(o.expected_return_pct)}
-                    delta={deltaPp(optimization.current_expected_return_pct, o.expected_return_pct)} deltaGoodDirection="up"
+                    label="Expected return" value={fmtPct(activeObjective.expected_return_pct)}
+                    delta={deltaPp(optimization.current_expected_return_pct, activeObjective.expected_return_pct)} deltaGoodDirection="up"
                   />
                   <StatTile
-                    label="Volatility" value={fmtPct(o.volatility_pct)}
-                    delta={deltaPp(optimization.current_volatility_pct, o.volatility_pct)} deltaGoodDirection="down"
+                    label="Volatility" value={fmtPct(activeObjective.volatility_pct)}
+                    delta={deltaPp(optimization.current_volatility_pct, activeObjective.volatility_pct)} deltaGoodDirection="down"
                   />
                   <StatTile
-                    label="Sharpe" value={o.sharpe?.toFixed(2) ?? '—'}
-                    delta={deltaRaw(optimization.current_sharpe, o.sharpe)} deltaGoodDirection="up"
+                    label="Sharpe" value={activeObjective.sharpe?.toFixed(2) ?? '—'}
+                    delta={deltaRaw(optimization.current_sharpe, activeObjective.sharpe)} deltaGoodDirection="up"
                   />
                 </div>
               </div>
-            ))}
-          </div>
 
-          <div className="space-y-4">
-            {optimization.objectives.map(o => (
-              <div key={o.name}>
+              <div>
                 <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
-                  {OBJECTIVE_LABELS[o.name] ?? o.name} — suggested weights
+                  {OBJECTIVE_LABELS[activeObjective.name] ?? activeObjective.name} — suggested weights, biggest changes first
                 </div>
                 {/* Weight bars, not a Current/Suggested number pair: the accent
                     fill is the suggested weight, the faint tick is where the
                     ticker sits today -- reuses the exact track+reference-tick
                     language OptimizationPreferencesPanel's sliders already use,
                     so "here's the change" reads as a distance on a bar instead
-                    of two numbers the reader has to subtract themselves. */}
+                    of two numbers the reader has to subtract themselves. Sorted
+                    by |suggested - current| descending (not suggested weight)
+                    so the tickers this objective actually wants to move --
+                    the ones worth acting on -- surface at the top instead of
+                    being buried below already-near-target large positions. */}
                 <div className="space-y-[7px]">
-                  {[...o.tickers].sort((a, b) => b.suggested_weight_pct - a.suggested_weight_pct).map(t => (
-                    <div key={t.ticker} className="flex items-center gap-[10px]">
-                      <span className="w-[52px] shrink-0 text-[11.5px] font-semibold tabular-nums">{t.ticker}</span>
-                      <div className="relative flex-1 h-[5px] rounded-full bg-ledger-track">
-                        <div
-                          className="absolute h-full rounded-full bg-ledger-accent"
-                          style={{ width: `${Math.min(t.suggested_weight_pct, 100)}%` }}
-                        />
-                        <div
-                          title={`Currently ${t.current_weight_pct.toFixed(1)}%`}
-                          className="absolute top-1/2 w-[2px] h-[11px] -translate-y-1/2 bg-ledger-text-primary/70 rounded-full"
-                          style={{ left: `${Math.min(t.current_weight_pct, 100)}%` }}
-                        />
+                  {[...activeObjective.tickers]
+                    .sort(
+                      (a, b) =>
+                        Math.abs(b.suggested_weight_pct - b.current_weight_pct) -
+                        Math.abs(a.suggested_weight_pct - a.current_weight_pct),
+                    )
+                    .map(t => (
+                      <div key={t.ticker} className="flex items-center gap-[10px]">
+                        <span className="w-[52px] shrink-0 text-[11.5px] font-semibold tabular-nums">{t.ticker}</span>
+                        <div className="relative flex-1 h-[5px] rounded-full bg-ledger-track">
+                          <div
+                            className="absolute h-full rounded-full bg-ledger-accent"
+                            style={{ width: `${Math.min(t.suggested_weight_pct, 100)}%` }}
+                          />
+                          <div
+                            title={`Currently ${t.current_weight_pct.toFixed(1)}%`}
+                            className="absolute top-1/2 w-[2px] h-[11px] -translate-y-1/2 bg-ledger-text-primary/70 rounded-full"
+                            style={{ left: `${Math.min(t.current_weight_pct, 100)}%` }}
+                          />
+                        </div>
+                        <span className="w-[44px] shrink-0 text-right text-[11.5px] font-semibold tabular-nums">
+                          {t.suggested_weight_pct.toFixed(1)}%
+                        </span>
                       </div>
-                      <span className="w-[44px] shrink-0 text-right text-[11.5px] font-semibold tabular-nums">
-                        {t.suggested_weight_pct.toFixed(1)}%
-                      </span>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
       )}
 
