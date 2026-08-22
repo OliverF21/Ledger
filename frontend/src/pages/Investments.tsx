@@ -717,7 +717,7 @@ export default function Investments() {
 
               <div>
                 <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
-                  {OBJECTIVE_LABELS[activeObjective.name] ?? activeObjective.name} — suggested weights, biggest changes first
+                  {OBJECTIVE_LABELS[activeObjective.name] ?? activeObjective.name} suggested weights
                 </div>
                 {/* Weight bars, not a Current/Suggested number pair: the accent
                     fill is the suggested weight, the faint tick is where the
@@ -725,16 +725,14 @@ export default function Investments() {
                     language OptimizationPreferencesPanel's sliders already use,
                     so "here's the change" reads as a distance on a bar instead
                     of two numbers the reader has to subtract themselves. Sorted
-                    by |suggested - current| descending (not suggested weight)
-                    so the tickers this objective actually wants to move --
-                    the ones worth acting on -- surface at the top instead of
-                    being buried below already-near-target large positions. */}
+                    by signed change (suggested minus current), so the list
+                    reads as one line from biggest cut to biggest add. */}
                 <div className="space-y-[7px]">
                   {[...activeObjective.tickers]
                     .sort(
                       (a, b) =>
-                        Math.abs(b.suggested_weight_pct - b.current_weight_pct) -
-                        Math.abs(a.suggested_weight_pct - a.current_weight_pct),
+                        (a.suggested_weight_pct - a.current_weight_pct) -
+                        (b.suggested_weight_pct - b.current_weight_pct),
                     )
                     .map(t => (
                       <div key={t.ticker} className="flex items-center gap-[10px]">

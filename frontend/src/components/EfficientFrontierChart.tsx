@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { ComposedChart, Scatter, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, TooltipProps } from 'recharts'
 
 interface FrontierPoint { volatility_pct: number; return_pct: number }
@@ -15,7 +16,61 @@ const OBJECTIVE_LABELS: Record<string, string> = {
   max_quadratic_utility: 'Max Quadratic Utility',
 }
 
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0
+  const idx = (p / 100) * (sorted.length - 1)
+  const lo = Math.floor(idx)
+  const hi = Math.ceil(idx)
+  if (lo === hi) return sorted[lo]
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo)
+}
+
+// Same "zoom to where the data actually is" percentile approach as
+// framework_portfolio_optimization.py's ZOOM_PCTL/AXIS_PAD -- the random-
+// portfolio cloud is unconstrained (no position cap / sector limits, see the
+// comment below), so its corner solutions can sit far outside where the
+// frontier and markers actually live. A domain of ['auto', 'auto'] lets one
+// such outlier stretch both axes until the real content is a thumbnail in
+// the corner. keyValues (the frontier line + objective markers) are never
+// clipped by the percentile -- only the padding is computed from them too,
+// so a chosen objective can't end up flush against the edge of the plot.
+function zoomedDomain(
+  bulkValues: number[],
+  keyValues: number[],
+  { pctlLow, pctlHigh, padFrac, anchorZero }: { pctlLow: number; pctlHigh: number; padFrac: number; anchorZero: boolean },
+): [number, number] {
+  if (bulkValues.length === 0 && keyValues.length === 0) return [0, 1]
+
+  const sorted = [...bulkValues].sort((a, b) => a - b)
+  const keyMax = keyValues.length ? Math.max(...keyValues) : -Infinity
+  const keyMin = keyValues.length ? Math.min(...keyValues) : Infinity
+  const hi = Math.max(percentile(sorted, pctlHigh), keyMax)
+  const lo = anchorZero ? 0 : Math.min(percentile(sorted, pctlLow), keyMin)
+
+  const range = Math.max(hi - lo, 1e-6)
+  return [anchorZero ? 0 : lo - range * padFrac, hi + range * padFrac]
+}
+
 export default function EfficientFrontierChart({ frontierPoints, markers, randomPortfolios = [] }: Props) {
+  const xDomain = useMemo(
+    () =>
+      zoomedDomain(
+        [...frontierPoints.map(p => p.volatility_pct), ...randomPortfolios.map(p => p.volatility_pct)],
+        markers.map(m => m.volatility_pct),
+        { pctlLow: 1, pctlHigh: 99, padFrac: 0.06, anchorZero: true },
+      ),
+    [frontierPoints, randomPortfolios, markers],
+  )
+  const yDomain = useMemo(
+    () =>
+      zoomedDomain(
+        [...frontierPoints.map(p => p.return_pct), ...randomPortfolios.map(p => p.return_pct)],
+        markers.map(m => m.return_pct),
+        { pctlLow: 1, pctlHigh: 99, padFrac: 0.15, anchorZero: false },
+      ),
+    [frontierPoints, randomPortfolios, markers],
+  )
+
   // Recharts computes one "nearest point across all combined series" and stamps that single
   // value onto every tooltip row (Line + every Scatter), rather than each series showing its
   // own true value. Overriding `content` to recompute each row ourselves from the component's
@@ -55,12 +110,12 @@ export default function EfficientFrontierChart({ frontierPoints, markers, random
           <XAxis
             type="number" dataKey="volatility_pct" name="Volatility"
             stroke="#5c626f" axisLine={false} tickLine={false} style={{ fontSize: '12px' }}
-            unit="%" domain={['auto', 'auto']}
+            unit="%" domain={xDomain}
           />
           <YAxis
             type="number" dataKey="return_pct" name="Return"
             stroke="#5c626f" axisLine={false} tickLine={false} style={{ fontSize: '12px' }}
-            unit="%" domain={['auto', 'auto']}
+            unit="%" domain={yDomain}
           />
           <Tooltip content={renderTooltip} />
           <Legend />
