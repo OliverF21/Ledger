@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.models import TickerClassification, User
 from app.risk_free_rate import get_cached_risk_free_rate
-from app.services.efficient_frontier_service import sweep_efficient_frontier
+from app.services.efficient_frontier_service import sample_random_portfolios, sweep_efficient_frontier
 from app.services.investment_service import _investment_accounts
 from app.services.portfolio_math_service import (
     TRADING_DAYS_PER_YEAR as LEDOIT_WOLF_ANNUALIZATION_DAYS,
@@ -223,6 +223,7 @@ class OptimizationData:
     cap_relaxed: dict | None
     objectives: list[ObjectiveResult]
     frontier_points: list[dict] | None
+    random_portfolios: list[dict] | None
     sector_breakdown: list[dict] | None
     clip_log: list[dict]
 
@@ -236,7 +237,7 @@ def _empty_result(data_points: int = 0) -> OptimizationData:
         suggested_expected_return_pct=None, suggested_volatility_pct=None, suggested_sharpe=None,
         data_points=data_points, insufficient_data=True,
         advanced_enabled=True, position_cap_pct=0.0, cap_relaxed=None,
-        objectives=[], frontier_points=None, sector_breakdown=None, clip_log=[],
+        objectives=[], frontier_points=None, random_portfolios=None, sector_breakdown=None, clip_log=[],
     )
 
 
@@ -252,7 +253,7 @@ def _disabled_result() -> OptimizationData:
         suggested_expected_return_pct=None, suggested_volatility_pct=None, suggested_sharpe=None,
         data_points=0, insufficient_data=False,
         advanced_enabled=False, position_cap_pct=0.0, cap_relaxed=None,
-        objectives=[], frontier_points=None, sector_breakdown=None, clip_log=[],
+        objectives=[], frontier_points=None, random_portfolios=None, sector_breakdown=None, clip_log=[],
     )
 
 
@@ -593,6 +594,14 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         mu_bl, sigma_bl, bounds, sector_scipy_constraints, n_points=20,
     )
 
+    # Random-portfolio backdrop cloud for the chart -- deliberately computed
+    # from mu_bl/sigma_bl alone with NO bounds/sector_constraints (see
+    # sample_random_portfolios' own docstring for why: it's meant to show
+    # the full mathematically-reachable universe the position cap and
+    # sector/ticker constraints cut down from, not another view of the same
+    # constrained-feasible region frontier_points already covers).
+    random_portfolios = sample_random_portfolios(mu_bl, sigma_bl, risk_free_rate_pct)
+
     # floor_pct/cap_pct reuse the lower/upper vectors clip_sector_bounds
     # already returned above (rather than re-reading the raw
     # SectorConstraint rows) so the reported figures reflect any
@@ -625,6 +634,7 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
         cap_relaxed=cap_relax_log,
         objectives=objectives,
         frontier_points=frontier_points,
+        random_portfolios=random_portfolios,
         sector_breakdown=sector_breakdown,
         clip_log=clip_log,
     )

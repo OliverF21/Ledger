@@ -9,6 +9,7 @@ import {
   useInvestmentTransactions,
   useInvestmentsRisk,
   useInvestmentsOptimization,
+  useOptimizationPreferences,
   type AllocationSlice,
   type ObjectiveResponse,
 } from '../hooks/useInvestments'
@@ -89,10 +90,34 @@ export default function Investments() {
   const { data: history, loading: historyLoading } = useInvestmentsHistory(historyRange === '6M' ? 6 : 12)
   const { data: risk, loading: riskLoading } = useInvestmentsRisk(365)
   const { data: optimization, loading: optimizationLoading, refetch: refetchOptimization } = useInvestmentsOptimization(365)
+  const { data: optimizationPrefs, update: updateOptimizationPrefs } = useOptimizationPreferences()
   const [allocationView, setAllocationView] = useState<AllocationView>('security')
   const [activeSlice, setActiveSlice] = useState<number | null>(null)
   const [activityExpanded, setActivityExpanded] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [runningOptimization, setRunningOptimization] = useState(false)
+
+  // Distinct from optimizationLoading, which useInvestmentsOptimization only
+  // ever sets true for the INITIAL mount fetch (deliberately -- flipping it
+  // during a background refresh would unmount the panel mid-edit). A manual
+  // "Run optimization" click is a deliberate action, not a background
+  // side-effect, so it gets its own loading flag to drive the button.
+  const handleRunOptimization = async () => {
+    setRunningOptimization(true)
+    try {
+      await refetchOptimization()
+    } finally {
+      setRunningOptimization(false)
+    }
+  }
+
+  // Gates the results section below the panel: BOTH the live toggle
+  // (optimizationPrefs, updates instantly on flip) and the last actually-run
+  // result (optimization.advanced_enabled, only updates after Run) must
+  // agree -- otherwise flipping the toggle off would leave stale advanced
+  // results on screen until the next manual Run, and flipping it on would
+  // briefly show the previous OFF-state's empty result.
+  const showOptimizationResults = Boolean(optimizationPrefs?.advanced_enabled && optimization?.advanced_enabled)
 
   const loading = summaryLoading || holdingsLoading
   const typeAllocationData = summary?.allocation ?? []
@@ -496,125 +521,150 @@ export default function Investments() {
           There is exactly one optimizer engine (Black-Litterman); the preferences
           panel's toggle turns its output on/off entirely rather than choosing between
           engines. The panel itself (which owns that toggle) always renders here so
-          it's reachable from a cold start; the card below it appears only once the
-          toggle is on and the engine has actually run. */}
+          it's reachable from a cold start. Settings/constraint edits inside the panel
+          persist immediately but do NOT recompute a suggestion by themselves -- only
+          the panel's own "Run optimization" button (onRun below) does, via
+          handleRunOptimization.
+
+          Laid out as two side-by-side halves — settings (left, self-contained height
+          via its own internal scroll on the sector grid) and the frontier chart
+          (right) — so configuring and seeing the result read as one glance rather
+          than a long vertical scroll. The detail tables (objective comparison,
+          per-objective suggested weights, clip-log) run full-width below both,
+          since they're read top-to-bottom rather than side-by-side with anything. */}
       {!optimizationLoading && optimization && (
-        <>
-          {/* onChange re-runs the /optimize request after every successful
-              preference or constraint mutation. The panel writes through
-              /optimization-settings, but everything below (frontier chart,
-              comparison tables, clip-log banner) reads /optimize -- two
-              separate endpoints, so without this the panel updated
-              instantly while the results below stayed on the pre-edit
-              snapshot until a page reload. */}
-          <OptimizationPreferencesPanel onChange={refetchOptimization} />
-          {optimization.advanced_enabled && !optimization.insufficient_data && (
-            <div className="glass-card p-4">
-              <div className="text-[12px] font-semibold mb-2">Suggested allocation</div>
-              <div className="text-[11px] text-ledger-text-faint mb-3">
-                Black-Litterman blend across {optimization.objectives.length} objectives · position cap {optimization.position_cap_pct.toFixed(0)}%
-              </div>
-
-              {/* Minimal v1 surfacing of auto-adjusted constraints -- full clip-log
-                  UI polish (e.g. per-entry dismissal, linking back to the offending
-                  constraint row in the panel above) is an explicit follow-up. */}
-              {(optimization.cap_relaxed || optimization.clip_log.length > 0) && (
-                <div className="mb-3">
-                  <div className="flex items-center gap-[6px] text-[12px] font-semibold text-ledger-warning">
-                    <AlertTriangle className="w-[13px] h-[13px] flex-shrink-0" strokeWidth={2} />
-                    Some constraints were auto-adjusted
-                  </div>
-                  <ul className="mt-[6px] space-y-[4px]">
-                    {optimization.cap_relaxed && (
-                      <li className="text-[11.5px] text-ledger-text-secondary leading-snug">
-                        Position cap relaxed from {((optimization.cap_relaxed.requested_cap ?? 0) * 100).toFixed(1)}% to {((optimization.cap_relaxed.relaxed_to ?? 0) * 100).toFixed(1)}%
-                        {optimization.cap_relaxed.reason ? ` (${optimization.cap_relaxed.reason})` : ''}
-                      </li>
-                    )}
-                    {/* ClipLogEntry is a union-by-optional-fields shape: a
-                        sector-floor clip fills sector/requested_floor/clipped_to,
-                        while the solver-level notes (risk-aversion substitution,
-                        a non-convergent objective solve) carry only a
-                        human-readable `reason`. Branch on which one this is --
-                        rendering a reason-only entry through the floor-clip
-                        template printed "Unknown sector floor clipped from 0.0%
-                        to 0.0% — not achievable within the position cap", which
-                        is simply false. */}
-                    {optimization.clip_log.map((entry, i) => (
-                      <li key={i} className="text-[11.5px] text-ledger-text-secondary leading-snug">
-                        {entry.sector !== null && entry.sector !== undefined
-                          ? `${entry.sector} floor clipped from ${((entry.requested_floor ?? 0) * 100).toFixed(1)}% to ${((entry.clipped_to ?? 0) * 100).toFixed(1)}% — not achievable within the position cap`
-                          : entry.reason ?? 'A constraint was auto-adjusted'}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className="mb-3">
-                <EfficientFrontierChart
-                  frontierPoints={optimization.frontier_points ?? []}
-                  markers={buildMarkers(optimization.objectives)}
-                />
-              </div>
-
-              <table className="w-full text-[12px] mb-4">
-                <thead>
-                  <tr className="text-left text-ledger-text-faint">
-                    <th className="font-medium pb-1.5">Objective</th>
-                    <th className="font-medium pb-1.5 text-right">Return</th>
-                    <th className="font-medium pb-1.5 text-right">Volatility</th>
-                    <th className="font-medium pb-1.5 text-right">Sharpe</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {optimization.objectives.map(o => (
-                    <tr key={o.name} className="border-t border-ledger-border-subtle/50">
-                      <td className="py-1.5 font-medium">{OBJECTIVE_LABELS[o.name] ?? o.name}</td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {fmtPct(optimization.current_expected_return_pct)} → <span className="font-semibold">{fmtPct(o.expected_return_pct)}</span>
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {fmtPct(optimization.current_volatility_pct)} → <span className="font-semibold">{fmtPct(o.volatility_pct)}</span>
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {optimization.current_sharpe?.toFixed(2) ?? '—'} → <span className="font-semibold">{o.sharpe?.toFixed(2) ?? '—'}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="space-y-4">
-                {optimization.objectives.map(o => (
-                  <div key={o.name}>
-                    <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
-                      {OBJECTIVE_LABELS[o.name] ?? o.name} — suggested weights
-                    </div>
-                    <table className="w-full text-[12px]">
-                      <thead>
-                        <tr className="text-left text-ledger-text-faint">
-                          <th className="font-medium pb-1.5">Ticker</th>
-                          <th className="font-medium pb-1.5 text-right">Current</th>
-                          <th className="font-medium pb-1.5 text-right">Suggested</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {o.tickers.map(t => (
-                          <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
-                            <td className="py-1.5 font-medium">{t.ticker}</td>
-                            <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
-                            <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-              </div>
+        <div className="grid grid-cols-2 gap-3 items-start">
+          <OptimizationPreferencesPanel
+            prefs={optimizationPrefs}
+            updatePrefs={updateOptimizationPrefs}
+            onRun={handleRunOptimization}
+            running={runningOptimization}
+          />
+          {showOptimizationResults && optimization.insufficient_data && (
+            <div className="glass-card p-4 text-[12px] text-ledger-text-faint">
+              Not enough price history yet to run the optimizer — this needs at least 30 days
+              of overlapping synced price data across your held tickers.
             </div>
           )}
-        </>
+          {showOptimizationResults && !optimization.insufficient_data && (
+            <div className="glass-card p-4">
+              <div className="text-[12px] font-semibold mb-2">Efficient frontier</div>
+              <div className="text-[11px] text-ledger-text-faint mb-3">
+                {optimization.objectives.length} objectives · position cap {optimization.position_cap_pct.toFixed(0)}%
+                · faint dots are randomly-weighted portfolios, unconstrained by your position
+                cap or sector limits — shown for scale, not as suggestions.
+              </div>
+              <EfficientFrontierChart
+                frontierPoints={optimization.frontier_points ?? []}
+                markers={buildMarkers(optimization.objectives)}
+                randomPortfolios={optimization.random_portfolios ?? []}
+              />
+            </div>
+          )}
+          {!showOptimizationResults && (
+            <div className="glass-card p-4 flex items-center justify-center text-center text-[12px] text-ledger-text-faint min-h-[200px]">
+              {optimizationPrefs?.advanced_enabled
+                ? 'Click "Run optimization" to see the efficient frontier.'
+                : 'Turn on advanced optimization to see the efficient frontier.'}
+            </div>
+          )}
+        </div>
+      )}
+      {showOptimizationResults && !optimization?.insufficient_data && optimization && (
+        <div className="glass-card p-4">
+          <div className="text-[12px] font-semibold mb-2">Suggested allocation</div>
+
+          {/* Minimal v1 surfacing of auto-adjusted constraints -- full clip-log
+              UI polish (e.g. per-entry dismissal, linking back to the offending
+              constraint row in the panel above) is an explicit follow-up. */}
+          {(optimization.cap_relaxed || optimization.clip_log.length > 0) && (
+            <div className="mb-3">
+              <div className="flex items-center gap-[6px] text-[12px] font-semibold text-ledger-warning">
+                <AlertTriangle className="w-[13px] h-[13px] flex-shrink-0" strokeWidth={2} />
+                Some constraints were auto-adjusted
+              </div>
+              <ul className="mt-[6px] space-y-[4px]">
+                {optimization.cap_relaxed && (
+                  <li className="text-[11.5px] text-ledger-text-secondary leading-snug">
+                    Position cap relaxed from {((optimization.cap_relaxed.requested_cap ?? 0) * 100).toFixed(1)}% to {((optimization.cap_relaxed.relaxed_to ?? 0) * 100).toFixed(1)}%
+                    {optimization.cap_relaxed.reason ? ` (${optimization.cap_relaxed.reason})` : ''}
+                  </li>
+                )}
+                {/* ClipLogEntry is a union-by-optional-fields shape: a
+                    sector-floor clip fills sector/requested_floor/clipped_to,
+                    while the solver-level notes (risk-aversion substitution,
+                    a non-convergent objective solve) carry only a
+                    human-readable `reason`. Branch on which one this is --
+                    rendering a reason-only entry through the floor-clip
+                    template printed "Unknown sector floor clipped from 0.0%
+                    to 0.0% — not achievable within the position cap", which
+                    is simply false. */}
+                {optimization.clip_log.map((entry, i) => (
+                  <li key={i} className="text-[11.5px] text-ledger-text-secondary leading-snug">
+                    {entry.sector !== null && entry.sector !== undefined
+                      ? `${entry.sector} floor clipped from ${((entry.requested_floor ?? 0) * 100).toFixed(1)}% to ${((entry.clipped_to ?? 0) * 100).toFixed(1)}% — not achievable within the position cap`
+                      : entry.reason ?? 'A constraint was auto-adjusted'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <table className="w-full text-[12px] mb-4">
+            <thead>
+              <tr className="text-left text-ledger-text-faint">
+                <th className="font-medium pb-1.5">Objective</th>
+                <th className="font-medium pb-1.5 text-right">Return</th>
+                <th className="font-medium pb-1.5 text-right">Volatility</th>
+                <th className="font-medium pb-1.5 text-right">Sharpe</th>
+              </tr>
+            </thead>
+            <tbody>
+              {optimization.objectives.map(o => (
+                <tr key={o.name} className="border-t border-ledger-border-subtle/50">
+                  <td className="py-1.5 font-medium">{OBJECTIVE_LABELS[o.name] ?? o.name}</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {fmtPct(optimization.current_expected_return_pct)} → <span className="font-semibold">{fmtPct(o.expected_return_pct)}</span>
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {fmtPct(optimization.current_volatility_pct)} → <span className="font-semibold">{fmtPct(o.volatility_pct)}</span>
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {optimization.current_sharpe?.toFixed(2) ?? '—'} → <span className="font-semibold">{o.sharpe?.toFixed(2) ?? '—'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="space-y-4">
+            {optimization.objectives.map(o => (
+              <div key={o.name}>
+                <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
+                  {OBJECTIVE_LABELS[o.name] ?? o.name} — suggested weights
+                </div>
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="text-left text-ledger-text-faint">
+                      <th className="font-medium pb-1.5">Ticker</th>
+                      <th className="font-medium pb-1.5 text-right">Current</th>
+                      <th className="font-medium pb-1.5 text-right">Suggested</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {o.tickers.map(t => (
+                      <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
+                        <td className="py-1.5 font-medium">{t.ticker}</td>
+                        <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
+                        <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Per-account holdings */}

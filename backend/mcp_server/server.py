@@ -684,6 +684,11 @@ def portfolio_optimization() -> PortfolioOptimizationResult:
                 for o in data.objectives
             ],
             frontier_points=data.frontier_points,
+            # data.random_portfolios (a ~1500-point Monte Carlo backdrop cloud
+            # for the frontier chart) is deliberately NOT exposed here: it's a
+            # rendering-only artifact with no analytical content beyond what
+            # frontier_points/objectives already carry -- including it would
+            # just burn tokens for an LLM caller with nothing to explain.
             sector_breakdown=data.sector_breakdown,
             clip_log=data.clip_log,
             data_points=data.data_points,

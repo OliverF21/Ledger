@@ -2,7 +2,11 @@
 import numpy as np
 import pytest
 
-from app.services.efficient_frontier_service import TRADING_DAYS_PER_YEAR, sweep_efficient_frontier
+from app.services.efficient_frontier_service import (
+    TRADING_DAYS_PER_YEAR,
+    sample_random_portfolios,
+    sweep_efficient_frontier,
+)
 
 
 def test_frontier_points_are_annualized_to_match_portfolio_stats():
@@ -107,3 +111,28 @@ def test_frontier_sweep_drops_non_convergent_points_not_substitutes():
         assert p["volatility_pct"] > 0
     vols = [p["volatility_pct"] for p in points]
     assert vols == sorted(vols)  # surviving points still swept in increasing order
+
+
+def test_random_portfolios_are_annualized_and_bounded_by_extremes():
+    # Same annualization convention as sweep_efficient_frontier -- see
+    # test_frontier_points_are_annualized_to_match_portfolio_stats above for
+    # why this matters (this cloud renders on the same chart/axes as that
+    # curve and the objective markers, so all three must agree on scale).
+    mu = np.array([0.20, 0.35])
+    cov = np.array([[0.10**2, 0.0], [0.0, 0.20**2]])
+
+    points = sample_random_portfolios(mu, cov, risk_free_rate_pct=2.0, n_samples=400)
+
+    assert len(points) == 400  # 200 + 200, from the two Dirichlet blends
+    # Every sample is a convex combination (Dirichlet sums to 1, no
+    # shorting) of two assets whose individual annualized vols/returns
+    # bound the whole simplex -- so no sample point should fall outside the
+    # box spanned by the two pure-asset corners, regardless of which random
+    # draw came out.
+    max_possible_vol_pct = 0.20 * np.sqrt(TRADING_DAYS_PER_YEAR) * 100 * 1.001  # tiny slack for float rounding
+    min_possible_return_pct = 0.20 * TRADING_DAYS_PER_YEAR * 100 * 0.999
+    max_possible_return_pct = 0.35 * TRADING_DAYS_PER_YEAR * 100 * 1.001
+    for p in points:
+        assert 0 <= p["volatility_pct"] <= max_possible_vol_pct
+        assert min_possible_return_pct <= p["return_pct"] <= max_possible_return_pct
+        assert isinstance(p["sharpe"], float)

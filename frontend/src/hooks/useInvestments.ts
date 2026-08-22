@@ -209,6 +209,12 @@ export interface FrontierPoint {
   return_pct: number
 }
 
+export interface RandomPortfolioPoint {
+  volatility_pct: number
+  return_pct: number
+  sharpe: number
+}
+
 export interface SectorBreakdownRow {
   sector: string
   weight_pct: number
@@ -244,6 +250,7 @@ export interface OptimizationSuggestion {
   cap_relaxed: ClipLogEntry | null
   objectives: ObjectiveResponse[]
   frontier_points: FrontierPoint[] | null
+  random_portfolios: RandomPortfolioPoint[] | null
   sector_breakdown: SectorBreakdownRow[] | null
   clip_log: ClipLogEntry[]
 }

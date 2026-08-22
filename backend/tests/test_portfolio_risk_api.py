@@ -287,6 +287,11 @@ def test_optimize_endpoint_advanced_mode_shape(client, db_session, seeded_price_
     for point in body["frontier_points"]:
         assert set(point.keys()) == {"volatility_pct", "return_pct"}
 
+    assert isinstance(body["random_portfolios"], list)
+    assert len(body["random_portfolios"]) > 0
+    for point in body["random_portfolios"]:
+        assert set(point.keys()) == {"volatility_pct", "return_pct", "sharpe"}
+
     assert body["sector_breakdown"] is not None
     assert len(body["sector_breakdown"]) > 0
     for row in body["sector_breakdown"]:

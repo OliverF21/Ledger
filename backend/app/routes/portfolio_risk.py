@@ -65,6 +65,12 @@ class FrontierPoint(BaseModel):
     return_pct: float
 
 
+class RandomPortfolioPoint(BaseModel):
+    volatility_pct: float
+    return_pct: float
+    sharpe: float
+
+
 class SectorBreakdownRow(BaseModel):
     sector: str
     weight_pct: float
@@ -100,6 +106,7 @@ class OptimizationResponse(BaseModel):
     cap_relaxed: Optional[ClipLogEntry]
     objectives: list[ObjectiveResponse]
     frontier_points: Optional[list[FrontierPoint]]
+    random_portfolios: Optional[list[RandomPortfolioPoint]]
     sector_breakdown: Optional[list[SectorBreakdownRow]]
     clip_log: list[ClipLogEntry]
 
@@ -133,6 +140,9 @@ async def get_optimization(lookback_days: int = Query(365, ge=90, le=1825), db: 
             ],
             frontier_points=(
                 [FrontierPoint(**p) for p in data.frontier_points] if data.frontier_points is not None else None
+            ),
+            random_portfolios=(
+                [RandomPortfolioPoint(**p) for p in data.random_portfolios] if data.random_portfolios is not None else None
             ),
             sector_breakdown=(
                 [SectorBreakdownRow(**r) for r in data.sector_breakdown] if data.sector_breakdown is not None else None

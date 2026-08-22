@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { useOptimizationPreferences, useSectorConstraints, useTickerConstraints } from '../hooks/useInvestments'
+import {
+  useSectorConstraints, useTickerConstraints,
+  type OptimizationSettings, type SectorConstraint,
+} from '../hooks/useInvestments'
 
 function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
   return (
@@ -13,17 +16,29 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
   )
 }
 
-function RangeSlider({ label, value, min, max, step, onChange }: {
+// `referenceValue` renders a small static tick on the track (e.g. an S&P 500
+// sector weight) purely as a visual anchor -- it never affects `value` and
+// nothing is persisted from it. Dragging still only writes `value`.
+function RangeSlider({ label, value, min, max, step, onChange, referenceValue, referenceLabel }: {
   label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void
+  referenceValue?: number; referenceLabel?: string
 }) {
   const pct = ((value - min) / (max - min)) * 100
+  const refPct = referenceValue !== undefined ? ((referenceValue - min) / (max - min)) * 100 : null
   return (
     <div className="group/slider">
-      <div className="flex justify-between text-[12px] text-ledger-text-secondary mb-[4px]">
+      <div className="flex justify-between text-[11px] text-ledger-text-secondary mb-[2px]">
         <span>{label}</span><span>{value}%</span>
       </div>
       <div className="relative h-[3px] rounded-full bg-ledger-track">
         <div className="absolute h-full rounded-full bg-ledger-accent" style={{ width: `${pct}%` }} />
+        {refPct !== null && (
+          <div
+            title={referenceLabel ?? `Reference: ~${referenceValue}%`}
+            className="absolute top-1/2 w-[2px] h-[9px] -translate-y-1/2 bg-ledger-text-faint/70 rounded-full pointer-events-none"
+            style={{ left: `${refPct}%` }}
+          />
+        )}
         <input
           type="range" min={min} max={max} step={step} value={value}
           onChange={e => onChange(Number(e.target.value))}
@@ -34,21 +49,33 @@ function RangeSlider({ label, value, min, max, step, onChange }: {
   )
 }
 
-// Mirrors backend `_norm_sector_name` (backend/app/sector_data_provider.py)
-// EXACTLY: lowercase, then strip underscores, spaces, and hyphens. Real
-// sector keys derived from held tickers' classification data are normalized
-// this way before they're ever stored in TickerClassification.sector_weights_json.
-// SectorConstraint.sector, by contrast, is stored completely as-is by the
-// CRUD API (routes/optimization_settings.py) -- no server-side normalization
-// is ever applied to it. So a constraint whose sector isn't already in this
-// normalized form will silently never match any held ticker's sector (see
-// sector_constraint_service.clip_sector_bounds, which looks constraints up
-// by exact `sector` string equality) -- normalize client-side before
-// create/update so any reasonable casing/spacing the user types actually
-// works, instead of quietly doing nothing.
-function normalizeSectorName(raw: string): string {
-  return raw.toLowerCase().replace(/_/g, '').replace(/ /g, '').replace(/-/g, '')
-}
+// Real Yahoo/Morningstar equity sector taxonomy -- NOT generic GICS textbook
+// names. TickerClassification.sector_weights_json keys come straight from
+// yfinance's info["sector"] (app/sector_data_provider.py), normalized
+// (lowercase, no spaces/underscores/hyphens). A grid using GICS-style labels
+// ("Financials", "Consumer Discretionary", "Materials") would silently match
+// no held ticker's classification -- the exact bug already fixed elsewhere
+// in this codebase for free-typed sector names (see routes/optimization_settings.py's
+// server-side sector normalization). `key` here must stay in that exact
+// normalized form.
+//
+// sp500WeightPct values are a static, hand-set approximate snapshot for the
+// on-slider reference marker only -- not live data, not persisted, and not
+// refreshed automatically. They exist purely to give the user something
+// concrete to drag away from, per the product ask.
+const SECTORS: { key: string; label: string; sp500WeightPct: number }[] = [
+  { key: 'technology', label: 'Technology', sp500WeightPct: 32 },
+  { key: 'financialservices', label: 'Financial Services', sp500WeightPct: 14 },
+  { key: 'healthcare', label: 'Healthcare', sp500WeightPct: 10 },
+  { key: 'consumercyclical', label: 'Consumer Cyclical', sp500WeightPct: 10 },
+  { key: 'communicationservices', label: 'Communication Services', sp500WeightPct: 9 },
+  { key: 'industrials', label: 'Industrials', sp500WeightPct: 8 },
+  { key: 'consumerdefensive', label: 'Consumer Defensive', sp500WeightPct: 6 },
+  { key: 'energy', label: 'Energy', sp500WeightPct: 3 },
+  { key: 'utilities', label: 'Utilities', sp500WeightPct: 2.5 },
+  { key: 'realestate', label: 'Real Estate', sp500WeightPct: 2 },
+  { key: 'basicmaterials', label: 'Basic Materials', sp500WeightPct: 2 },
+]
 
 // Tickers have no existing search/entry convention elsewhere in this app --
 // they're only ever displayed (sourced from synced holdings), never manually
@@ -60,9 +87,10 @@ function normalizeTicker(raw: string): string {
   return raw.trim().toUpperCase()
 }
 
-// One existing constraint: name chip + floor/cap slider pair + remove button.
-// Mirrors the glass-chip row styling and hover-revealed icon-button
-// convention used by Settings.tsx's categorization-rules list.
+// One existing ticker constraint: name chip + floor/cap slider pair + remove
+// button. Sectors no longer use this -- they're a fixed, always-shown grid
+// (see SectorConstraintsGrid below) -- but tickers aren't a fixed enumerable
+// set the way sectors are, so they keep the add/remove list.
 function ConstraintRow({ name, floorPct, capPct, removing, onFloorChange, onCapChange, onRemove }: {
   name: string
   floorPct: number
@@ -98,12 +126,9 @@ function ConstraintRow({ name, floorPct, capPct, removing, onFloorChange, onCapC
 
 // Small add-row form, collapsed to a "+ Add ... constraint" glass-chip button
 // until clicked -- mirrors Settings.tsx's "+ New rule" / rule-form pattern
-// exactly (same border/spacing/Save-Cancel button styling).
-function AddConstraintForm({ fieldLabel, placeholder, transform, onCreate }: {
-  fieldLabel: string
-  placeholder: string
-  transform: (raw: string) => string
-  onCreate: (name: string, floorPct: number, capPct: number) => Promise<unknown>
+// exactly (same border/spacing/Save-Cancel button styling). Ticker-only now.
+function AddTickerConstraintForm({ onCreate }: {
+  onCreate: (ticker: string, floorPct: number, capPct: number) => Promise<unknown>
 }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -125,9 +150,9 @@ function AddConstraintForm({ fieldLabel, placeholder, transform, onCreate }: {
   }
 
   const handleCreate = async () => {
-    const normalized = transform(name)
+    const normalized = normalizeTicker(name)
     if (!normalized) {
-      setError(`Enter a ${fieldLabel.toLowerCase()}`)
+      setError('Enter a ticker')
       return
     }
     setSaving(true)
@@ -150,7 +175,7 @@ function AddConstraintForm({ fieldLabel, placeholder, transform, onCreate }: {
         onClick={() => setOpen(true)}
         className="w-full glass-chip px-[12px] py-[8px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors"
       >
-        + Add {fieldLabel.toLowerCase()} constraint
+        + Add ticker constraint
       </button>
     )
   }
@@ -162,8 +187,8 @@ function AddConstraintForm({ fieldLabel, placeholder, transform, onCreate }: {
         type="text"
         value={name}
         onChange={e => setName(e.target.value)}
-        onBlur={() => setName(prev => transform(prev))}
-        placeholder={placeholder}
+        onBlur={() => setName(prev => normalizeTicker(prev))}
+        placeholder="e.g. VOO"
         className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
       />
       <RangeSlider label="Floor" value={floor} min={0} max={100} step={1} onChange={setFloor} />
@@ -188,134 +213,190 @@ function AddConstraintForm({ fieldLabel, placeholder, transform, onCreate }: {
   )
 }
 
-// `onChange` fires after every successful mutation this panel makes. The
-// panel writes through /optimization-settings and the constraint endpoints,
-// but the advanced-mode view around it (frontier chart, per-objective
-// comparison, clip-log banner) is driven by a SEPARATE /optimize response --
-// including its own `advanced_enabled` field, which is what actually gates
-// that view. Investments.tsx wires this to useInvestmentsOptimization's
-// refetch so those results follow the panel instead of staying on the
-// pre-edit snapshot until a page reload.
-export default function OptimizationPreferencesPanel({ onChange }: { onChange?: () => void } = {}) {
-  const { data: prefs, update } = useOptimizationPreferences()
+// Always renders all 11 sectors (SECTORS above), regardless of whether a
+// SectorConstraint row exists for them. A sector with no row is fully
+// unconstrained (matches sector_constraint_service.py's "absent = 0-100"
+// rule exactly -- nothing changes server-side just from being shown here)
+// and its sliders rest at 0/100 with only the S&P reference tick for
+// context. The FIRST drag on an unconstrained sector creates a real
+// constraint; subsequent drags update it. A "Reset" link (shown only once a
+// real constraint exists) deletes the row, returning to the unconstrained
+// resting state.
+function SectorConstraintsGrid({ constraints, resettingId, onFloorChange, onCapChange, onReset }: {
+  constraints: SectorConstraint[]
+  resettingId: number | null
+  onFloorChange: (sectorKey: string, existing: SectorConstraint | undefined, v: number) => void
+  onCapChange: (sectorKey: string, existing: SectorConstraint | undefined, v: number) => void
+  onReset: (existing: SectorConstraint) => void
+}) {
+  const bySector = new Map(constraints.map(c => [c.sector, c]))
+  return (
+    <div className="space-y-[6px]">
+      {SECTORS.map(s => {
+        const existing = bySector.get(s.key)
+        const floorPct = existing?.floor_pct ?? 0
+        const capPct = existing?.cap_pct ?? 100
+        const referenceLabel = `S&P 500: ~${s.sp500WeightPct}%`
+        return (
+          <div key={s.key} className="border border-ledger-border-subtle rounded-[8px] p-[8px]">
+            <div className="flex items-center justify-between gap-[8px] mb-[5px]">
+              <span className="text-[11.5px] font-medium text-ledger-text-primary">{s.label}</span>
+              <div className="flex items-center gap-[8px] shrink-0">
+                <span className="text-[10px] text-ledger-text-faintest">~{s.sp500WeightPct}%</span>
+                {existing && (
+                  <button
+                    type="button"
+                    disabled={resettingId === existing.id}
+                    onClick={() => onReset(existing)}
+                    className="text-[10px] font-semibold text-ledger-text-faint hover:text-ledger-negative transition-colors disabled:opacity-40"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="space-y-[5px]">
+              <RangeSlider
+                label="Floor" value={floorPct} min={0} max={100} step={1}
+                referenceValue={s.sp500WeightPct} referenceLabel={referenceLabel}
+                onChange={v => onFloorChange(s.key, existing, v)}
+              />
+              <RangeSlider
+                label="Cap" value={capPct} min={0} max={100} step={1}
+                referenceValue={s.sp500WeightPct} referenceLabel={referenceLabel}
+                onChange={v => onCapChange(s.key, existing, v)}
+              />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// The toggle and its settings (sliders, sector grid, ticker constraints) are
+// owned here; the LIVE toggle value and its mutator come from the parent
+// (Investments.tsx also needs `prefs.advanced_enabled` to decide whether to
+// show the results section, so it owns the single useOptimizationPreferences
+// instance rather than each side keeping its own copy that could drift).
+//
+// Settings/constraint edits persist immediately (PUT/POST/DELETE per drag or
+// click) but do NOT trigger a re-optimization by themselves anymore -- only
+// clicking "Run optimization" (onRun) does. Dragging a slider used to fire a
+// full backend re-solve (two SLSQP objectives + a 20-point frontier sweep)
+// on every tick of a native <input type="range">, which is many times per
+// second while dragging; this also fixes that.
+export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun, running }: {
+  prefs: OptimizationSettings | null
+  updatePrefs: (patch: Partial<OptimizationSettings>) => Promise<OptimizationSettings>
+  onRun: () => void
+  running: boolean
+}) {
   const { data: sectorConstraints, create: createSector, update: updateSector, remove: removeSector } = useSectorConstraints()
   const { data: tickerConstraints, create: createTicker, update: updateTicker, remove: removeTicker } = useTickerConstraints()
-  const [removingSectorId, setRemovingSectorId] = useState<number | null>(null)
+  const [resettingSectorId, setResettingSectorId] = useState<number | null>(null)
   const [removingTickerId, setRemovingTickerId] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  // Wraps a mutation so onChange runs only after it actually succeeded --
-  // a rejected write leaves the backend unchanged, so re-running /optimize
-  // would just re-fetch identical results. Failures keep the existing
-  // console.error handling.
-  const notifyOnSuccess = async <T,>(mutation: Promise<T>, failureMessage: string): Promise<T | undefined> => {
+  // Every mutation in this panel routes through here so failures are always
+  // visible (previously: console.error only, so e.g. dragging an existing
+  // constraint's floor above its own cap -- which the backend correctly
+  // rejects with 422 -- silently did nothing from the user's perspective).
+  const runMutation = async <T,>(mutation: Promise<T>, fallbackMessage: string): Promise<T | undefined> => {
     try {
       const result = await mutation
-      onChange?.()
+      setError(null)
       return result
     } catch (err) {
-      console.error(failureMessage, err)
+      setError(err instanceof Error ? err.message : fallbackMessage)
       return undefined
     }
   }
 
   if (!prefs) return null
 
-  const handleRemoveSector = async (id: number) => {
-    setRemovingSectorId(id)
-    try {
-      await removeSector(id)
-      onChange?.()
-    } catch (err) {
-      console.error('Failed to remove sector constraint:', err)
-    } finally {
-      setRemovingSectorId(null)
-    }
+  const handleSectorFloorChange = (sectorKey: string, existing: SectorConstraint | undefined, v: number) =>
+    runMutation(
+      existing
+        ? updateSector(existing.id, { sector: sectorKey, floor_pct: v, cap_pct: existing.cap_pct })
+        : createSector({ sector: sectorKey, floor_pct: v, cap_pct: 100 }),
+      'Failed to update sector constraint',
+    )
+
+  const handleSectorCapChange = (sectorKey: string, existing: SectorConstraint | undefined, v: number) =>
+    runMutation(
+      existing
+        ? updateSector(existing.id, { sector: sectorKey, floor_pct: existing.floor_pct, cap_pct: v })
+        : createSector({ sector: sectorKey, floor_pct: 0, cap_pct: v }),
+      'Failed to update sector constraint',
+    )
+
+  const handleResetSector = async (existing: SectorConstraint) => {
+    setResettingSectorId(existing.id)
+    await runMutation(removeSector(existing.id), 'Failed to reset sector constraint')
+    setResettingSectorId(null)
   }
 
   const handleRemoveTicker = async (id: number) => {
     setRemovingTickerId(id)
-    try {
-      await removeTicker(id)
-      onChange?.()
-    } catch (err) {
-      console.error('Failed to remove ticker constraint:', err)
-    } finally {
-      setRemovingTickerId(null)
-    }
+    await runMutation(removeTicker(id), 'Failed to remove ticker constraint')
+    setRemovingTickerId(null)
   }
 
   return (
-    <div className="glass-card p-[16px]">
-      <div className="flex items-center justify-between mb-[16px]">
-        <span className="text-[14px] text-ledger-text-primary">Advanced optimization</span>
-        <Toggle enabled={prefs.advanced_enabled} onToggle={() => notifyOnSuccess(
-          update({ advanced_enabled: !prefs.advanced_enabled }),
-          'Failed to update optimization preferences:',
+    <div className="glass-card p-[13px]">
+      <div className="flex items-center justify-between mb-[3px]">
+        <div className="text-[13px] text-ledger-text-primary font-medium">Advanced optimization</div>
+        <Toggle enabled={prefs.advanced_enabled} onToggle={() => runMutation(
+          updatePrefs({ advanced_enabled: !prefs.advanced_enabled }),
+          'Failed to update optimization preferences',
         )} />
       </div>
       {prefs.advanced_enabled && (
-        <div className="space-y-[16px]">
-          <RangeSlider label="Position cap" value={prefs.position_cap_pct} min={2} max={50} step={1}
-            onChange={v => notifyOnSuccess(
-              update({ position_cap_pct: v }), 'Failed to update optimization preferences:',
-            )} />
-          <RangeSlider label="Diversification strength" value={prefs.concentration_strength * 100} min={0} max={100} step={5}
-            onChange={v => notifyOnSuccess(
-              update({ concentration_strength: v / 100 }), 'Failed to update optimization preferences:',
-            )} />
+        <div className="space-y-[10px] mt-[10px]">
+          {error && (
+            <div className="text-[11.5px] text-ledger-negative bg-[rgba(231,112,95,0.1)] border border-ledger-negative/30 rounded-[7px] px-[9px] py-[6px]">
+              {error}
+            </div>
+          )}
 
-          <div>
-            <div className="text-[13px] font-semibold text-ledger-text-primary mb-[10px]">Sector constraints</div>
-            {sectorConstraints.length === 0 ? (
-              <div className="text-center py-6 text-ledger-text-faint text-[13px] mb-[12px]">
-                No sector constraints yet. Set a floor/cap for a sector's total portfolio weight.
-              </div>
-            ) : (
-              <div className="space-y-[8px] mb-[12px]">
-                {sectorConstraints.map(c => (
-                  <ConstraintRow
-                    key={c.id}
-                    name={c.sector}
-                    floorPct={c.floor_pct}
-                    capPct={c.cap_pct}
-                    removing={removingSectorId === c.id}
-                    onFloorChange={v => notifyOnSuccess(
-                      updateSector(c.id, { sector: c.sector, floor_pct: v, cap_pct: c.cap_pct }),
-                      'Failed to update sector constraint:',
-                    )}
-                    onCapChange={v => notifyOnSuccess(
-                      updateSector(c.id, { sector: c.sector, floor_pct: c.floor_pct, cap_pct: v }),
-                      'Failed to update sector constraint:',
-                    )}
-                    onRemove={() => handleRemoveSector(c.id)}
-                  />
-                ))}
-              </div>
-            )}
-            <AddConstraintForm
-              fieldLabel="Sector"
-              placeholder="e.g. Technology"
-              transform={normalizeSectorName}
-              // Not wrapped in notifyOnSuccess: AddConstraintForm awaits this
-              // and renders a rejection as an inline error under the form, so
-              // the error must keep propagating rather than being swallowed
-              // into console.error.
-              onCreate={async (sector, floor_pct, cap_pct) => {
-                const created = await createSector({ sector, floor_pct, cap_pct })
-                onChange?.()
-                return created
-              }}
-            />
+          <div className="grid grid-cols-2 gap-[10px]">
+            <RangeSlider label="Position cap" value={prefs.position_cap_pct} min={2} max={50} step={1}
+              onChange={v => runMutation(
+                updatePrefs({ position_cap_pct: v }), 'Failed to update optimization preferences',
+              )} />
+            <RangeSlider label="Diversification" value={prefs.concentration_strength * 100} min={0} max={100} step={5}
+              onChange={v => runMutation(
+                updatePrefs({ concentration_strength: v / 100 }), 'Failed to update optimization preferences',
+              )} />
           </div>
 
           <div>
-            <div className="text-[13px] font-semibold text-ledger-text-primary mb-[10px]">Ticker constraints</div>
+            <div className="text-[11.5px] font-semibold text-ledger-text-primary mb-[6px]">
+              Sector constraints <span className="font-normal text-ledger-text-faint">— S&P 500 weight marked for reference</span>
+            </div>
+            {/* Capped height + internal scroll rather than letting 11 sectors push
+                this column's height far past the chart column beside it -- see
+                Investments.tsx's two-column layout comment. */}
+            <div className="max-h-[280px] overflow-y-auto pr-[4px] -mr-[4px]">
+              <SectorConstraintsGrid
+                constraints={sectorConstraints}
+                resettingId={resettingSectorId}
+                onFloorChange={handleSectorFloorChange}
+                onCapChange={handleSectorCapChange}
+                onReset={handleResetSector}
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11.5px] font-semibold text-ledger-text-primary mb-[6px]">Ticker constraints</div>
             {tickerConstraints.length === 0 ? (
-              <div className="text-center py-6 text-ledger-text-faint text-[13px] mb-[12px]">
-                No ticker constraints yet. Set a floor/cap for a specific ticker's portfolio weight.
+              <div className="text-center py-3 text-ledger-text-faint text-[11.5px] mb-[8px]">
+                No ticker constraints yet.
               </div>
             ) : (
-              <div className="space-y-[8px] mb-[12px]">
+              <div className="space-y-[6px] mb-[8px] max-h-[160px] overflow-y-auto pr-[4px] -mr-[4px]">
                 {tickerConstraints.map(c => (
                   <ConstraintRow
                     key={c.id}
@@ -323,32 +404,32 @@ export default function OptimizationPreferencesPanel({ onChange }: { onChange?: 
                     floorPct={c.floor_pct}
                     capPct={c.cap_pct}
                     removing={removingTickerId === c.id}
-                    onFloorChange={v => notifyOnSuccess(
+                    onFloorChange={v => runMutation(
                       updateTicker(c.id, { ticker: c.ticker, floor_pct: v, cap_pct: c.cap_pct }),
-                      'Failed to update ticker constraint:',
+                      'Failed to update ticker constraint',
                     )}
-                    onCapChange={v => notifyOnSuccess(
+                    onCapChange={v => runMutation(
                       updateTicker(c.id, { ticker: c.ticker, floor_pct: c.floor_pct, cap_pct: v }),
-                      'Failed to update ticker constraint:',
+                      'Failed to update ticker constraint',
                     )}
                     onRemove={() => handleRemoveTicker(c.id)}
                   />
                 ))}
               </div>
             )}
-            <AddConstraintForm
-              fieldLabel="Ticker"
-              placeholder="e.g. VOO"
-              transform={normalizeTicker}
-              // Same as the sector form above -- errors must reach
-              // AddConstraintForm's inline error state.
-              onCreate={async (ticker, floor_pct, cap_pct) => {
-                const created = await createTicker({ ticker, floor_pct, cap_pct })
-                onChange?.()
-                return created
-              }}
+            <AddTickerConstraintForm
+              onCreate={(ticker, floor_pct, cap_pct) => createTicker({ ticker, floor_pct, cap_pct })}
             />
           </div>
+
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={running}
+            className="w-full bg-ledger-accent text-ledger-accent-on rounded-[8px] py-[9px] text-[12.5px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {running ? 'Running optimization…' : 'Run optimization'}
+          </button>
         </div>
       )}
     </div>
