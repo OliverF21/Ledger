@@ -11,7 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.analytics_shared import CATEGORY_COLORS
-from app.models import Account, BalanceSnapshot, Holding, Item
+from app.models import Account, BalanceSnapshot, Holding, Item, MarketPrice
 
 
 def investment_net_equity_total(accounts: list[Account]) -> float:
@@ -206,21 +206,23 @@ def _investment_accounts(db: Session) -> list[Account]:
     )
 
 
-def _build_investment_history(
-    db: Session,
-    *,
-    account_ids: list[int],
-    months: int,
-    live_total: float,
-) -> list[InvestmentHistoryPointData]:
+def _history_cutoff(months: int) -> date:
     today = date.today()
+    months = max(1, min(int(months), 24))
     cutoff_year = today.year - (months // 12)
     cutoff_month = today.month - (months % 12)
     if cutoff_month <= 0:
         cutoff_month += 12
         cutoff_year -= 1
-    cutoff = date(cutoff_year, cutoff_month, 1)
+    return date(cutoff_year, cutoff_month, 1)
 
+
+def _snapshot_history(
+    db: Session,
+    *,
+    account_ids: list[int],
+    cutoff: date,
+) -> list[InvestmentHistoryPointData]:
     rows = (
         db.query(
             BalanceSnapshot.snapshot_date,
@@ -236,21 +238,140 @@ def _build_investment_history(
         if account_ids
         else []
     )
-
-    history = [
+    return [
         InvestmentHistoryPointData(
             date=str(row.snapshot_date),
             total=round(float(row.total), 2),
         )
         for row in rows
     ]
-    today_str = str(today)
+
+
+def _mark_to_market_history(
+    db: Session,
+    *,
+    account_ids: list[int],
+    cutoff: date,
+    live_total: float,
+) -> list[InvestmentHistoryPointData]:
+    """Current-holdings mark-to-market over [cutoff, today].
+
+    Plaid does not provide historical balances, so daily snapshots only exist
+    since Ledger first synced. When that span is shorter than the chart
+    window, period change would otherwise be identical for 6M and 1Y. Pricing
+    today's book against cached MarketPrice rows is the same series the
+    optimizer already uses, and it actually covers those windows.
+    """
+    if not account_ids:
+        return []
+
+    holdings = (
+        db.query(Holding)
+        .options(joinedload(Holding.security))
+        .filter(Holding.account_id.in_(account_ids))
+        .all()
+    )
+    if not holdings:
+        return []
+
+    accounts_by_id = {
+        account.id: account
+        for account in db.query(Account).filter(Account.id.in_(account_ids)).all()
+    }
+    gross_by_account = account_gross_holdings(holdings)
+
+    qty_by_ticker: dict[str, float] = {}
+    for holding in holdings:
+        security = holding.security
+        if not security or not security.ticker_symbol or security.is_cash_equivalent:
+            continue
+        account = accounts_by_id.get(holding.account_id)
+        if account is None:
+            continue
+        scaled_value = scaled_holding_market_value(holding, account, gross_by_account)
+        inst_value = float(holding.institution_value or 0)
+        quantity = float(holding.quantity)
+        if inst_value > 0 and quantity != 0:
+            quantity *= scaled_value / inst_value
+        qty_by_ticker[security.ticker_symbol] = qty_by_ticker.get(security.ticker_symbol, 0.0) + quantity
+
+    tickers = [ticker for ticker, qty in qty_by_ticker.items() if qty != 0]
+    if not tickers:
+        return []
+
+    today = date.today()
+    rows = (
+        db.query(MarketPrice.ticker, MarketPrice.price_date, MarketPrice.close_price)
+        .filter(
+            MarketPrice.ticker.in_(tickers),
+            MarketPrice.price_date >= cutoff,
+            MarketPrice.price_date <= today,
+        )
+        .order_by(MarketPrice.price_date.asc())
+        .all()
+    )
+    if not rows:
+        return []
+
+    by_ticker: dict[str, dict[date, float]] = {ticker: {} for ticker in tickers}
+    dates: set[date] = set()
+    for ticker, price_date, close_price in rows:
+        by_ticker[ticker][price_date] = float(close_price)
+        dates.add(price_date)
+
+    last_price: dict[str, float] = {}
+    points: list[tuple[date, float]] = []
+    for price_date in sorted(dates):
+        for ticker in tickers:
+            if price_date in by_ticker[ticker]:
+                last_price[ticker] = by_ticker[ticker][price_date]
+        if not last_price:
+            continue
+        total = sum(qty_by_ticker[ticker] * last_price[ticker] for ticker in last_price)
+        points.append((price_date, total))
+
+    if len(points) < 2:
+        return []
+
+    residual = live_total - points[-1][1]
+    return [
+        InvestmentHistoryPointData(date=str(price_date), total=round(total + residual, 2))
+        for price_date, total in points
+    ]
+
+
+def _finalize_history(
+    history: list[InvestmentHistoryPointData],
+    live_total: float,
+) -> list[InvestmentHistoryPointData]:
+    today_str = str(date.today())
     live_total = round(live_total, 2)
     if history and history[-1].date == today_str:
         history[-1] = InvestmentHistoryPointData(date=today_str, total=live_total)
     else:
         history.append(InvestmentHistoryPointData(date=today_str, total=live_total))
     return history
+
+
+def _build_investment_history(
+    db: Session,
+    *,
+    account_ids: list[int],
+    months: int,
+    live_total: float,
+) -> list[InvestmentHistoryPointData]:
+    cutoff = _history_cutoff(months)
+    history = _snapshot_history(db, account_ids=account_ids, cutoff=cutoff)
+    first = date.fromisoformat(history[0].date) if history else None
+    # Snapshots shorter than the requested window would make 6M and 1Y report
+    # the same period change. Fall back to current-holdings mark-to-market.
+    if first is None or first > cutoff:
+        marked = _mark_to_market_history(
+            db, account_ids=account_ids, cutoff=cutoff, live_total=live_total
+        )
+        if len(marked) >= 2:
+            history = marked
+    return _finalize_history(history, live_total)
 
 
 def _history_change(history: list[InvestmentHistoryPointData]) -> tuple[float, float]:
