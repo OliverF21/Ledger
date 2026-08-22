@@ -94,19 +94,24 @@ def relax_position_cap_if_needed(n_tickers: int, requested_cap: float) -> tuple[
 def build_ticker_bounds(
     db: Session, user_id: int, tickers: list[str], position_cap: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Per-ticker (lower, upper) bounds combining the global position cap
-    with any user-set TickerConstraint (e.g. 'VOO needs >= 5%'). A ticker
-    constraint's cap_pct is clamped to the global position cap, never above
-    it -- per-ticker floors can raise the minimum, but the position cap is
-    still the ceiling. An inverted row (floor_pct > cap_pct) is additionally
-    clamped down to its own cap, degrading to "no effective floor" rather
-    than handing scipy an inverted bound -- see the comment at that clamp
-    below. A TickerConstraint whose ticker isn't in `tickers`
-    (e.g. a stale constraint on a ticker no longer in the candidate
-    universe) has no bound-vector slot to occupy and is filtered out at the
-    query level -- it's simply not applicable to this run, not a clip worth
-    logging (unlike clip_sector_bounds's sector case, this function has no
-    log channel in its return signature)."""
+    """Per-ticker (lower, upper) bounds: the global position cap by default,
+    or a user-set TickerConstraint's own (floor_pct, cap_pct) verbatim when
+    one exists for that ticker -- an explicit per-ticker override supersedes
+    the global default entirely rather than being intersected with it, so a
+    user who deliberately sets e.g. 'VOO up to 25%' gets 25%, not silently
+    re-clamped down to a 10% global position cap they set for everything
+    else. (Previously cap_pct WAS clamped to position_cap, which meant a
+    manual per-ticker cap above the global cap was accepted by the UI/API
+    but had zero effect on the actual solve -- silently ignored, with
+    nothing surfaced anywhere to explain why.) An inverted row (floor_pct >
+    cap_pct) is defensively clamped down to its own cap, degrading to "cap
+    only, no floor" rather than handing scipy an inverted bound -- see the
+    comment at that clamp below. A TickerConstraint whose ticker isn't in
+    `tickers` (e.g. a stale constraint on a ticker no longer in the
+    candidate universe) has no bound-vector slot to occupy and is filtered
+    out at the query level -- it's simply not applicable to this run, not a
+    clip worth logging (unlike clip_sector_bounds's sector case, this
+    function has no log channel in its return signature)."""
     constraints = {
         c.ticker: c
         for c in db.query(TickerConstraint).filter(TickerConstraint.user_id == user_id, TickerConstraint.ticker.in_(tickers)).all()
@@ -117,12 +122,12 @@ def build_ticker_bounds(
         constraint = constraints.get(ticker)
         if constraint is None:
             continue
-        lower[i] = min(float(constraint.floor_pct) / 100, position_cap)
-        upper[i] = min(float(constraint.cap_pct) / 100, position_cap)
+        lower[i] = float(constraint.floor_pct) / 100
+        upper[i] = float(constraint.cap_pct) / 100
         # Defensive clamp against an inverted row (floor_pct > cap_pct).
-        # routes/optimization_settings.py now rejects such a pair with a 422
-        # at write time, but that only protects rows created FROM NOW ON --
-        # a row already sitting in a user's DB from before that validation
+        # routes/optimization_settings.py rejects such a pair with a 422 at
+        # write time, but that only protects rows created FROM NOW ON -- a
+        # row already sitting in a user's DB from before that validation
         # existed, or one written straight to SQLite, still reaches here.
         # scipy.optimize.minimize raises `ValueError: An upper bound is less
         # than the corresponding lower bound` on an inverted `bounds` entry,
@@ -131,10 +136,5 @@ def build_ticker_bounds(
         # Collapsing the floor onto the cap degrades that row to "cap only,
         # no floor" -- the conservative reading, since the cap is the
         # risk-limiting half of the pair.
-        #
-        # Placed AFTER the position-cap clamps above so it operates on the
-        # bounds in their final form -- that's what makes lower <= upper an
-        # invariant of the values actually returned, rather than of an
-        # intermediate pair a later clamp could still disturb.
         lower[i] = min(lower[i], upper[i])
     return lower, upper

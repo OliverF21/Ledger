@@ -390,7 +390,9 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
           </div>
 
           <div>
-            <div className="text-[11.5px] font-semibold text-ledger-text-primary mb-[6px]">Ticker constraints</div>
+            <div className="text-[11.5px] font-semibold text-ledger-text-primary mb-[6px]">
+              Ticker constraints <span className="font-normal text-ledger-text-faint">— overrides the position cap for that ticker</span>
+            </div>
             {tickerConstraints.length === 0 ? (
               <div className="text-center py-3 text-ledger-text-faint text-[11.5px] mb-[8px]">
                 No ticker constraints yet.

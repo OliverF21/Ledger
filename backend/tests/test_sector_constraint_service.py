@@ -133,16 +133,23 @@ def test_relax_position_cap_clamps_to_full_allocation_for_single_holding():
     assert log_entry == {"requested_cap": 0.5, "relaxed_to": 1.0, "reason": "too few holdings for cap"}
 
 
-def test_build_ticker_bounds_applies_ticker_floor_on_top_of_position_cap(db_session):
+def test_build_ticker_bounds_ticker_cap_supersedes_position_cap(db_session):
+    # A manually-set per-ticker cap ABOVE the global position cap must win --
+    # a user who explicitly asks for "VOO up to 100%" should get 100%, not
+    # have it silently re-clamped down to the 10% they set for everything
+    # else. (Previously this WAS clamped to position_cap, meaning a manual
+    # override above the global cap was accepted by the UI/API but had zero
+    # effect on the actual solve.) The floor still applies normally; AAPL
+    # (no constraint) still falls back to the global cap as its ceiling.
     db_session.add(TickerConstraint(user_id=1, ticker="VOO", floor_pct=5.0, cap_pct=100.0))
     db_session.commit()
 
     lower, upper = build_ticker_bounds(db_session, 1, ["VOO", "AAPL"], position_cap=0.10)
 
     assert lower[0] == 0.05  # VOO floor
-    assert upper[0] == 0.10  # position cap still applies as the effective ceiling
+    assert upper[0] == 1.0  # VOO's own cap supersedes the 10% position cap
     assert lower[1] == 0.0
-    assert upper[1] == 0.10
+    assert upper[1] == 0.10  # AAPL has no override, still bound by the position cap
 
 
 def test_build_ticker_bounds_ignores_constraint_for_ticker_outside_universe(db_session):
