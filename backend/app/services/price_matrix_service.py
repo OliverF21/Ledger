@@ -76,7 +76,19 @@ def held_tickers(db: Session, account_ids: list[int]) -> list[str]:
 
 
 def price_matrix(db: Session, tickers: list[str], start: date, end: date) -> tuple[list[date], np.ndarray]:
-    """Rows = dates common to every ticker, columns = tickers (in `tickers` order)."""
+    """Rows = the UNION of every ticker's available dates in [start, end],
+    columns = tickers (in `tickers` order). A ticker with no price on a given
+    date -- most commonly a date before that ticker's IPO/listing -- gets
+    NaN there, not a dropped row: recently-listed tickers legitimately have
+    less history than long-listed ones, and this must not let one such
+    ticker silently truncate every OTHER ticker's estimation window down to
+    its own inception date (previously an intersection of dates common to
+    every ticker did exactly that -- a single ~30-day-old ticker collapsed a
+    3-year lookback for the whole book to ~30 days). Downstream consumers
+    (portfolio_math_service.ledoit_wolf_shrinkage, and the nanmean in
+    optimization_service.py) are NaN-aware: covariance is estimated pairwise
+    per asset pair, using only the dates where BOTH have a real observation.
+    """
     rows = (
         db.query(MarketPrice.ticker, MarketPrice.price_date, MarketPrice.close_price)
         .filter(MarketPrice.ticker.in_(tickers), MarketPrice.price_date >= start, MarketPrice.price_date <= end)
@@ -86,17 +98,22 @@ def price_matrix(db: Session, tickers: list[str], start: date, end: date) -> tup
     for ticker, price_date, close_price in rows:
         by_ticker[ticker][price_date] = float(close_price)
 
-    if not all(by_ticker.values()):
+    if not by_ticker or not any(by_ticker.values()):
         return [], np.array([])
-    common_dates = sorted(set.intersection(*(set(d.keys()) for d in by_ticker.values())))
-    if not common_dates:
+    all_dates = sorted(set.union(*(set(d.keys()) for d in by_ticker.values())))
+    if not all_dates:
         return [], np.array([])
 
-    matrix = np.array([[by_ticker[t][d] for t in tickers] for d in common_dates])
-    return common_dates, matrix
+    matrix = np.array([[by_ticker[t].get(d, np.nan) for t in tickers] for d in all_dates])
+    return all_dates, matrix
 
 
-def current_weights(db: Session, account_ids: list[int], tickers: list[str]) -> dict[str, float]:
+def current_dollar_values(db: Session, account_ids: list[int], tickers: list[str]) -> dict[str, float]:
+    """Current market value per ticker, in dollars -- the raw figure
+    `current_weights` below normalizes into a percentage. Exposed separately
+    so callers that need the dollar amount (e.g. showing "$X -> $Y" next to
+    a suggested reallocation) aren't stuck re-deriving it from a percentage
+    and a total they'd otherwise have to recompute themselves."""
     accounts_by_id = {a.id: a for a in _investment_accounts(db) if a.id in account_ids}
     holdings = (
         db.query(Holding)
@@ -110,6 +127,11 @@ def current_weights(db: Session, account_ids: list[int], tickers: list[str]) -> 
     for h in holdings:
         value = scaled_holding_market_value(h, accounts_by_id[h.account_id], gross_by_account)
         value_by_ticker[h.security.ticker_symbol] += value
+    return value_by_ticker
+
+
+def current_weights(db: Session, account_ids: list[int], tickers: list[str]) -> dict[str, float]:
+    value_by_ticker = current_dollar_values(db, account_ids, tickers)
     total = sum(value_by_ticker.values())
     if total <= 0:
         return {t: 0.0 for t in tickers}

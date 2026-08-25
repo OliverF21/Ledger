@@ -45,7 +45,7 @@ from app.services.portfolio_math_service import (
     market_implied_risk_aversion,
 )
 from app.services.price_matrix_service import (
-    current_weights,
+    current_dollar_values,
     held_tickers,
     portfolio_stats,
     price_matrix,
@@ -200,6 +200,8 @@ class TickerWeight:
     ticker: str
     current_weight_pct: float
     suggested_weight_pct: float
+    current_dollar: float
+    suggested_dollar: float
 
 
 @dataclass(frozen=True)
@@ -332,6 +334,8 @@ def _build_ticker_weights_and_objective(
     name: str,
     tickers: list[str],
     current_weights_pct: dict[str, float],
+    current_dollar_by_ticker: dict[str, float],
+    total_value: float,
     suggested_weights: np.ndarray,
     suggested_return: float,
     suggested_vol: float,
@@ -342,6 +346,11 @@ def _build_ticker_weights_and_objective(
     ObjectiveResult. `name` is a parameter (not hardcoded) since the two
     call sites pass "max_sharpe" and "max_quadratic_utility" respectively.
 
+    suggested_dollar re-applies `total_value` (today's total across held
+    tickers) to the suggested weight rather than any hypothetical future
+    value -- it answers "what would this weight be worth if I rebalanced
+    today", not a forecast.
+
     Also returns `suggested_sharpe_rounded` separately (not just embedded in
     the returned ObjectiveResult) since both call sites additionally thread
     that same rounded value through to the top-level
@@ -351,6 +360,8 @@ def _build_ticker_weights_and_objective(
             ticker=t,
             current_weight_pct=round(current_weights_pct[t], 2),
             suggested_weight_pct=round(float(suggested_weights[i]) * 100, 2),
+            current_dollar=round(current_dollar_by_ticker[t], 2),
+            suggested_dollar=round(float(suggested_weights[i]) * total_value, 2),
         )
         for i, t in enumerate(tickers)
     ]
@@ -392,8 +403,34 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_L
     if len(dates) < MIN_LOOKBACK_ROWS:
         return _empty_result(data_points=len(dates))
 
+    # price_matrix returns the UNION of every ticker's available dates (see
+    # its docstring) -- a NaN cell means that ticker had no price on that
+    # date, typically because the date is before the ticker's IPO/listing.
+    # A ticker can still have too little of its OWN history to estimate
+    # anything useful even though other, longer-lived tickers cleared the
+    # len(dates) check above (e.g. a ticker synced only a handful of
+    # trading days ago) -- drop those here rather than feeding a near-empty
+    # column into ledoit_wolf_shrinkage's pairwise estimation. Same "drop
+    # the unusable one, don't fail the whole book" philosophy
+    # priceable_tickers already applies to zero-row tickers above.
+    observed_counts = (~np.isnan(prices)).sum(axis=0)
+    sparse_history_log = [
+        {
+            "reason": (
+                f"{tickers[i]} dropped from the optimizer: only {int(observed_counts[i])} priced days in "
+                f"the lookback window (minimum {MIN_LOOKBACK_ROWS})"
+            ),
+        }
+        for i in range(len(tickers)) if observed_counts[i] < MIN_LOOKBACK_ROWS
+    ]
+    enough_history = observed_counts >= MIN_LOOKBACK_ROWS
+    tickers = [t for t, ok in zip(tickers, enough_history) if ok]
+    prices = prices[:, enough_history]
+    if len(tickers) < 2:
+        return _empty_result(data_points=len(dates))
+
     returns = prices[1:] / prices[:-1] - 1
-    mean_returns = returns.mean(axis=0)
+    mean_returns = np.nanmean(returns, axis=0)
     # ledoit_wolf_shrinkage annualizes internally (x TRADING_DAYS_PER_YEAR),
     # but portfolio_stats/neg_sharpe_bl/neg_utility_bl below expect a DAILY
     # covariance and do their own annualization using the SAME constant --
@@ -403,7 +440,12 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_L
     cov = ledoit_wolf_shrinkage(returns) / TRADING_DAYS_PER_YEAR
     risk_free_rate_pct = get_cached_risk_free_rate(db)
 
-    current_weights_pct = current_weights(db, account_ids, tickers)
+    current_dollar_by_ticker = current_dollar_values(db, account_ids, tickers)
+    total_value = sum(current_dollar_by_ticker.values())
+    current_weights_pct = {
+        t: (current_dollar_by_ticker[t] / total_value * 100 if total_value > 0 else 0.0)
+        for t in tickers
+    }
     current_weight_fractions = np.array([current_weights_pct[t] / 100 for t in tickers])
     current_return, current_vol, current_sharpe = portfolio_stats(current_weight_fractions, mean_returns, cov, risk_free_rate_pct)
 
@@ -504,12 +546,13 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_L
 
     # clip_log is the pipeline's single "we auto-adjusted something you
     # asked for" channel, and it's first created above -- so the delta
-    # substitution decided back at the top of this branch (where no
-    # clip_log existed yet to append to) is folded in here. Prepended
-    # rather than appended: it describes an input to the whole solve,
-    # not one constraint's clipping, so it reads first in the UI banner.
-    if delta_substitution_log is not None:
-        clip_log = [delta_substitution_log] + clip_log
+    # substitution AND any sparse-history ticker drops, both decided back
+    # at the top of this branch (where no clip_log existed yet to append
+    # to), are folded in here. Prepended rather than appended: they
+    # describe inputs to the whole solve, not one constraint's clipping,
+    # so they read first in the UI banner.
+    prefix_log = sparse_history_log + ([delta_substitution_log] if delta_substitution_log is not None else [])
+    clip_log = prefix_log + clip_log
 
     # NULL-coalesce, same pattern/rationale as `requested_cap_pct` above
     # (models.py:55-58): a pre-existing DB row predating this column's
@@ -568,7 +611,8 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_L
     suggested_return, suggested_vol, suggested_sharpe = portfolio_stats(suggested_weights, mu_bl, sigma_bl, risk_free_rate_pct)
 
     ticker_weights, max_sharpe_objective, suggested_sharpe_rounded = _build_ticker_weights_and_objective(
-        "max_sharpe", tickers, current_weights_pct, suggested_weights, suggested_return, suggested_vol, suggested_sharpe,
+        "max_sharpe", tickers, current_weights_pct, current_dollar_by_ticker, total_value,
+        suggested_weights, suggested_return, suggested_vol, suggested_sharpe,
     )
 
     # Second, independent solve: same bounds/constraints (sector floors/
@@ -590,8 +634,8 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_L
     # max_sharpe objective, and this objective's own tickers already
     # live inside max_utility_objective.tickers.
     _, max_utility_objective, _ = _build_ticker_weights_and_objective(
-        "max_quadratic_utility", tickers, current_weights_pct, suggested_weights_utility,
-        suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility,
+        "max_quadratic_utility", tickers, current_weights_pct, current_dollar_by_ticker, total_value,
+        suggested_weights_utility, suggested_return_utility, suggested_vol_utility, suggested_sharpe_utility,
     )
     objectives = [max_sharpe_objective, max_utility_objective]
 

@@ -20,10 +20,42 @@ def ledoit_wolf_shrinkage(returns: np.ndarray) -> np.ndarray:
     Returns an ANNUALIZED covariance matrix (matches CovarianceShrinkage's
     default behavior in the example script, and mean_returns' annualization
     elsewhere in this codebase).
+
+    `returns` may contain NaN. price_matrix_service.price_matrix builds the
+    price matrix from the UNION of every held ticker's available dates (not
+    their intersection) specifically so a recently-listed ticker's shorter
+    history doesn't truncate every other asset's window down to its own
+    inception date -- see that function's docstring. A date before a
+    ticker's IPO/listing is NaN there and stays NaN through the return
+    calculation. Every entry of the covariance matrix below is therefore
+    computed PAIRWISE: for assets i and j, only the dates where BOTH have a
+    real observation are used (each pair demeaned using its own overlapping
+    subset's mean), the standard way to estimate a covariance matrix from
+    assets with unequal history. On fully-dense input (no NaNs -- every
+    asset pair's overlap is the same t) this reduces to exactly the old
+    single dense `x.T @ x / t` computation: each pairwise dot product is the
+    same arithmetic that matrix multiply would produce for that cell, just
+    computed one pair at a time instead of all at once.
     """
-    t, n = returns.shape
-    x = returns - returns.mean(axis=0)
-    sample_cov = (x.T @ x) / t
+    values = np.asarray(returns, dtype=float)
+    t_total, n = values.shape
+    observed = ~np.isnan(values)
+
+    sample_cov = np.zeros((n, n))
+    phi_sum = np.zeros((n, n))
+    pair_counts = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i, n):
+            both = observed[:, i] & observed[:, j]
+            t_ij = int(both.sum())
+            pair_counts[i, j] = pair_counts[j, i] = t_ij
+            if t_ij == 0:
+                continue
+            xi = values[both, i] - values[both, i].mean()
+            xj = values[both, j] - values[both, j].mean()
+            c = float(xi @ xj) / t_ij
+            sample_cov[i, j] = sample_cov[j, i] = c
+            phi_sum[i, j] = phi_sum[j, i] = float((xi ** 2) @ (xj ** 2)) / t_ij
 
     var = np.diag(sample_cov)
     std = np.sqrt(var)
@@ -45,13 +77,22 @@ def ledoit_wolf_shrinkage(returns: np.ndarray) -> np.ndarray:
 
     # Shrinkage intensity (Ledoit-Wolf's asymptotically optimal estimator,
     # simplified single-parameter form — see design doc for the full
-    # derivation reference).
-    y = x ** 2
-    phi_mat = (y.T @ y) / t - sample_cov ** 2
+    # derivation reference). The formula assumes one shared observation
+    # count T; with ragged per-ticker history there isn't a single T, so
+    # t_eff uses the SMALLEST pairwise overlap anywhere in the matrix (the
+    # most data-starved pair). That's a conservative choice — it can only
+    # push shrinkage intensity UP (more weight on the constant-correlation
+    # target), never understate the extra uncertainty a short-history pair
+    # actually has. On dense input every pair's overlap is t_total, so
+    # t_eff == t_total exactly, matching the original formula.
+    nonzero_counts = pair_counts[pair_counts > 0]
+    t_eff = int(nonzero_counts.min()) if nonzero_counts.size else t_total
+
+    phi_mat = phi_sum - sample_cov ** 2
     phi = phi_mat.sum()
     gamma = np.sum((target - sample_cov) ** 2)
     kappa = phi / gamma if gamma > 0 else 0.0
-    shrinkage = max(0.0, min(1.0, kappa / t))
+    shrinkage = max(0.0, min(1.0, kappa / t_eff))
 
     shrunk = shrinkage * target + (1 - shrinkage) * sample_cov
     return shrunk * TRADING_DAYS_PER_YEAR
