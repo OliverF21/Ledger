@@ -588,7 +588,7 @@ export default function Investments() {
           anything. */}
       {!optimizationLoading && optimization && (
         optimizationPrefs?.advanced_enabled ? (
-          <div className="grid grid-cols-2 gap-3 items-start">
+          <div className="grid grid-cols-2 gap-3 items-stretch">
             <OptimizationPreferencesPanel
               prefs={optimizationPrefs}
               updatePrefs={updateOptimizationPrefs}
@@ -596,28 +596,32 @@ export default function Investments() {
               running={runningOptimization}
             />
             {showOptimizationResults && optimization.insufficient_data && (
-              <div className="glass-card p-4 text-[12px] text-ledger-text-faint">
-                Not enough price history yet to run the optimizer — this needs at least 30 days
+              <div className="glass-card p-4 flex items-center justify-center text-center text-[12px] text-ledger-text-faint">
+                Not enough price history yet to run the optimizer. This needs at least 30 days
                 of overlapping synced price data across your held tickers.
               </div>
             )}
             {showOptimizationResults && !optimization.insufficient_data && (
-              <div className="glass-card p-4">
-                <div className="text-[12px] font-semibold mb-2">Efficient frontier</div>
-                <div className="text-[11px] text-ledger-text-faint mb-3">
-                  {optimization.objectives.length} objectives · position cap {optimization.position_cap_pct.toFixed(0)}%
-                  · faint dots are randomly-weighted portfolios, unconstrained by your position
-                  cap or sector limits — shown for scale, not as suggestions.
+              <div className="glass-card p-4 flex flex-col">
+                <div className="text-[15px] font-semibold mb-1">Efficient frontier</div>
+                <div className="text-[12px] text-ledger-text-secondary mb-3 leading-snug">
+                  The line shows the best return possible at each level of risk, given your
+                  position cap ({optimization.position_cap_pct.toFixed(0)}%) and sector limits.
+                  The two markers are the portfolios suggested below. The faint dots are
+                  thousands of random portfolios shown only for comparison. They ignore your
+                  limits, so they're not suggestions, just a sense of scale.
                 </div>
-                <EfficientFrontierChart
-                  frontierPoints={optimization.frontier_points ?? []}
-                  markers={buildMarkers(optimization.objectives)}
-                  randomPortfolios={optimization.random_portfolios ?? []}
-                />
+                <div className="flex-1 min-h-0">
+                  <EfficientFrontierChart
+                    frontierPoints={optimization.frontier_points ?? []}
+                    markers={buildMarkers(optimization.objectives)}
+                    randomPortfolios={optimization.random_portfolios ?? []}
+                  />
+                </div>
               </div>
             )}
             {!showOptimizationResults && (
-              <div className="glass-card p-4 flex items-center justify-center text-center text-[12px] text-ledger-text-faint min-h-[200px]">
+              <div className="glass-card p-4 flex items-center justify-center text-center text-[12px] text-ledger-text-faint">
                 Click "Run optimization" to see the efficient frontier.
               </div>
             )}
@@ -719,41 +723,40 @@ export default function Investments() {
                 <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
                   {OBJECTIVE_LABELS[activeObjective.name] ?? activeObjective.name} suggested weights
                 </div>
-                {/* Weight bars, not a Current/Suggested number pair: the accent
-                    fill is the suggested weight, the faint tick is where the
-                    ticker sits today -- reuses the exact track+reference-tick
-                    language OptimizationPreferencesPanel's sliders already use,
-                    so "here's the change" reads as a distance on a bar instead
-                    of two numbers the reader has to subtract themselves. Sorted
-                    by signed change (suggested minus current), so the list
-                    reads as one line from biggest cut to biggest add. */}
-                <div className="space-y-[7px]">
-                  {[...activeObjective.tickers]
-                    .sort(
-                      (a, b) =>
-                        (a.suggested_weight_pct - a.current_weight_pct) -
-                        (b.suggested_weight_pct - b.current_weight_pct),
-                    )
-                    .map(t => (
-                      <div key={t.ticker} className="flex items-center gap-[10px]">
-                        <span className="w-[52px] shrink-0 text-[11.5px] font-semibold tabular-nums">{t.ticker}</span>
-                        <div className="relative flex-1 h-[5px] rounded-full bg-ledger-track">
-                          <div
-                            className="absolute h-full rounded-full bg-ledger-accent"
-                            style={{ width: `${Math.min(t.suggested_weight_pct, 100)}%` }}
-                          />
-                          <div
-                            title={`Currently ${t.current_weight_pct.toFixed(1)}%`}
-                            className="absolute top-1/2 w-[2px] h-[11px] -translate-y-1/2 bg-ledger-text-primary/70 rounded-full"
-                            style={{ left: `${Math.min(t.current_weight_pct, 100)}%` }}
-                          />
-                        </div>
-                        <span className="w-[44px] shrink-0 text-right text-[11.5px] font-semibold tabular-nums">
-                          {t.suggested_weight_pct.toFixed(1)}%
-                        </span>
-                      </div>
-                    ))}
-                </div>
+                {/* Plain Current/Suggested columns, not a weight bar -- a bar's
+                    fill+tick only encodes the two values as relative
+                    positions on a track, which reads as "some blue and a
+                    white line" rather than telling you anything concrete.
+                    Sorted by signed change (suggested minus current), so the
+                    list reads as one line from biggest cut to biggest add. */}
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="text-left text-ledger-text-faint">
+                      <th className="font-medium pb-1.5">Ticker</th>
+                      <th className="font-medium pb-1.5 text-right">Current</th>
+                      <th className="font-medium pb-1.5 text-right">Suggested</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...activeObjective.tickers]
+                      .sort(
+                        (a, b) =>
+                          (a.suggested_weight_pct - a.current_weight_pct) -
+                          (b.suggested_weight_pct - b.current_weight_pct),
+                      )
+                      .map(t => (
+                        <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
+                          <td className="py-1.5 font-medium">{t.ticker}</td>
+                          <td className="py-1.5 text-right tabular-nums text-ledger-text-faint">
+                            ${fmt(t.current_dollar)} ({t.current_weight_pct.toFixed(1)}%)
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums font-semibold">
+                            ${fmt(t.suggested_dollar)} ({t.suggested_weight_pct.toFixed(1)}%)
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
               </div>
             </>
           )}

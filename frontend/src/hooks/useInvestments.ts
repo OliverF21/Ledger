@@ -194,6 +194,8 @@ export interface AllocationWeight {
   ticker: string
   current_weight_pct: number
   suggested_weight_pct: number
+  current_dollar: number
+  suggested_dollar: number
 }
 
 export interface ObjectiveResponse {

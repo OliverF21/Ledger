@@ -280,7 +280,9 @@ def test_optimize_endpoint_advanced_mode_shape(client, db_session, seeded_price_
         assert set(obj.keys()) == {"name", "tickers", "expected_return_pct", "volatility_pct", "sharpe"}
         assert len(obj["tickers"]) == 12
         for tw in obj["tickers"]:
-            assert set(tw.keys()) == {"ticker", "current_weight_pct", "suggested_weight_pct"}
+            assert set(tw.keys()) == {
+                "ticker", "current_weight_pct", "suggested_weight_pct", "current_dollar", "suggested_dollar",
+            }
 
     assert isinstance(body["frontier_points"], list)
     assert len(body["frontier_points"]) > 0

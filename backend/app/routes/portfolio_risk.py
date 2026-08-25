@@ -50,6 +50,8 @@ class AllocationWeight(BaseModel):
     ticker: str
     current_weight_pct: float
     suggested_weight_pct: float
+    current_dollar: float
+    suggested_dollar: float
 
 
 class ObjectiveResponse(BaseModel):

@@ -25,6 +25,29 @@ function percentile(sorted: number[], p: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo)
 }
 
+// Rounds a domain out to a "nice" step (1/2/5/10/20/25/50/100 ...) and returns
+// the explicit tick array alongside it -- we render with this array via the
+// `ticks` prop rather than letting Recharts auto-generate ticks from the
+// domain. Recharts' own tick generator picks its "nice" step independently of
+// the domain it's handed (e.g. domain=[0,150] -> Recharts may pick step=40,
+// not our step=50), and 40 doesn't evenly divide 150 -- it renders 0/40/80
+// then tacks the raw domain boundary (150) on as an extra, unevenly-spaced
+// tick. Owning the tick array ourselves is the only way to guarantee even
+// spacing regardless of what Recharts' internal algorithm would have chosen.
+function niceTicksAndDomain([lo, hi]: [number, number]): { domain: [number, number]; ticks: number[] } {
+  const range = hi - lo
+  if (range <= 0) return { domain: [lo, hi], ticks: [lo] }
+  const rawStep = range / 4
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)))
+  const residual = rawStep / magnitude
+  const step = (residual >= 5 ? 10 : residual >= 2 ? 5 : residual >= 1 ? 2 : 1) * magnitude
+  const niceLo = Math.floor(lo / step) * step
+  const niceHi = Math.ceil(hi / step) * step
+  const ticks: number[] = []
+  for (let t = niceLo; t <= niceHi + step / 2; t += step) ticks.push(Math.round((t + Number.EPSILON) * 1e6) / 1e6)
+  return { domain: [niceLo, niceHi], ticks }
+}
+
 // Same "zoom to where the data actually is" percentile approach as
 // framework_portfolio_optimization.py's ZOOM_PCTL/AXIS_PAD -- the random-
 // portfolio cloud is unconstrained (no position cap / sector limits, see the
@@ -38,8 +61,8 @@ function zoomedDomain(
   bulkValues: number[],
   keyValues: number[],
   { pctlLow, pctlHigh, padFrac, anchorZero }: { pctlLow: number; pctlHigh: number; padFrac: number; anchorZero: boolean },
-): [number, number] {
-  if (bulkValues.length === 0 && keyValues.length === 0) return [0, 1]
+): { domain: [number, number]; ticks: number[] } {
+  if (bulkValues.length === 0 && keyValues.length === 0) return { domain: [0, 1], ticks: [0, 1] }
 
   const sorted = [...bulkValues].sort((a, b) => a - b)
   const keyMax = keyValues.length ? Math.max(...keyValues) : -Infinity
@@ -48,11 +71,11 @@ function zoomedDomain(
   const lo = anchorZero ? 0 : Math.min(percentile(sorted, pctlLow), keyMin)
 
   const range = Math.max(hi - lo, 1e-6)
-  return [anchorZero ? 0 : lo - range * padFrac, hi + range * padFrac]
+  return niceTicksAndDomain([anchorZero ? 0 : lo - range * padFrac, hi + range * padFrac])
 }
 
 export default function EfficientFrontierChart({ frontierPoints, markers, randomPortfolios = [] }: Props) {
-  const xDomain = useMemo(
+  const { domain: xDomain, ticks: xTicks } = useMemo(
     () =>
       zoomedDomain(
         [...frontierPoints.map(p => p.volatility_pct), ...randomPortfolios.map(p => p.volatility_pct)],
@@ -61,7 +84,7 @@ export default function EfficientFrontierChart({ frontierPoints, markers, random
       ),
     [frontierPoints, randomPortfolios, markers],
   )
-  const yDomain = useMemo(
+  const { domain: yDomain, ticks: yTicks } = useMemo(
     () =>
       zoomedDomain(
         [...frontierPoints.map(p => p.return_pct), ...randomPortfolios.map(p => p.return_pct)],
@@ -103,22 +126,24 @@ export default function EfficientFrontierChart({ frontierPoints, markers, random
   }
 
   return (
-    <div className="h-[320px]">
+    <div className="h-full min-h-[420px]">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart>
+        <ComposedChart margin={{ top: 10, right: 16, bottom: 44, left: 28 }}>
           <CartesianGrid strokeDasharray="0" stroke="rgba(255,255,255,0.06)" horizontal vertical={false} />
           <XAxis
             type="number" dataKey="volatility_pct" name="Volatility"
-            stroke="#5c626f" axisLine={false} tickLine={false} style={{ fontSize: '12px' }}
-            unit="%" domain={xDomain}
+            stroke="#5c626f" axisLine={false} tickLine={false} style={{ fontSize: '13px' }}
+            unit="%" domain={xDomain} ticks={xTicks} tickFormatter={v => Math.round(v).toString()}
+            label={{ value: 'Annualized Volatility', position: 'bottom', offset: 10, fill: '#8b90a0', fontSize: 12 }}
           />
           <YAxis
             type="number" dataKey="return_pct" name="Return"
-            stroke="#5c626f" axisLine={false} tickLine={false} style={{ fontSize: '12px' }}
-            unit="%" domain={yDomain}
+            stroke="#5c626f" axisLine={false} tickLine={false} style={{ fontSize: '13px' }}
+            unit="%" domain={yDomain} ticks={yTicks} tickFormatter={v => Math.round(v).toString()}
+            label={{ value: 'Annualized Return', angle: -90, position: 'insideLeft', offset: -4, fill: '#8b90a0', fontSize: 12 }}
           />
           <Tooltip content={renderTooltip} />
-          <Legend />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: '12px' }} />
           {/* Random-portfolio backdrop cloud (ported from example_portfolio_optimization.py's
               Dirichlet-sampled visualization) -- every point is a random, unconstrained
               (no position cap / sector limits) combination of the same held tickers, shown
