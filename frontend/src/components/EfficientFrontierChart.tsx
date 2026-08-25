@@ -75,23 +75,34 @@ function zoomedDomain(
 }
 
 export default function EfficientFrontierChart({ frontierPoints, markers, randomPortfolios = [] }: Props) {
+  // Domain comes from frontierPoints + markers ONLY -- deterministic, given
+  // fixed inputs the sweep/solve reproduce byte-identical results run to
+  // run. randomPortfolios is deliberately re-sampled fresh (unseeded) on
+  // every call (see efficient_frontier_service.sample_random_portfolios'
+  // docstring: illustrative backdrop, not a suggestion), so pooling it into
+  // the percentile calculation used to make the axis scale -- and therefore
+  // this SAME frontier curve's on-screen position -- shift on every run
+  // even though the curve's own data never changed. The cloud can now run
+  // off the edge of the frame on a wide draw; that's fine, it's explicitly
+  // framed as "ignores your limits, shown for scale," not something that
+  // needs to fully fit.
   const { domain: xDomain, ticks: xTicks } = useMemo(
     () =>
       zoomedDomain(
-        [...frontierPoints.map(p => p.volatility_pct), ...randomPortfolios.map(p => p.volatility_pct)],
+        frontierPoints.map(p => p.volatility_pct),
         markers.map(m => m.volatility_pct),
         { pctlLow: 1, pctlHigh: 99, padFrac: 0.06, anchorZero: true },
       ),
-    [frontierPoints, randomPortfolios, markers],
+    [frontierPoints, markers],
   )
   const { domain: yDomain, ticks: yTicks } = useMemo(
     () =>
       zoomedDomain(
-        [...frontierPoints.map(p => p.return_pct), ...randomPortfolios.map(p => p.return_pct)],
+        frontierPoints.map(p => p.return_pct),
         markers.map(m => m.return_pct),
         { pctlLow: 1, pctlHigh: 99, padFrac: 0.15, anchorZero: false },
       ),
-    [frontierPoints, randomPortfolios, markers],
+    [frontierPoints, markers],
   )
 
   // Recharts computes one "nearest point across all combined series" and stamps that single
