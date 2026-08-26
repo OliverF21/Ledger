@@ -66,18 +66,17 @@ export default function Sidebar({ activeScreen, onScreenChange, onSignOut, advis
               key={item.id}
               {...(item.id === 'settings' ? { 'data-nav-settings': true } : {})}
               onClick={() => onScreenChange(item.id)}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm relative transition-all ${
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-chip text-sm relative ${
                 isActive
-                  ? 'bg-ledger-inset text-ledger-text-heading font-semibold'
-                  : 'text-ledger-text-muted font-medium hover:bg-[#121519] hover:text-[#cfd3da]'
+                  ? 'bg-ledger-accent-soft text-ledger-text-heading font-semibold'
+                  : 'text-ledger-text-muted font-medium hover:bg-white/[0.055] hover:text-ledger-text-primary'
               }`}
             >
               {isActive && (
                 <div className="absolute -left-4 top-2 bottom-2 w-1 bg-ledger-accent rounded-r" />
               )}
               <Icon
-                className="w-[17px] h-[17px] flex-shrink-0"
-                style={isActive ? { color: '#5b8def' } : undefined}
+                className={`w-[17px] h-[17px] flex-shrink-0 ${isActive ? 'text-ledger-accent' : ''}`}
                 strokeWidth={2}
               />
               <span>{item.label}</span>
@@ -92,8 +91,10 @@ export default function Sidebar({ activeScreen, onScreenChange, onSignOut, advis
       </nav>
 
       <div className="mt-auto pt-[18px]">
-        <div className="glass-card px-[14px] py-[12px]">
-          <div className="text-[10px] uppercase tracking-widest text-ledger-text-faintest mb-[10px]">
+        {/* Translucent rather than the opaque panel fill: this sits inside the
+            sidebar's glass, so a solid block would read as a foreign object. */}
+        <div className="px-[14px] py-[12px] rounded-well border border-white/[0.07] bg-white/[0.035]">
+          <div className="metric-label mb-[10px]">
             Linked accounts
           </div>
           <div className="flex flex-col gap-[8px]">
@@ -118,7 +119,7 @@ export default function Sidebar({ activeScreen, onScreenChange, onSignOut, advis
         {onSignOut && (
           <button
             onClick={onSignOut}
-            className="mt-[10px] w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-ledger-text-muted font-medium hover:bg-[#121519] hover:text-[#cfd3da] transition-all"
+            className="mt-[10px] w-full flex items-center gap-2.5 px-3 py-2 rounded-chip text-sm text-ledger-text-muted font-medium hover:bg-white/[0.055] hover:text-ledger-text-primary"
           >
             <LogOut className="w-[17px] h-[17px] flex-shrink-0" strokeWidth={2} />
             <span>Sign out</span>

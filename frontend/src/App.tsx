@@ -17,6 +17,7 @@ import { useAccounts } from './hooks/useAccounts'
 import { useStartupSync } from './hooks/useSync'
 import { apiFetch, getToken, clearToken } from './api/client'
 import { getPlaidConfig } from './api/plaidConfig'
+import { CATEGORY_PALETTE } from './utils/chartTheme'
 
 type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
 
@@ -29,7 +30,7 @@ function BootLoader() {
         className="w-[92px] h-[92px] rounded-full"
         style={{
           animation: 'ledger-ring-spin 2.4s linear infinite',
-          background: 'conic-gradient(from 0deg, #5b8def, #4fc4c4, #8a7df0, #4ec38a, #d9a85b, #e7705f, #f0a87d, #7fb0ff, #5b8def)',
+          background: `conic-gradient(from 0deg, ${[...CATEGORY_PALETTE.slice(0, 8), CATEGORY_PALETTE[0]].join(', ')})`,
           WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
           mask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
         }}

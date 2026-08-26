@@ -45,7 +45,7 @@ export default function Header({ title, subtitle, name }: HeaderProps) {
             const settingsNav = document.querySelector('[data-nav-settings]') as HTMLButtonElement
             if (settingsNav) settingsNav.click()
           }}
-          className="flex items-center gap-1.5 glass-chip text-ledger-text-primary px-3.5 py-2 font-semibold text-sm cursor-pointer hover:brightness-110 transition-all"
+          className="flex items-center gap-1.5 glass-chip text-ledger-text-primary px-3.5 py-2 font-semibold text-sm cursor-pointer"
         >
           Link Account
         </button>
@@ -53,7 +53,7 @@ export default function Header({ title, subtitle, name }: HeaderProps) {
         <button
           onClick={handleSync}
           disabled={isSyncing}
-          className="flex items-center gap-1.5 bg-ledger-accent text-ledger-accent-on border-none rounded-lg px-3.5 py-2 font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 bg-ledger-accent text-ledger-accent-on border-none rounded-chip px-3.5 py-2 font-semibold text-sm cursor-pointer hover:bg-ledger-accent-hover active:bg-ledger-accent-press active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw
             className={`w-4 h-4 flex-shrink-0 ${isSyncing ? 'animate-spin' : ''}`}
@@ -67,7 +67,7 @@ export default function Header({ title, subtitle, name }: HeaderProps) {
             const settingsNav = document.querySelector('[data-nav-settings]') as HTMLButtonElement
             if (settingsNav) settingsNav.click()
           }}
-          className="w-9 h-9 rounded-full bg-gradient-to-br from-[#3a4252] to-[#222632] flex items-center justify-center text-sm font-bold text-[#cdd2da] hover:opacity-80 transition-opacity cursor-pointer"
+          className="w-9 h-9 rounded-full bg-ledger-card-alt border border-ledger-border-input flex items-center justify-center text-sm font-bold text-ledger-text-secondary hover:bg-ledger-hover hover:text-ledger-text-primary cursor-pointer"
         >
           {initials(name)}
         </button>

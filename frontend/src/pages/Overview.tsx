@@ -8,6 +8,14 @@ import AlertsPanel from '../components/AlertsPanel'
 import { formatCategory, formatTransactionCategory, transactionDisplayIcon } from '../utils/categories'
 import { getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl, getMonthFromUrl, formatMonthLabel } from '../utils/months'
 import { alphaColor, mixHex } from '../utils/color'
+import {
+  CHART_ACCENT,
+  CHART_SURFACE,
+  GRID_STROKE,
+  tooltipItemStyle,
+  tooltipLabelStyle,
+  tooltipStyle,
+} from '../utils/chartTheme'
 import { groupAssetAccounts, type AssetGroup, type AssetAccount } from '../utils/accountGroups'
 
 function fmt(n: number) {
@@ -440,19 +448,21 @@ export default function Overview({ onNavigate }: OverviewProps) {
                 <AreaChart data={nwData.snapshots.map(s => ({ date: s.date, value: s.total }))}>
                   <defs>
                     <linearGradient id="colorNetWorth" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#5b8def" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#5b8def" stopOpacity={0} />
+                      <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.3} />
+                      <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="0" stroke="#0d0f14" horizontal={false} vertical={false} />
+                  <CartesianGrid strokeDasharray="0" stroke={GRID_STROKE} horizontal={false} vertical={false} />
                   <XAxis dataKey="date" hide />
                   <YAxis hide domain={['auto', 'auto']} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px' }}
+                    contentStyle={tooltipStyle}
+                    labelStyle={tooltipLabelStyle}
+                    itemStyle={tooltipItemStyle}
                     formatter={(val: number) => [`$${fmt(val)}`, 'Net Worth']}
                     cursor={false}
                   />
-                  <Area type="monotone" dataKey="value" stroke="#5b8def" strokeWidth={2.5} fill="url(#colorNetWorth)" dot={nwData.snapshots.length === 1} />
+                  <Area type="monotone" dataKey="value" stroke={CHART_ACCENT} strokeWidth={2.5} fill="url(#colorNetWorth)" dot={nwData.snapshots.length === 1} />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
@@ -574,7 +584,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
                         >
                           <stop offset="0%" stopColor={mixHex(entry.color, '#ffffff', 0.22)} stopOpacity={0.98} />
                           <stop offset="48%" stopColor={entry.color} stopOpacity={0.94} />
-                          <stop offset="100%" stopColor={mixHex(entry.color, '#0d0f14', 0.12)} stopOpacity={0.88} />
+                          <stop offset="100%" stopColor={mixHex(entry.color, CHART_SURFACE.bg, 0.12)} stopOpacity={0.88} />
                         </radialGradient>
                       ))}
                     </defs>
@@ -713,7 +723,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
       <div className="grid grid-cols-[2fr_1fr] gap-3 items-stretch min-w-0 flex-1 min-h-0">
         {/* Left: KPIs + recent transactions */}
         <div className="glass-card overflow-hidden flex flex-col min-h-0 min-w-0 h-full">
-          <div className={`px-4 pt-3.5 pb-3 border-b border-white/10 transition-opacity duration-200 shrink-0 ${loading ? 'opacity-80' : 'opacity-100'}`}>
+          <div className={`px-4 pt-3.5 pb-3 border-b border-ledger-border-subtle transition-opacity duration-200 shrink-0 ${loading ? 'opacity-80' : 'opacity-100'}`}>
             <div className="flex items-center justify-between mb-2.5">
               <div className="text-[13px] font-semibold">
                 Monthly overview
@@ -777,20 +787,20 @@ export default function Overview({ onNavigate }: OverviewProps) {
             ) : (
               <div className={`flex flex-col flex-1 transition-opacity duration-200 ${recentLoading ? 'opacity-80' : 'opacity-100'}`}>
                 {recentTxns.map(txn => (
-                <div key={txn.id} className="flex items-center gap-2.5 px-4 py-[7px] border-t border-white/10 flex-1 min-h-[44px]">
+                <div key={txn.id} className="flex items-center gap-2.5 px-4 py-[7px] border-t border-ledger-border-subtle flex-1 min-h-[44px]">
                   {transactionDisplayIcon(txn) ? (
                     <img
                       src={transactionDisplayIcon(txn)!}
                       alt=""
-                      className="w-[26px] h-[26px] rounded-[7px] shrink-0 bg-ledger-inset object-contain"
+                      className="w-[26px] h-[26px] rounded-chip shrink-0 bg-ledger-inset object-contain"
                     />
                   ) : (
                     <div
-                      className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[10.5px] font-bold flex-shrink-0"
-                      style={{
-                        backgroundColor: txn.amount < 0 ? '#0f2a52' : '#1a1e27',
-                        color: txn.amount < 0 ? '#7fb0ff' : '#aeb4bf',
-                      }}
+                      className={`w-[26px] h-[26px] rounded-chip flex items-center justify-center text-[10.5px] font-bold flex-shrink-0 ${
+                        txn.amount < 0
+                          ? 'bg-ledger-accent-soft text-ledger-accent-text'
+                          : 'bg-ledger-inset text-ledger-text-muted'
+                      }`}
                     >
                       {txnInitials(txn.merchant, txn.amount)}
                     </div>
@@ -802,18 +812,18 @@ export default function Overview({ onNavigate }: OverviewProps) {
                     </div>
                   </div>
                   <span
-                    className="text-[10px] px-[6px] py-[1px] rounded-[5px] whitespace-nowrap"
-                    style={{
-                      backgroundColor: txn.amount < 0 ? 'rgba(78,195,138,0.1)' : '#161a21',
-                      color: txn.amount < 0 ? '#4ec38a' : '#9aa0ad',
-                      border: txn.amount < 0 ? '1px solid rgba(78,195,138,0.25)' : '1px solid #232834',
-                    }}
+                    className={`text-[10px] px-[6px] py-[1px] rounded-[5px] whitespace-nowrap border ${
+                      txn.amount < 0
+                        ? 'bg-ledger-positive-soft text-ledger-positive border-ledger-positive-border'
+                        : 'bg-ledger-inset text-ledger-text-muted border-ledger-border'
+                    }`}
                   >
                     {formatTransactionCategory(txn)}
                   </span>
                   <span
-                    className="text-[12.5px] font-semibold w-[70px] text-right tabular-nums flex-shrink-0"
-                    style={{ color: txn.amount < 0 ? '#4ec38a' : undefined }}
+                    className={`text-[12.5px] font-semibold w-[70px] text-right tabular-nums flex-shrink-0 ${
+                      txn.amount < 0 ? 'text-ledger-positive' : ''
+                    }`}
                   >
                     {txn.amount < 0 ? '+' : '−'}${Math.abs(txn.amount).toFixed(2)}
                   </span>
@@ -850,7 +860,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
             </div>
           ) : (
             <div className={`flex flex-col flex-1 min-h-0 transition-opacity duration-200 ${budgetLoading ? 'opacity-80' : 'opacity-100'}`}>
-              <div className="mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
+              <div className="mb-2.5 pb-2.5 border-b border-ledger-border-subtle shrink-0">
                 <div className="flex justify-between text-[12px] mb-1">
                   <span className="text-ledger-text-secondary">Total</span>
                   <span className="tabular-nums font-semibold">

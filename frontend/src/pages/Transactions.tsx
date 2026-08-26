@@ -525,14 +525,14 @@ export default function Transactions() {
                                 </button>
                                 <button
                                   onClick={() => setAction(null)}
-                                  className="p-[6px] rounded-[7px] text-ledger-text-faint hover:bg-white/10 transition-colors"
+                                  className="p-[6px] rounded-[7px] text-ledger-text-faint hover:bg-ledger-hover transition-colors"
                                 >
                                   <X className="w-[14px] h-[14px]" strokeWidth={2} />
                                 </button>
                               </div>
 
-                              <div className="rounded-[10px] border border-white/10 bg-black/10 overflow-hidden">
-                                <div className="px-[10px] py-[7px] text-[10px] uppercase tracking-[0.12em] text-ledger-text-faintest border-b border-white/10">
+                              <div className="rounded-[10px] border border-ledger-border bg-black/10 overflow-hidden">
+                                <div className="px-[10px] py-[7px] text-[10px] uppercase tracking-[0.12em] text-ledger-text-faintest border-b border-ledger-border-subtle">
                                   Categories
                                 </div>
                                 <CategoryPicker
@@ -648,7 +648,7 @@ export default function Transactions() {
               </div>
               <button
                 onClick={() => setAction(null)}
-                className="p-[6px] rounded-[8px] text-ledger-text-faint hover:bg-white/10 transition-colors"
+                className="p-[6px] rounded-[8px] text-ledger-text-faint hover:bg-ledger-hover transition-colors"
               >
                 <X className="w-[16px] h-[16px]" strokeWidth={2} />
               </button>

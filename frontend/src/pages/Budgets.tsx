@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, Sector, ResponsiveContainer } from 'recharts'
 import { apiFetch } from '../api/client'
 import { formatCategory } from '../utils/categories'
 import { getMonthOptions } from '../utils/months'
+import { CATEGORY_PALETTE, CHART_SURFACE, CHART_TEXT } from '../utils/chartTheme'
 
 interface BudgetItem {
   id: number
@@ -41,10 +42,7 @@ interface SuggestData {
   suggestions: Suggestion[]
 }
 
-const PALETTE = [
-  '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
-  '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
-]
+const PALETTE = CATEGORY_PALETTE
 
 interface SuggestPanelProps {
   month: string
@@ -52,7 +50,7 @@ interface SuggestPanelProps {
   onApplied: () => void
 }
 
-const UNALLOCATED_COLOR = '#2a2e38'
+const UNALLOCATED_COLOR = CHART_SURFACE.borderStrong
 
 function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
   const [data, setData] = useState<SuggestData | null>(null)
@@ -246,7 +244,7 @@ function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
                           className="w-[15px] h-[15px] rounded-[4px] border flex-shrink-0 flex items-center justify-center transition-colors"
                           style={{
                             backgroundColor: isSelected ? s.color : 'transparent',
-                            borderColor: isSelected ? s.color : '#3a4050',
+                            borderColor: isSelected ? s.color : CHART_SURFACE.borderStrong,
                           }}
                         >
                           {isSelected && (
@@ -288,7 +286,7 @@ function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
                             <div className="w-full h-[3px] rounded-full bg-ledger-track">
                               <div
                                 className="h-full rounded-full"
-                                style={{ width: `${sliderPct}%`, backgroundColor: isSelected ? s.color : '#374151' }}
+                                style={{ width: `${sliderPct}%`, backgroundColor: isSelected ? s.color : CHART_SURFACE.borderStrong }}
                               />
                             </div>
                           </div>
@@ -296,13 +294,13 @@ function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
                           {avgPct > 0 && (
                             <div
                               className="absolute top-[3px] bottom-[3px] w-[1.5px] rounded-full pointer-events-none"
-                              style={{ left: `${avgPct}%`, backgroundColor: '#4a5060' }}
+                              style={{ left: `${avgPct}%`, backgroundColor: CHART_TEXT.faintest }}
                             />
                           )}
                           {/* Thumb — only visible on hover */}
                           <div
                             className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[10px] h-[10px] rounded-full pointer-events-none opacity-0 group-hover/slider:opacity-100 transition-opacity duration-100"
-                            style={{ left: `${sliderPct}%`, backgroundColor: isSelected ? s.color : '#374151' }}
+                            style={{ left: `${sliderPct}%`, backgroundColor: isSelected ? s.color : CHART_SURFACE.borderStrong }}
                           />
                         </div>
                         {s.actual_avg > 0 && (

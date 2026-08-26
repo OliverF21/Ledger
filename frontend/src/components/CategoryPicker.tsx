@@ -143,7 +143,7 @@ export default function CategoryPicker({
       })}
 
       {filteredCustom.length > 0 && (
-        <div className="border-t border-white/10">
+        <div className="border-t border-ledger-border-subtle">
           <div className="px-[10px] py-[7px] text-[10px] uppercase tracking-[0.12em] text-ledger-text-faintest">
             Your categories
           </div>

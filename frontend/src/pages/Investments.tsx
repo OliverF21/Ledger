@@ -13,6 +13,16 @@ import {
 } from '../hooks/useInvestments'
 
 import { alphaColor, mixHex } from '../utils/color'
+import {
+  AXIS_STROKE,
+  CATEGORY_PALETTE,
+  CHART_ACCENT,
+  CHART_SURFACE,
+  GRID_STROKE,
+  tooltipItemStyle,
+  tooltipLabelStyle,
+  tooltipStyle,
+} from '../utils/chartTheme'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -34,10 +44,7 @@ function formatActivityDate(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-const ALLOCATION_PALETTE = [
-  '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
-  '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
-]
+const ALLOCATION_PALETTE = CATEGORY_PALETTE
 
 type AllocationView = 'type' | 'security'
 
@@ -180,21 +187,21 @@ export default function Investments() {
                 <AreaChart data={history.snapshots}>
                   <defs>
                     <linearGradient id="investmentHistoryFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#5b8def" stopOpacity={0.28} />
-                      <stop offset="100%" stopColor="#5b8def" stopOpacity={0} />
+                      <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.28} />
+                      <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="0" stroke="rgba(255,255,255,0.06)" horizontal={true} vertical={false} />
+                  <CartesianGrid strokeDasharray="0" stroke={GRID_STROKE} horizontal={true} vertical={false} />
                   <XAxis
                     dataKey="date"
-                    stroke="#5c626f"
+                    stroke={AXIS_STROKE}
                     axisLine={false}
                     tickLine={false}
                     style={{ fontSize: '12px' }}
                     tickFormatter={d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   />
                   <YAxis
-                    stroke="#5c626f"
+                    stroke={AXIS_STROKE}
                     axisLine={false}
                     tickLine={false}
                     style={{ fontSize: '12px' }}
@@ -202,11 +209,13 @@ export default function Investments() {
                     domain={['auto', 'auto']}
                   />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px' }}
+                    contentStyle={tooltipStyle}
+                    labelStyle={tooltipLabelStyle}
+                    itemStyle={tooltipItemStyle}
                     labelFormatter={d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     formatter={(val: number) => [`$${fmt(val)}`, 'Value']}
                   />
-                  <Area type="monotone" dataKey="total" stroke="#5b8def" strokeWidth={2.5} fill="url(#investmentHistoryFill)" dot={history.snapshots.length === 1} />
+                  <Area type="monotone" dataKey="total" stroke={CHART_ACCENT} strokeWidth={2.5} fill="url(#investmentHistoryFill)" dot={history.snapshots.length === 1} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -289,7 +298,7 @@ export default function Investments() {
                         >
                           <stop offset="0%" stopColor={mixHex(entry.color, '#ffffff', 0.22)} stopOpacity={0.98} />
                           <stop offset="48%" stopColor={entry.color} stopOpacity={0.94} />
-                          <stop offset="100%" stopColor={mixHex(entry.color, '#0d0f14', 0.12)} stopOpacity={0.88} />
+                          <stop offset="100%" stopColor={mixHex(entry.color, CHART_SURFACE.bg, 0.12)} stopOpacity={0.88} />
                         </radialGradient>
                       ))}
                     </defs>

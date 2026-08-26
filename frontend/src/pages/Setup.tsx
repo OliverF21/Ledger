@@ -163,7 +163,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 </p>
                 <button
                   onClick={() => { window.location.hash = ''; setStep('welcome') }}
-                  className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors"
+                  className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors"
                 >
                   Back to Welcome
                 </button>
@@ -274,7 +274,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={goToImport}
                   disabled={byokSaving}
-                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
                 >
                   Skip for now
                 </button>
@@ -347,7 +347,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
               <button
                 onClick={handleTest}
                 disabled={testing}
-                className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
               >
                 {testing ? 'Testing…' : 'Test connection'}
               </button>
@@ -356,7 +356,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={handleSkip}
                   disabled={skipping || saving}
-                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
                 >
                   {skipping ? 'Please wait…' : 'Skip for now'}
                 </button>

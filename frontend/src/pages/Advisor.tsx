@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Sparkles, Check, X, Undo2, AlertCircle, Copy, KeyRound, RefreshCw } from 'lucide-react'
 import type { useProposals } from '../hooks/useAdvisor'
 import { getAdvisorConfig, generateAdvisorKey, type AdvisorConfig } from '../api/plaidConfig'
+import { CHART_POSITIVE, CHART_TEXT, CHART_WARNING } from '../utils/chartTheme'
 
 interface AdvisorProps {
   advisor: ReturnType<typeof useProposals>
@@ -21,11 +22,11 @@ function deepLinkedId(): number | null {
 }
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
-  applied: { label: 'Applied', color: '#4ec38a' },
-  dismissed: { label: 'Dismissed', color: '#9096a0' },
-  undone: { label: 'Undone', color: '#d9a85b' },
-  expired: { label: 'Expired', color: '#7a808c' },
-  superseded: { label: 'Superseded', color: '#7a808c' },
+  applied: { label: 'Applied', color: CHART_POSITIVE },
+  dismissed: { label: 'Dismissed', color: CHART_TEXT.faint },
+  undone: { label: 'Undone', color: CHART_WARNING },
+  expired: { label: 'Expired', color: CHART_TEXT.faintest },
+  superseded: { label: 'Superseded', color: CHART_TEXT.faintest },
 }
 
 function fmtWhen(iso: string | null): string {
@@ -296,7 +297,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
         <div className="flex flex-col gap-[10px]">
           <div className="text-[11px] uppercase tracking-widest text-ledger-text-faintest">History</div>
           {history.map(p => {
-            const meta = STATUS_META[p.status] ?? { label: p.status, color: '#7a808c' }
+            const meta = STATUS_META[p.status] ?? { label: p.status, color: CHART_TEXT.faintest }
             return (
               <div key={p.id} className="glass-card p-[14px] flex items-center gap-[12px]">
                 <span

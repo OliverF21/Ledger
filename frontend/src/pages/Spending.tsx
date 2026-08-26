@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { apiFetch } from '../api/client'
+import { CHART_POSITIVE, CHART_TEXT } from '../utils/chartTheme'
 import { formatCategory } from '../utils/categories'
 import { useOnSyncComplete } from '../hooks/useSync'
 import { getMonthOptions } from '../utils/months'
@@ -26,6 +27,10 @@ interface CashFlowData {
 }
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
+
+// Label colour for a node the pointer has dimmed. Dark enough to recede, light
+// enough that the row is still locatable.
+const SANKEY_DIMMED = '#2b3242'
 
 const NODE_W    = 20   // width of income-source / expense bars
 const TUNNEL_W  = 40   // width of the center income tunnel
@@ -138,7 +143,7 @@ function stackIncomeBands(
 
 const INVESTMENTS_NODE_ID = 'Investments'
 const SAVINGS_NODE_ID = '__savings__'
-const SAVINGS_COLOR = '#4ec38a'
+const SAVINGS_COLOR = CHART_POSITIVE
 
 function isAllocationNode(id: string): boolean {
   return id === SAVINGS_NODE_ID || id === INVESTMENTS_NODE_ID
@@ -307,20 +312,20 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
         <>
           <text x={labelX} y={n.labelCy - 6}
             textAnchor={textAnchor} fontSize={13}
-            fill={nodeVis(n.id) ? '#d4dae4' : '#2a3040'}
+            fill={nodeVis(n.id) ? CHART_TEXT.secondary : SANKEY_DIMMED}
             fontWeight={nodeVis(n.id) ? 500 : 400}
             style={{ transition: 'fill 0.15s', userSelect: 'none', pointerEvents: 'none' }}
           >{label}</text>
           <text x={labelX} y={n.labelCy + 11}
             textAnchor={textAnchor} fontSize={12}
-            fill={nodeVis(n.id) ? amountClass : '#2a3040'}
+            fill={nodeVis(n.id) ? amountClass : SANKEY_DIMMED}
             style={{ transition: 'fill 0.15s', userSelect: 'none', pointerEvents: 'none' }}
           >{amountPrefix}${fmt(n.amount)}</text>
         </>
       ) : (
         <text x={labelX} y={n.labelCy + 4}
           textAnchor={textAnchor} fontSize={11}
-          fill={nodeVis(n.id) ? '#d4dae4' : '#2a3040'}
+          fill={nodeVis(n.id) ? CHART_TEXT.secondary : SANKEY_DIMMED}
           style={{ userSelect: 'none', pointerEvents: 'none' }}
         >{formatLabel(n)}</text>
       )}
@@ -448,8 +453,8 @@ export default function Spending() {
             <svg width={svgW} height={SVG_H} style={{ display: 'block', overflow: 'visible' }}>
               <defs>
                 <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#4a6fa5" stopOpacity="0.95" />
-                  <stop offset="100%" stopColor="#1e2d45" stopOpacity="0.95" />
+                  <stop offset="0%"   stopColor="#4b74b4" stopOpacity="0.95" />
+                  <stop offset="100%" stopColor="#1d2c46" stopOpacity="0.95" />
                 </linearGradient>
               </defs>
 
@@ -490,12 +495,12 @@ export default function Spending() {
                 />
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY - 6}
-                  textAnchor="middle" fontSize={10} fill="#6a7a94" letterSpacing="0.10em"
+                  textAnchor="middle" fontSize={10} fill={CHART_TEXT.faintest} letterSpacing="0.10em"
                   style={{ userSelect: 'none' }}
                 >INCOME</text>
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY + layout.tunnelH + 14}
-                  textAnchor="middle" fontSize={11} fill="#6a7a94"
+                  textAnchor="middle" fontSize={11} fill={CHART_TEXT.faintest}
                   style={{ userSelect: 'none' }}
                 >${fmt(data!.total_income)}</text>
               </g>
@@ -510,7 +515,7 @@ export default function Spending() {
                   nodeVis={nodeVis}
                   formatLabel={n => formatCategory(n.label)}
                   amountPrefix="+"
-                  amountClass="#4ec38a"
+                  amountClass={CHART_POSITIVE}
                   onHover={setHovered}
                 />
               ))}
@@ -525,7 +530,7 @@ export default function Spending() {
                   nodeVis={nodeVis}
                   formatLabel={n => n.id === SAVINGS_NODE_ID ? 'Savings' : formatCategory(n.label)}
                   amountPrefix=""
-                  amountClass={isAllocationNode(n.id) ? (n.id === SAVINGS_NODE_ID ? SAVINGS_COLOR : n.color) : '#9aa2b2'}
+                  amountClass={isAllocationNode(n.id) ? (n.id === SAVINGS_NODE_ID ? SAVINGS_COLOR : n.color) : CHART_TEXT.muted}
                   onHover={setHovered}
                 />
               ))}

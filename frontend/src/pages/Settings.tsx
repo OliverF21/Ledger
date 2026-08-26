@@ -979,7 +979,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                 type="button"
                 onClick={handleSaveAlchemyKey}
                 disabled={savingAlchemyKey}
-                className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
               >
                 {savingAlchemyKey ? 'Saving…' : 'Save Alchemy key'}
               </button>
@@ -1188,7 +1188,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                   <button
                     onClick={handleTestPlaidConfig}
                     disabled={plaidTesting}
-                    className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                    className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
                   >
                     {plaidTesting ? 'Testing…' : 'Test connection'}
                   </button>
@@ -1356,7 +1356,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
             ) : (
               <button
                 onClick={() => { setShowRuleForm(true); setRuleSuccess(null) }}
-                className="w-full glass-chip px-[12px] py-[8px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors"
+                className="w-full glass-chip px-[12px] py-[8px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors"
               >
                 + New rule
               </button>
@@ -1373,7 +1373,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                   <span className="text-[13px]">Budget exceeded</span>
                   <button
                     onClick={handleToggleBudgetExceeded}
-                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${budgetExceededEnabled ? 'bg-ledger-accent' : 'bg-[#23262f]'}`}
+                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${budgetExceededEnabled ? 'bg-ledger-accent' : 'bg-ledger-track'}`}
                   >
                     <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${budgetExceededEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
                   </button>
@@ -1389,14 +1389,14 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                           setLargeTxnError(null)
                           setShowLargeTxnModal(true)
                         }}
-                        className="glass-chip px-[10px] py-[5px] rounded-[7px] text-[11.5px] font-medium text-ledger-text-primary hover:bg-[#161a21] transition-colors"
+                        className="glass-chip px-[10px] py-[5px] rounded-[7px] text-[11.5px] font-medium text-ledger-text-primary hover:bg-ledger-hover transition-colors"
                       >
                         {formatLargeTxnThreshold(largeTxnThreshold)}
                       </button>
                     )}
                     <button
                       onClick={handleToggleLargeTxn}
-                      className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${largeTxnEnabled ? 'bg-ledger-accent' : 'bg-[#23262f]'}`}
+                      className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${largeTxnEnabled ? 'bg-ledger-accent' : 'bg-ledger-track'}`}
                     >
                       <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${largeTxnEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
                     </button>
@@ -1405,7 +1405,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
                 <div className="flex items-center justify-between opacity-40">
                   <span className="text-[13px]">Webhook <span className="text-[11px] text-ledger-text-faint">(Coming soon)</span></span>
-                  <div className="w-[40px] h-[23px] bg-[#23262f] rounded-full relative cursor-not-allowed">
+                  <div className="w-[40px] h-[23px] bg-ledger-track rounded-full relative cursor-not-allowed">
                     <div className="w-[17px] h-[17px] bg-ledger-text-faint rounded-full absolute left-[3px] top-[3px]" />
                   </div>
                 </div>
@@ -1429,14 +1429,14 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                         setWeeklyEmailError(null)
                         setShowWeeklyEmailModal(true)
                       }}
-                      className="glass-chip px-[10px] py-[5px] rounded-[7px] text-[11.5px] font-medium text-ledger-text-primary hover:bg-[#161a21] transition-colors"
+                      className="glass-chip px-[10px] py-[5px] rounded-[7px] text-[11.5px] font-medium text-ledger-text-primary hover:bg-ledger-hover transition-colors"
                     >
                       {weeklyEmailAddress}
                     </button>
                   )}
                   <button
                     onClick={handleToggleWeeklyEmail}
-                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${weeklyEmailEnabled ? 'bg-ledger-accent' : 'bg-[#23262f]'}`}
+                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${weeklyEmailEnabled ? 'bg-ledger-accent' : 'bg-ledger-track'}`}
                   >
                     <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${weeklyEmailEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
                   </button>
@@ -1478,7 +1478,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                 <button
                   onClick={handleSaveResendConfig}
                   disabled={savingResendKey}
-                  className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                  className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
                 >
                   {savingResendKey ? 'Saving…' : 'Save Resend config'}
                 </button>
@@ -1489,7 +1489,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                   <button
                     onClick={handleSendTestEmail}
                     disabled={sendingTestEmail}
-                    className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                    className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
                   >
                     {sendingTestEmail ? 'Sending…' : 'Send test email now'}
                   </button>
@@ -1668,7 +1668,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
           <div className="flex flex-col gap-[12px] sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-[8px] text-[13px] font-semibold text-ledger-text-primary">
-                <span className="flex h-[28px] w-[28px] items-center justify-center rounded-[9px] bg-white/10">
+                <span className="flex h-[28px] w-[28px] items-center justify-center rounded-chip bg-ledger-inset">
                   <Heart className="h-[14px] w-[14px] text-ledger-accent" strokeWidth={2.2} />
                 </span>
                 Support Ledger
@@ -1742,7 +1742,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               <button
                 onClick={closeLargeTxnModal}
                 disabled={savingLargeTxn}
-                className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1803,7 +1803,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               <button
                 onClick={closeWeeklyEmailModal}
                 disabled={savingWeeklyEmail}
-                className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>

@@ -6,6 +6,16 @@ import {
 import { TrendingUp, TrendingDown, X } from 'lucide-react'
 import { apiFetch } from '../api/client'
 import { formatCategory } from '../utils/categories'
+import {
+  AXIS_STROKE,
+  CHART_ACCENT,
+  CHART_POSITIVE,
+  CHART_TEXT,
+  GRID_STROKE,
+  tooltipItemStyle,
+  tooltipLabelStyle,
+  tooltipStyle,
+} from '../utils/chartTheme'
 
 interface TrendMonth {
   month_key: string
@@ -224,11 +234,13 @@ export default function Trends() {
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} barCategoryGap="28%">
-                <CartesianGrid strokeDasharray="0" stroke="rgba(255,255,255,0.07)" horizontal={true} vertical={false} />
-                <XAxis dataKey="label" stroke="#5c626f" style={{ fontSize: '12px' }} tickLine={false} />
-                <YAxis stroke="#5c626f" style={{ fontSize: '12px' }} tickFormatter={v => `$${fmt(v)}`} tickLine={false} axisLine={false} />
+                <CartesianGrid strokeDasharray="0" stroke={GRID_STROKE} horizontal={true} vertical={false} />
+                <XAxis dataKey="label" stroke={AXIS_STROKE} style={{ fontSize: '12px' }} tickLine={false} />
+                <YAxis stroke={AXIS_STROKE} style={{ fontSize: '12px' }} tickFormatter={v => `$${fmt(v)}`} tickLine={false} axisLine={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px' }}
+                  contentStyle={tooltipStyle}
+                  labelStyle={tooltipLabelStyle}
+                  itemStyle={tooltipItemStyle}
                   labelFormatter={(_, payload) => {
                     const p = payload?.[0]?.payload
                     return p ? `${p.fullLabel}${p.isPartial ? ' · in progress' : ''}` : ''
@@ -238,23 +250,23 @@ export default function Trends() {
                 {!focused && (
                   <Legend
                     formatter={(v: string) => (
-                      <span style={{ color: 'rgba(255,255,255,0.66)', fontSize: '12px' }}>
+                      <span style={{ color: CHART_TEXT.muted, fontSize: '12px' }}>
                         {v === 'spending' ? 'Spending' : 'Income'}
                       </span>
                     )}
                   />
                 )}
-                <Bar dataKey="spending" fill={focused ? focused.color : '#5b8def'} radius={[4, 4, 0, 0]} maxBarSize={44}>
+                <Bar dataKey="spending" fill={focused ? focused.color : CHART_ACCENT} radius={[4, 4, 0, 0]} maxBarSize={44}>
                   {chartData.map((entry, i) => (
                     <Cell
                       key={i}
-                      fill={focused ? focused.color : '#5b8def'}
+                      fill={focused ? focused.color : CHART_ACCENT}
                       fillOpacity={entry.isPartial ? 0.4 : 0.9}
                     />
                   ))}
                 </Bar>
                 {!focused && (
-                  <Line type="monotone" dataKey="income" stroke="#4ec38a" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="income" stroke={CHART_POSITIVE} strokeWidth={2} dot={false} />
                 )}
               </ComposedChart>
             </ResponsiveContainer>
