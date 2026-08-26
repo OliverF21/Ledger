@@ -19,7 +19,7 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.models import Account, Base, Holding, Item, MarketPrice, Security, User  # noqa: E402
-from app.services.optimization_service import build_optimization_suggestion  # noqa: E402
+from app.services.optimization_service import _periods_per_year, build_optimization_suggestion  # noqa: E402
 
 
 @pytest.fixture
@@ -139,3 +139,55 @@ def test_optimization_insufficient_data_with_fewer_than_two_tickers(db_session):
     data = build_optimization_suggestion(db_session, lookback_days=90)
     assert data.insufficient_data is True
     assert data.tickers == []
+
+
+def test_optimization_annualizes_weekday_prices_by_calendar_span(db_session):
+    """yfinance-like weekday prices must not be annualized as if 365 obs/year."""
+
+    item = Item(user_id=1, item_id="item-1", access_token_encrypted="x")
+    db_session.add(item)
+    db_session.flush()
+    account = Account(
+        item_id=item.id, plaid_account_id="acc-1", name="Brokerage",
+        type="investment", current_balance=Decimal("2000"),
+    )
+    db_session.add(account)
+    db_session.flush()
+    sec_a = Security(plaid_security_id="sec-A", ticker_symbol="TICKA", type="equity")
+    sec_b = Security(plaid_security_id="sec-B", ticker_symbol="TICKB", type="equity")
+    db_session.add_all([sec_a, sec_b])
+    db_session.flush()
+    db_session.add(Holding(
+        account_id=account.id, security_id=sec_a.id, quantity=Decimal("10"),
+        institution_price=Decimal("100"), institution_value=Decimal("1000"),
+    ))
+    db_session.add(Holding(
+        account_id=account.id, security_id=sec_b.id, quantity=Decimal("10"),
+        institution_price=Decimal("100"), institution_value=Decimal("1000"),
+    ))
+
+    start = date.today() - timedelta(days=364)
+    a = b = 100.0
+    dates = []
+    for i in range(365):
+        day = start + timedelta(days=i)
+        if day.weekday() >= 5:
+            continue
+        dates.append(day)
+        db_session.add(MarketPrice(ticker="TICKA", price_date=day, close_price=Decimal(str(round(a, 6)))))
+        db_session.add(MarketPrice(ticker="TICKB", price_date=day, close_price=Decimal(str(round(b, 6)))))
+        a *= 1.0004
+        b *= 1.0002
+    db_session.commit()
+
+    k = _periods_per_year(dates)
+    assert k == pytest.approx(252, abs=20)
+
+    data = build_optimization_suggestion(db_session, lookback_days=365)
+    assert not data.insufficient_data
+    # Equal-weight expected return ≈ mean daily * k, not * 365.
+    mean_daily_port = 0.5 * 0.0004 + 0.5 * 0.0002
+    expected_ret = mean_daily_port * k * 100
+    inflated_ret = mean_daily_port * 365 * 100
+    assert data.current_expected_return_pct == pytest.approx(expected_ret, abs=0.15)
+    assert abs(inflated_ret - expected_ret) > 1.0

@@ -456,14 +456,14 @@ export default function Investments() {
 
           <div className="grid grid-cols-2 gap-2.5 mb-3">
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return</div>
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return (period)</div>
               <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.twr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance, excludes deposit/withdrawal timing</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance over the observed span — excludes deposit/withdrawal timing. CAGR above is this annualized.</div>
             </div>
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR)</div>
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR, annualized)</div>
               <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.mwr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, includes your deposit/withdrawal timing</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, including deposit/withdrawal timing. Same annualization as CAGR.</div>
             </div>
           </div>
 

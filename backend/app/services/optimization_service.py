@@ -23,7 +23,11 @@ from app.services.investment_service import (
     scaled_holding_market_value,
 )
 
-TRADING_DAYS_PER_YEAR = 365
+# Calendar days in the annualization year — same convention as XIRR/CAGR.
+# Observation frequency is *not* assumed to be 365: yfinance MarketPrice rows
+# are trading days (~252/year). `_periods_per_year` scales by the actual
+# sampling of the price matrix so weekend gaps don't inflate μ and σ.
+CALENDAR_DAYS_PER_YEAR = 365
 MIN_LOOKBACK_ROWS = 30
 
 
@@ -131,11 +135,31 @@ def _current_weights(db: Session, account_ids: list[int], tickers: list[str]) ->
     return {t: v / total * 100 for t, v in value_by_ticker.items()}
 
 
+def _periods_per_year(dates: list[date]) -> float:
+    """Annualization factor from the price matrix's actual sampling frequency.
+
+    `n_returns / (span_days / 365)` is ~365 for daily calendar snapshots and
+    ~252 for weekday-only yfinance closes. Hard-coding 365 on trading-day
+    prices overstated expected return by ~365/252 and vol by sqrt of that,
+    which also shifts max-Sharpe weights when the risk-free rate is nonzero.
+    """
+    if len(dates) < 2:
+        return float(CALENDAR_DAYS_PER_YEAR)
+    span_days = (dates[-1] - dates[0]).days
+    if span_days <= 0:
+        return float(CALENDAR_DAYS_PER_YEAR)
+    return (len(dates) - 1) / (span_days / CALENDAR_DAYS_PER_YEAR)
+
+
 def _portfolio_stats(
-    weights: np.ndarray, mean_returns: np.ndarray, cov: np.ndarray, risk_free_rate_pct: float
+    weights: np.ndarray,
+    mean_returns: np.ndarray,
+    cov: np.ndarray,
+    risk_free_rate_pct: float,
+    periods_per_year: float,
 ) -> tuple[float, float, float | None]:
-    expected_return = float(np.dot(weights, mean_returns)) * TRADING_DAYS_PER_YEAR
-    volatility = float(np.sqrt(weights @ cov @ weights)) * np.sqrt(TRADING_DAYS_PER_YEAR)
+    expected_return = float(np.dot(weights, mean_returns)) * periods_per_year
+    volatility = float(np.sqrt(weights @ cov @ weights)) * np.sqrt(periods_per_year)
     sharpe = (expected_return - risk_free_rate_pct / 100) / volatility if volatility > 0 else None
     return expected_return * 100, volatility * 100, sharpe
 
@@ -161,18 +185,23 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
 
     returns = prices[1:] / prices[:-1] - 1
     mean_returns = returns.mean(axis=0)
-    cov = np.cov(returns, rowvar=False)
+    # Sample covariance (ddof=1), matching risk_service beta. numpy's default
+    # ddof=0 slightly understates variance and inflates Sharpe.
+    cov = np.cov(returns, rowvar=False, ddof=1)
+    periods_per_year = _periods_per_year(dates)
     risk_free_rate_pct = get_cached_risk_free_rate(db)
 
     current_weights_pct = _current_weights(db, account_ids, tickers)
     current_weights = np.array([current_weights_pct[t] / 100 for t in tickers])
-    current_return, current_vol, current_sharpe = _portfolio_stats(current_weights, mean_returns, cov, risk_free_rate_pct)
+    current_return, current_vol, current_sharpe = _portfolio_stats(
+        current_weights, mean_returns, cov, risk_free_rate_pct, periods_per_year
+    )
 
     n = len(tickers)
 
     def neg_sharpe(weights: np.ndarray) -> float:
-        ret = np.dot(weights, mean_returns) * TRADING_DAYS_PER_YEAR
-        vol = np.sqrt(weights @ cov @ weights) * np.sqrt(TRADING_DAYS_PER_YEAR)
+        ret = np.dot(weights, mean_returns) * periods_per_year
+        vol = np.sqrt(weights @ cov @ weights) * np.sqrt(periods_per_year)
         if vol == 0:
             return 0.0
         return -(ret - risk_free_rate_pct / 100) / vol
@@ -183,7 +212,9 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = 365) -> O
 
     result = minimize(neg_sharpe, initial, method="SLSQP", bounds=bounds, constraints=constraints)
     suggested_weights = result.x if result.success else initial
-    suggested_return, suggested_vol, suggested_sharpe = _portfolio_stats(suggested_weights, mean_returns, cov, risk_free_rate_pct)
+    suggested_return, suggested_vol, suggested_sharpe = _portfolio_stats(
+        suggested_weights, mean_returns, cov, risk_free_rate_pct, periods_per_year
+    )
 
     ticker_weights = [
         TickerWeight(
