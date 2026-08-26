@@ -15,6 +15,7 @@ import { useSync } from '../hooks/useSync'
 import PlaidLink, { PlaidUpdateButton } from '../components/PlaidLink'
 import InstitutionAvatar from '../components/InstitutionAvatar'
 import { PLAID_CATEGORY_LABELS } from '../utils/plaidCategories'
+import { formatCategory } from '../utils/categories'
 
 interface RuleItem {
   id: number
@@ -1299,11 +1300,11 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
                       <div className="mt-[10px] flex items-center justify-between gap-[10px]">
                         <span className="metric-label">Category</span>
-                        <span className="flex items-center gap-[6px] text-[11px] glass-chip px-[8px] py-[4px] rounded-[6px] text-ledger-text-primary font-medium shrink-0">
+                        <span className="flex items-center gap-[6px] text-[11px] bg-ledger-inset border border-ledger-border px-[8px] py-[4px] rounded-[6px] text-ledger-text-primary font-medium shrink-0">
                           {rule.category_color && (
                             <span className="w-[7px] h-[7px] rounded-[2px]" style={{ backgroundColor: rule.category_color }} />
                           )}
-                          {rule.category_name}
+                          {formatCategory(rule.category_name)}
                         </span>
                       </div>
                     </div>
