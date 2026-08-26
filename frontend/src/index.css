@@ -237,6 +237,15 @@ summary,
     border-bottom: 1px solid #1f242e;
   }
 
+  /* Recessed area inside a panel: grouped metrics, read-only figures, wells.
+     Steps down from the panel fill and carries a control-weight border, so it
+     reads as machined into the panel rather than floating on it. */
+  .inset-panel {
+    background: #0d1015;
+    border: 1px solid #262c37;
+    border-radius: 10px;
+  }
+
   /* Small-caps label used for metric names. Defined once so the treatment
      cannot drift page to page. */
   .metric-label {

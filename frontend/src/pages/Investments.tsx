@@ -111,6 +111,7 @@ export default function Investments() {
   }
 
   const hasAccounts = !loading && summary && summary.account_count > 0
+  const latestValue = history?.snapshots[history.snapshots.length - 1]?.total ?? summary?.total_value ?? 0
 
   if (!loading && (!summary || summary.account_count === 0)) {
     return (
@@ -128,17 +129,31 @@ export default function Investments() {
       {/* Portfolio value over time + allocation */}
       <div className="grid grid-cols-[1.85fr_1.15fr] gap-3 items-stretch">
         <div className="glass-card p-4">
-          <div className="flex items-start justify-between mb-2.5">
-            <div>
-              <div className="text-[13px] font-semibold">Portfolio value</div>
-              <div className="text-[11px] text-ledger-text-faint mt-[2px]">
+          <div className="flex items-start justify-between mb-3">
+            <div className="min-w-0">
+              <div className="metric-label">Portfolio value</div>
+              {/* The value is the headline. It used to sit in a stat chip below
+                  the chart, at the same weight as the range toggle's own label. */}
+              <div className="flex items-baseline gap-2.5 mt-[3px]">
+                <span className="text-stat font-bold font-mono text-ledger-text-heading">
+                  ${fmt(latestValue)}
+                </span>
+                {!historyLoading && history && history.snapshots.length >= 2 && history.change_amount !== 0 && (
+                  <span className={`text-[12.5px] font-semibold font-mono ${
+                    history.change_amount >= 0 ? 'text-ledger-positive' : 'text-ledger-negative'
+                  }`}>
+                    {history.change_amount >= 0 ? '+' : '−'}${fmt(Math.abs(history.change_amount))}
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-ledger-text-faint mt-[3px] truncate">
                 {summary?.account_count ?? 0} accounts · {summary?.position_count ?? 0} positions
                 {hasAccounts && summary?.last_synced_at && (
                   <> · Last synced {new Date(summary.last_synced_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 shrink-0">
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
@@ -221,35 +236,13 @@ export default function Investments() {
             </div>
           )}
 
-          {!historyLoading && history && history.snapshots.length > 0 && (
-            <div className="grid grid-cols-3 gap-2.5 mt-3 pt-3 border-t border-ledger-border-subtle">
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Current</div>
-                <div className="text-[15px] font-bold tabular-nums mt-[2px]">
-                  ${fmt(history.snapshots[history.snapshots.length - 1]?.total ?? 0)}
-                </div>
-              </div>
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Period change</div>
-                <div className={`text-[15px] font-bold tabular-nums mt-[2px] ${history.change_amount >= 0 ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
-                  {history.change_amount >= 0 ? '+' : '−'}${fmt(Math.abs(history.change_amount))}
-                </div>
-              </div>
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Range</div>
-                <div className="text-[15px] font-bold tabular-nums mt-[2px]">
-                  {historyRange}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Allocation donut — matches overview visual language */}
         <div className="glass-card p-4 flex flex-col">
           <div className="flex items-start justify-between gap-3 mb-[2px]">
             <div>
-              <div className="text-[13px] font-semibold">Allocation</div>
+              <div className="text-title font-semibold">Allocation</div>
               <div className="text-[11px] text-ledger-text-faint mt-[2px]">
                 {allocationView === 'type' ? 'By security type' : 'By security'}
               </div>
@@ -352,19 +345,19 @@ export default function Investments() {
                         <span className="relative z-10 w-[82px] text-center text-[10px] font-medium leading-snug text-ledger-text-faint break-words">
                           {allocationView === 'type' ? formatSecurityType(activeAllocation.type) : activeAllocation.type}
                         </span>
-                        <span className="relative z-10 mt-[4px] text-[17px] font-bold tabular-nums tracking-tight">
+                        <span className="relative z-10 mt-[4px] text-[17px] font-bold font-mono tracking-tight">
                           ${fmt(activeAllocation.value)}
                         </span>
-                        <span className="relative z-10 mt-[2px] text-[9px] font-semibold uppercase tracking-[0.12em] text-ledger-text-faintest">
+                        <span className="relative z-10 mt-[2px] text-[9px] font-semibold uppercase tracking-caps text-ledger-text-faintest">
                           {activeAllocation.pct.toFixed(0)}% of portfolio
                         </span>
                       </>
                     ) : (
                       <>
-                        <span className="relative z-10 text-[9px] font-semibold uppercase tracking-[0.14em] text-ledger-text-faintest">
+                        <span className="relative z-10 text-[9px] font-semibold uppercase tracking-caps text-ledger-text-faintest">
                           Portfolio
                         </span>
-                        <span className="relative z-10 mt-[4px] text-[16px] font-bold tabular-nums tracking-tight">
+                        <span className="relative z-10 mt-[4px] text-[16px] font-bold font-mono tracking-tight">
                           ${fmt(summary?.total_value ?? 0)}
                         </span>
                         <span className="relative z-10 mt-[2px] text-[9px] font-medium text-ledger-text-faint">
@@ -402,12 +395,12 @@ export default function Investments() {
                       >
                         {allocationView === 'type' ? formatSecurityType(slice.type) : slice.type}
                       </div>
-                      <div className="text-[10px] text-ledger-text-faint tabular-nums mt-[2px]">
+                      <div className="text-[10.5px] text-ledger-text-faint font-mono mt-[2px]">
                         {slice.pct.toFixed(0)}% of portfolio
                       </div>
                     </div>
                     <span
-                      className={`text-[11px] tabular-nums font-semibold ${activeSlice === i ? '' : 'text-ledger-text-faint'}`}
+                      className={`text-[11.5px] font-mono font-semibold ${activeSlice === i ? '' : 'text-ledger-text-muted'}`}
                       style={activeSlice === i ? { color: slice.color } : undefined}
                     >
                       ${fmt(slice.value)}
@@ -425,58 +418,71 @@ export default function Investments() {
         <div className="glass-card p-4">
           <div className="flex items-start justify-between mb-2.5">
             <div>
-              <div className="text-[13px] font-semibold">Risk & performance</div>
+              <div className="text-title font-semibold">Risk & performance</div>
               <div className="text-[11px] text-ledger-text-faint mt-[2px]">
                 Trailing {risk.lookback_days} days · time-weighted return basis · risk-free rate {risk.risk_free_rate_pct.toFixed(2)}%
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 mb-3">
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Volatility</div>
-              <div className="text-[15px] font-bold tabular-nums mt-0.5">{fmtPct(risk.volatility_pct)}</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Portfolio Sharpe</div>
-              <div className="text-[15px] font-bold tabular-nums mt-0.5">{risk.sharpe_ratio === null ? '—' : risk.sharpe_ratio.toFixed(2)}</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Max drawdown</div>
-              <div className={`text-[15px] font-bold tabular-nums mt-0.5 ${risk.max_drawdown_pct !== null && risk.max_drawdown_pct < 0 ? 'text-ledger-negative' : ''}`}>
-                {fmtPct(risk.max_drawdown_pct)}
+          {/* The two returns are the headline of this card, so they carry the
+              larger type. They previously rendered smaller than the six risk
+              stats below, which inverted the hierarchy. */}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            {[
+              {
+                label: 'Time-weighted return',
+                value: fmtPct(risk.twr_pct),
+                raw: risk.twr_pct,
+                note: 'Strategy performance, excludes deposit/withdrawal timing',
+              },
+              {
+                label: 'Money-weighted return (XIRR)',
+                value: fmtPct(risk.mwr_pct),
+                raw: risk.mwr_pct,
+                note: 'What you actually earned, includes your deposit/withdrawal timing',
+              },
+            ].map(item => (
+              <div key={item.label} className="inset-panel px-3.5 py-2.5">
+                <div className="metric-label">{item.label}</div>
+                <div className={`text-[22px] leading-none font-bold font-mono mt-1.5 ${
+                  item.raw !== null ? (item.raw >= 0 ? 'text-ledger-positive' : 'text-ledger-negative') : ''
+                }`}>
+                  {item.value}
+                </div>
+                <div className="text-[10.5px] text-ledger-text-faint mt-1.5">{item.note}</div>
               </div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">VaR (95%, 1d)</div>
-              <div className="text-[15px] font-bold tabular-nums mt-0.5">{fmtPct(risk.var_95_pct)}</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Beta vs. SPY</div>
-              <div className="text-[15px] font-bold tabular-nums mt-0.5">{risk.beta_vs_spy === null ? '—' : risk.beta_vs_spy.toFixed(2)}</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">CAGR</div>
-              <div className={`text-[15px] font-bold tabular-nums mt-0.5 ${risk.cagr_pct !== null ? (risk.cagr_pct >= 0 ? 'text-ledger-positive' : 'text-ledger-negative') : ''}`}>
-                {fmtPct(risk.cagr_pct)}
-              </div>
-            </div>
+            ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5 mb-3">
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return</div>
-              <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.twr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance, excludes deposit/withdrawal timing</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR)</div>
-              <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.mwr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, includes your deposit/withdrawal timing</div>
-            </div>
+          {/* Supporting risk stats. A hairline-divided row rather than six
+              free-floating tiles: at this density the divider is enough
+              structure, and a tile per number gave each one panel weight. */}
+          <div className="inset-panel grid grid-cols-3 md:grid-cols-6 overflow-hidden divide-x divide-ledger-border-input">
+            {[
+              { label: 'Volatility', value: fmtPct(risk.volatility_pct), tone: '' },
+              { label: 'Portfolio Sharpe', value: risk.sharpe_ratio === null ? '—' : risk.sharpe_ratio.toFixed(2), tone: '' },
+              {
+                label: 'Max drawdown',
+                value: fmtPct(risk.max_drawdown_pct),
+                tone: risk.max_drawdown_pct !== null && risk.max_drawdown_pct < 0 ? 'text-ledger-negative' : '',
+              },
+              { label: 'VaR (95%, 1d)', value: fmtPct(risk.var_95_pct), tone: '' },
+              { label: 'Beta vs. SPY', value: risk.beta_vs_spy === null ? '—' : risk.beta_vs_spy.toFixed(2), tone: '' },
+              {
+                label: 'CAGR',
+                value: fmtPct(risk.cagr_pct),
+                tone: risk.cagr_pct !== null ? (risk.cagr_pct >= 0 ? 'text-ledger-positive' : 'text-ledger-negative') : '',
+              },
+            ].map(stat => (
+              <div key={stat.label} className="px-3 py-2.5">
+                <div className="metric-label truncate">{stat.label}</div>
+                <div className={`text-[15px] font-semibold font-mono mt-1 ${stat.tone}`}>{stat.value}</div>
+              </div>
+            ))}
           </div>
 
-          <div className="text-[10px] text-ledger-text-faint">
+          <div className="text-[10.5px] text-ledger-text-faint mt-3 max-w-[80ch]">
             Portfolio Sharpe is time-weighted return on total account equity (includes cash drag). It won't match the "Current Sharpe" below, which covers held tickers only.
           </div>
         </div>
@@ -487,24 +493,24 @@ export default function Investments() {
           card above needs, so it's gated independently rather than nested inside it. */}
       {!optimizationLoading && optimization && !optimization.insufficient_data && (
         <div className="glass-card p-4">
-          <div className="text-[12px] font-semibold mb-2">Suggested allocation (max Sharpe)</div>
-          <div className="text-[11px] text-ledger-text-faint mb-2">
+          <div className="text-title font-semibold">Suggested allocation (max Sharpe)</div>
+          <div className="text-[11px] text-ledger-text-faint mt-[2px] mb-3">
             Current Sharpe (holdings only) {optimization.current_sharpe?.toFixed(2) ?? '—'} · Suggested Sharpe (holdings only) {optimization.suggested_sharpe?.toFixed(2) ?? '—'}
           </div>
-          <table className="w-full text-[12px]">
+          <table className="w-full max-w-[560px] text-[12.5px]">
             <thead>
-              <tr className="text-left text-ledger-text-faint">
-                <th className="font-medium pb-1.5">Ticker</th>
-                <th className="font-medium pb-1.5 text-right">Current</th>
-                <th className="font-medium pb-1.5 text-right">Suggested</th>
+              <tr className="border-b border-ledger-border-subtle">
+                <th className="metric-label text-left pb-2">Ticker</th>
+                <th className="metric-label text-right pb-2">Current</th>
+                <th className="metric-label text-right pb-2">Suggested</th>
               </tr>
             </thead>
             <tbody>
               {optimization.tickers.map(t => (
-                <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
-                  <td className="py-1.5 font-medium">{t.ticker}</td>
-                  <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
-                  <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
+                <tr key={t.ticker} className="border-b border-ledger-border-subtle last:border-0 hover:bg-ledger-hover">
+                  <td className="py-[7px] font-semibold font-mono">{t.ticker}</td>
+                  <td className="py-[7px] text-right font-mono text-ledger-text-muted">{t.current_weight_pct.toFixed(1)}%</td>
+                  <td className="py-[7px] text-right font-mono font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
                 </tr>
               ))}
             </tbody>
@@ -517,12 +523,12 @@ export default function Investments() {
         <div key={account.id} className="glass-card overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-ledger-border-subtle">
             <div>
-              <div className="text-[13px] font-semibold">{account.name}</div>
+              <div className="text-title font-semibold">{account.name}</div>
               <div className="text-[11px] text-ledger-text-faint">
                 {account.institution_name ?? 'Unknown institution'}{account.subtype ? ` · ${account.subtype}` : ''}
               </div>
             </div>
-            <div className="text-[15px] font-bold tabular-nums">${fmt(account.total_value)}</div>
+            <div className="text-[16px] font-bold font-mono text-ledger-text-heading">${fmt(account.total_value)}</div>
           </div>
 
           {account.positions.length === 0 ? (
@@ -530,24 +536,24 @@ export default function Investments() {
           ) : (
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-[10px] uppercase tracking-wide text-ledger-text-faintest border-b border-ledger-border-subtle">
-                  <th className="text-left font-semibold px-4 py-2">Ticker</th>
-                  <th className="text-left font-semibold px-2 py-2">Name</th>
-                  <th className="text-right font-semibold px-2 py-2">Qty</th>
-                  <th className="text-right font-semibold px-2 py-2">Price</th>
-                  <th className="text-right font-semibold px-2 py-2">Value</th>
-                  <th className="text-right font-semibold px-4 py-2">Gain</th>
+                <tr className="border-b border-ledger-border-subtle">
+                  <th className="metric-label text-left px-4 py-2">Ticker</th>
+                  <th className="metric-label text-left px-2 py-2">Name</th>
+                  <th className="metric-label text-right px-2 py-2">Qty</th>
+                  <th className="metric-label text-right px-2 py-2">Price</th>
+                  <th className="metric-label text-right px-2 py-2">Value</th>
+                  <th className="metric-label text-right px-4 py-2">Gain</th>
                 </tr>
               </thead>
               <tbody>
                 {account.positions.map((p, i) => (
-                  <tr key={i} className="border-b border-ledger-border-subtle last:border-0">
-                    <td className="px-4 py-2 font-semibold">{p.ticker ?? '—'}</td>
+                  <tr key={i} className="border-b border-ledger-border-subtle last:border-0 hover:bg-ledger-hover">
+                    <td className="px-4 py-2 font-semibold font-mono">{p.ticker ?? '—'}</td>
                     <td className="px-2 py-2 text-ledger-text-secondary truncate max-w-[220px]">{p.name ?? '—'}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{p.quantity.toLocaleString('en-US', { maximumFractionDigits: 4 })}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{p.price !== null ? `$${fmt(p.price)}` : '—'}</td>
-                    <td className="px-2 py-2 text-right tabular-nums font-medium">${fmt(p.value)}</td>
-                    <td className={`px-4 py-2 text-right tabular-nums ${p.gain !== null ? (p.gain >= 0 ? 'text-ledger-positive' : 'text-ledger-negative') : 'text-ledger-text-faint'}`}>
+                    <td className="px-2 py-2 text-right font-mono text-ledger-text-muted">{p.quantity.toLocaleString('en-US', { maximumFractionDigits: 4 })}</td>
+                    <td className="px-2 py-2 text-right font-mono text-ledger-text-muted">{p.price !== null ? `$${fmt(p.price)}` : '—'}</td>
+                    <td className="px-2 py-2 text-right font-mono font-medium">${fmt(p.value)}</td>
+                    <td className={`px-4 py-2 text-right font-mono ${p.gain !== null ? (p.gain >= 0 ? 'text-ledger-positive' : 'text-ledger-negative') : 'text-ledger-text-faint'}`}>
                       {p.gain !== null ? `${p.gain >= 0 ? '+' : '−'}$${fmt(Math.abs(p.gain))}${p.gain_pct !== null ? ` (${p.gain_pct.toFixed(1)}%)` : ''}` : '—'}
                     </td>
                   </tr>
@@ -562,7 +568,7 @@ export default function Investments() {
       <div className="glass-card overflow-hidden">
         <div className="px-4 py-2.5 border-b border-ledger-border-subtle flex items-center justify-between gap-3">
           <div>
-            <div className="text-[13px] font-semibold">Recent activity</div>
+            <div className="text-title font-semibold">Recent activity</div>
             <div className="text-[10px] text-ledger-text-faint mt-[2px]">Last 6 months</div>
           </div>
           {!txnsLoading && transactions.length > 4 && (
@@ -580,19 +586,21 @@ export default function Investments() {
           <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">No investment activity in the last 6 months</div>
         ) : (
           visibleTransactions.map(t => (
-            <div key={t.id} className="flex items-center gap-3 px-4 py-[8px] border-b border-ledger-border-subtle last:border-0">
+            <div key={t.id} className="flex items-center gap-3 px-4 py-[8px] border-b border-ledger-border-subtle last:border-0 hover:bg-ledger-hover">
               <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold truncate leading-tight">
+                <div className="text-[12.5px] font-semibold truncate leading-tight">
                   {t.name}{t.ticker ? ` · ${t.ticker}` : ''}
                 </div>
-                <div className="text-[10px] text-ledger-text-faint leading-tight">
+                <div className="text-[10.5px] text-ledger-text-faint leading-tight mt-[1px]">
                   {t.account_name} · {formatActivityDate(t.date)}
                 </div>
               </div>
-              <span className="text-[9.5px] px-[6px] py-[1px] rounded-[5px] glass-chip text-ledger-text-secondary whitespace-nowrap capitalize">
+              {/* A flat tint, not the control surface: this badge is a label, and
+                  glass-chip now signals something you can click. */}
+              <span className="text-[10px] px-[7px] py-[2px] rounded-[5px] bg-ledger-inset border border-ledger-border text-ledger-text-muted whitespace-nowrap capitalize">
                 {t.type}
               </span>
-              <span className={`text-[12px] font-semibold w-[88px] text-right tabular-nums flex-shrink-0 ${t.amount < 0 ? 'text-ledger-positive' : ''}`}>
+              <span className={`text-[12.5px] font-semibold font-mono w-[92px] text-right flex-shrink-0 ${t.amount < 0 ? 'text-ledger-positive' : ''}`}>
                 {t.amount < 0 ? '+' : '−'}${fmt(Math.abs(t.amount))}
               </span>
             </div>
