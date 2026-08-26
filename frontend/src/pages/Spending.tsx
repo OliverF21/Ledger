@@ -318,7 +318,7 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
           >{label}</text>
           <text x={labelX} y={n.labelCy + 11}
             textAnchor={textAnchor} fontSize={12}
-            fontFamily="JetBrains Mono, monospace"
+            fontFamily="Hanken Grotesk, sans-serif"
             fill={nodeVis(n.id) ? amountClass : SANKEY_DIMMED}
             style={{ transition: 'fill 0.15s', userSelect: 'none', pointerEvents: 'none' }}
           >{amountPrefix}${fmt(n.amount)}</text>
@@ -519,7 +519,7 @@ export default function Spending() {
                 >INCOME</text>
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY + layout.tunnelH + 14}
-                  textAnchor="middle" fontSize={11} fill={CHART_TEXT.muted} fontFamily="JetBrains Mono, monospace"
+                  textAnchor="middle" fontSize={11} fill={CHART_TEXT.muted} fontFamily="Hanken Grotesk, sans-serif"
                   style={{ userSelect: 'none' }}
                 >${fmt(data!.total_income)}</text>
               </g>
