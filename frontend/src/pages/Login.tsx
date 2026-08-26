@@ -3,9 +3,7 @@ import { apiFetch, setToken } from '../api/client'
 import { getResetOptions, requestResetCode, resetPasswordWithEmailCode, type ResetOptions } from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
 
-// The pie-chart Transportation blue (#5b8def). Rendered as a large glow that
-// diffuses outward from behind the liquid-glass card, not a tint on the card.
-const BLUE = '#5b8def'
+const BLUE = '#4d8dff'
 
 /** Minimal ring spinner for the "checking" state (no donut chart). */
 function Spinner() {
@@ -156,26 +154,8 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
   }
 
   return (
-    <div className="relative z-10 min-h-dvh flex items-center justify-center p-4 text-ledger-text-primary">
-      {/* Large blue gradient diffusing outward from behind the glass card */}
-      <div
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-        style={{
-          width: 900,
-          height: 760,
-          filter: 'blur(80px)',
-          background: `radial-gradient(circle at 50% 46%, ${alphaColor(BLUE, 0.55)} 0%, ${alphaColor(BLUE, 0.30)} 28%, ${alphaColor(BLUE, 0.12)} 52%, ${alphaColor(BLUE, 0.04)} 68%, transparent 80%)`,
-        }}
-      />
-
-      <div
-        className="glass-modal w-[400px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden"
-        style={{
-          // Translucent frosted fill (overrides glass-modal's near-opaque dark
-          // one) so the blue glow behind shows through the backdrop blur.
-          background: 'linear-gradient(150deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05) 46%, rgba(255,255,255,0.10))',
-        }}
-      >
+    <div className="min-h-dvh flex items-center justify-center p-4 bg-ledger-bg text-ledger-text-primary">
+      <div className="glass-modal w-[400px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden">
         {phase === 'checking' ? (
           <div className="relative flex flex-col items-center gap-[16px] py-[20px]">
             <Spinner />

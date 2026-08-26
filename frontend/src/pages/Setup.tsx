@@ -3,10 +3,6 @@ import {
   putPlaidConfig, testPlaidConfig, markWizardDone, importData,
   putRecoveryEmail, putResetEmailKey,
 } from '../api/plaidConfig'
-import { alphaColor } from '../utils/color'
-
-// The same Transportation blue used behind the Login card.
-const BLUE = '#5b8def'
 
 type Step = 'welcome' | 'byok' | 'plaid' | 'import'
 
@@ -129,24 +125,8 @@ export default function Setup({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="relative z-10 min-h-dvh flex items-center justify-center p-4 text-ledger-text-primary">
-      {/* Large blue gradient diffusing outward from behind the glass card, matching Login. */}
-      <div
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-        style={{
-          width: 900,
-          height: 760,
-          filter: 'blur(80px)',
-          background: `radial-gradient(circle at 50% 46%, ${alphaColor(BLUE, 0.55)} 0%, ${alphaColor(BLUE, 0.30)} 28%, ${alphaColor(BLUE, 0.12)} 52%, ${alphaColor(BLUE, 0.04)} 68%, transparent 80%)`,
-        }}
-      />
-
-      <div
-        className="glass-modal w-[440px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden"
-        style={{
-          background: 'linear-gradient(150deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05) 46%, rgba(255,255,255,0.10))',
-        }}
-      >
+    <div className="min-h-dvh flex items-center justify-center p-4 bg-ledger-bg text-ledger-text-primary">
+      <div className="glass-modal w-[440px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden">
         {step === 'import' ? (
           <div className="relative w-full flex flex-col items-center">
             <div className="text-[22px] font-bold tracking-tight">Import existing data</div>

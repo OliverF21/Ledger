@@ -12,12 +12,10 @@ import {
   type AllocationSlice,
 } from '../hooks/useInvestments'
 
-import { alphaColor, mixHex } from '../utils/color'
 import {
   AXIS_STROKE,
   CATEGORY_PALETTE,
   CHART_ACCENT,
-  CHART_SURFACE,
   GRID_STROKE,
   tooltipItemStyle,
   tooltipLabelStyle,
@@ -132,10 +130,8 @@ export default function Investments() {
           <div className="flex items-start justify-between mb-3">
             <div className="min-w-0">
               <div className="metric-label">Portfolio value</div>
-              {/* The value is the headline. It used to sit in a stat chip below
-                  the chart, at the same weight as the range toggle's own label. */}
-              <div className="flex items-baseline gap-2.5 mt-[3px]">
-                <span className="text-stat font-bold font-mono text-ledger-text-heading">
+              <div className="flex items-baseline gap-2.5 mt-1">
+                <span className="text-[36px] short:text-[30px] font-semibold tabular-nums tracking-tightest text-ledger-text-heading leading-none">
                   ${fmt(latestValue)}
                 </span>
                 {!historyLoading && history && history.snapshots.length >= 2 && history.change_amount !== 0 && (
@@ -202,7 +198,7 @@ export default function Investments() {
                 <AreaChart data={history.snapshots}>
                   <defs>
                     <linearGradient id="investmentHistoryFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.28} />
+                      <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.16} />
                       <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0} />
                     </linearGradient>
                   </defs>
@@ -230,7 +226,7 @@ export default function Investments() {
                     labelFormatter={d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     formatter={(val: number) => [`$${fmt(val)}`, 'Value']}
                   />
-                  <Area type="monotone" dataKey="total" stroke={CHART_ACCENT} strokeWidth={2.5} fill="url(#investmentHistoryFill)" dot={history.snapshots.length === 1} />
+                  <Area type="monotone" dataKey="total" stroke={CHART_ACCENT} strokeWidth={2} fill="url(#investmentHistoryFill)" dot={history.snapshots.length === 1} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -270,36 +266,13 @@ export default function Investments() {
           ) : (
             <div className="relative flex-1 mt-1 min-h-[252px] pr-[214px]">
               <div className="relative h-[248px] w-[244px] overflow-visible">
-                <div
-                  className="absolute left-1/2 top-1/2 h-[220px] w-[220px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[28px] pointer-events-none"
-                  style={{
-                    background: `radial-gradient(circle, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.28 : 0.16)} 0%, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.18 : 0.10)} 28%, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', 0.08)} 54%, transparent 82%)`,
-                  }}
-                />
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <defs>
-                      {allocationData.map((entry, i) => (
-                        <radialGradient
-                          id={`investment-allocation-slice-${i}`}
-                          key={entry.type}
-                          cx="42%"
-                          cy="42%"
-                          r="78%"
-                          fx="36%"
-                          fy="36%"
-                        >
-                          <stop offset="0%" stopColor={mixHex(entry.color, '#ffffff', 0.22)} stopOpacity={0.98} />
-                          <stop offset="48%" stopColor={entry.color} stopOpacity={0.94} />
-                          <stop offset="100%" stopColor={mixHex(entry.color, CHART_SURFACE.bg, 0.12)} stopOpacity={0.88} />
-                        </radialGradient>
-                      ))}
-                    </defs>
                     <Pie
                       data={allocationData}
                       cx="50%" cy="50%"
-                      innerRadius={78} outerRadius={114}
-                      paddingAngle={1}
+                      innerRadius={74} outerRadius={106}
+                      paddingAngle={1.5}
                       dataKey="value"
                       activeIndex={activeSlice ?? undefined}
                       activeShape={(props: unknown) => (
@@ -310,99 +283,65 @@ export default function Investments() {
                       style={{ outline: 'none' }}
                       isAnimationActive={false}
                     >
-                      {allocationData.map((entry, i) => (
+                      {allocationData.map((entry) => (
                         <Cell
                           key={entry.type}
-                          fill={`url(#investment-allocation-slice-${i})`}
-                          stroke={activeSlice === i ? alphaColor(entry.color, 0.34) : 'rgba(255,255,255,0.06)'}
-                          strokeWidth={activeSlice === i ? 0.9 : 0.4}
-                          style={{
-                            outline: 'none',
-                            cursor: 'default',
-                            filter: activeSlice === i ? `drop-shadow(0 0 12px ${alphaColor(entry.color, 0.22)})` : undefined,
-                          }}
+                          fill={entry.color}
+                          stroke="#070b12"
+                          strokeWidth={2}
+                          style={{ outline: 'none', cursor: 'default' }}
                         />
                       ))}
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <div
-                    className="absolute left-1/2 top-1/2 h-[196px] w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[18px]"
-                    style={{
-                      background: `radial-gradient(circle, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.42 : 0.28)} 0%, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.30 : 0.18)} 18%, rgba(54,60,92,0.24) 34%, rgba(26,30,44,0.10) 56%, rgba(18,21,30,0.04) 72%, rgba(18,21,30,0) 100%)`,
-                    }}
-                  />
-                  <div
-                    className="absolute left-1/2 top-1/2 h-[130px] w-[130px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[12px]"
-                    style={{
-                      background: `radial-gradient(circle, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.30 : 0.20)} 0%, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.14 : 0.10)} 42%, rgba(20,24,34,0) 78%)`,
-                    }}
-                  />
-                  <div className="relative flex h-[108px] w-[108px] flex-col items-center justify-center">
-                    {activeAllocation ? (
-                      <>
-                        <span className="relative z-10 w-[82px] text-center text-[10px] font-medium leading-snug text-ledger-text-faint break-words">
-                          {allocationView === 'type' ? formatSecurityType(activeAllocation.type) : activeAllocation.type}
-                        </span>
-                        <span className="relative z-10 mt-[4px] text-[17px] font-bold font-mono tracking-tight">
-                          ${fmt(activeAllocation.value)}
-                        </span>
-                        <span className="relative z-10 mt-[2px] text-[9px] font-semibold uppercase tracking-caps text-ledger-text-faintest">
-                          {activeAllocation.pct.toFixed(0)}% of portfolio
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="relative z-10 text-[9px] font-semibold uppercase tracking-caps text-ledger-text-faintest">
-                          Portfolio
-                        </span>
-                        <span className="relative z-10 mt-[4px] text-[16px] font-bold font-mono tracking-tight">
-                          ${fmt(summary?.total_value ?? 0)}
-                        </span>
-                        <span className="relative z-10 mt-[2px] text-[9px] font-medium text-ledger-text-faint">
-                          Total value
-                        </span>
-                      </>
-                    )}
-                  </div>
+                  {activeAllocation ? (
+                    <>
+                      <span className="w-[96px] text-center text-[12px] font-medium leading-snug text-ledger-text-faint break-words">
+                        {allocationView === 'type' ? formatSecurityType(activeAllocation.type) : activeAllocation.type}
+                      </span>
+                      <span className="mt-1 text-[17px] font-semibold tabular-nums tracking-tight">
+                        ${fmt(activeAllocation.value)}
+                      </span>
+                      <span className="mt-0.5 text-[11px] text-ledger-text-faintest">
+                        {activeAllocation.pct.toFixed(0)}% of portfolio
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[12px] text-ledger-text-faint">Portfolio</span>
+                      <span className="mt-1 text-[17px] font-semibold tabular-nums tracking-tight">
+                        ${fmt(summary?.total_value ?? 0)}
+                      </span>
+                      <span className="mt-0.5 text-[11px] text-ledger-text-faintest">Total value</span>
+                    </>
+                  )}
                 </div>
               </div>
-              <div className="absolute right-0 top-0 flex w-[206px] max-h-[252px] flex-col gap-[12px] items-stretch overflow-y-auto pr-1">
+              <div className="absolute right-0 top-0 flex w-[206px] max-h-[252px] flex-col gap-[2px] items-stretch overflow-y-auto pr-1">
                 {allocationData.map((slice, i) => (
                   <div
                     key={slice.type}
-                    className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-[12px] px-3 py-[9px] min-h-[42px] cursor-default transition-all ${
-                      activeSlice === i ? 'border' : 'border border-transparent'
+                    className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[8px] px-2 py-[7px] cursor-default ${
+                      activeSlice === i ? 'bg-ledger-hover' : ''
                     }`}
-                    style={{
-                      opacity: activeSlice === null || activeSlice === i ? 1 : 0.62,
-                      borderColor: activeSlice === i ? alphaColor(slice.color, 0.36) : 'transparent',
-                      background: activeSlice === i
-                        ? `linear-gradient(135deg, ${alphaColor(slice.color, 0.24)} 0%, ${alphaColor(slice.color, 0.12)} 52%, rgba(255,255,255,0.04) 100%)`
-                        : 'transparent',
-                      boxShadow: activeSlice === i
-                        ? `inset 0 1px 0 rgba(255,255,255,0.12), 0 0 20px ${alphaColor(slice.color, 0.12)}`
-                        : 'none',
-                    }}
+                    style={{ opacity: activeSlice === null || activeSlice === i ? 1 : 0.45 }}
                     onMouseEnter={() => setActiveSlice(i)}
                     onMouseLeave={() => setActiveSlice(null)}
                   >
-                    <div className="min-w-0">
-                      <div
-                        className={`min-w-0 truncate text-[12.5px] leading-tight transition-colors ${activeSlice === i ? 'font-semibold' : 'font-medium text-ledger-text-secondary'}`}
-                        style={activeSlice === i ? { color: slice.color } : undefined}
-                      >
-                        {allocationView === 'type' ? formatSecurityType(slice.type) : slice.type}
-                      </div>
-                      <div className="text-[10.5px] text-ledger-text-faint font-mono mt-[2px]">
-                        {slice.pct.toFixed(0)}% of portfolio
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: slice.color }} />
+                      <div className="min-w-0">
+                        <div className="min-w-0 truncate text-[13px] text-ledger-text-secondary">
+                          {allocationView === 'type' ? formatSecurityType(slice.type) : slice.type}
+                        </div>
+                        <div className="text-[11px] text-ledger-text-faint tabular-nums">
+                          {slice.pct.toFixed(0)}%
+                        </div>
                       </div>
                     </div>
-                    <span
-                      className={`text-[11.5px] font-mono font-semibold ${activeSlice === i ? '' : 'text-ledger-text-muted'}`}
-                      style={activeSlice === i ? { color: slice.color } : undefined}
-                    >
+                    <span className="text-[13px] tabular-nums text-ledger-text-primary">
                       ${fmt(slice.value)}
                     </span>
                   </div>

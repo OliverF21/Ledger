@@ -20,8 +20,8 @@ body {
   font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0d0f14;
-  color: #e9ebf0;
+  background-color: #070b12;
+  color: #f0f2f5;
   height: 100%;
   overflow: hidden;
 }
@@ -58,13 +58,13 @@ summary,
 [role='tab'],
 [role='option'] {
   transition-property: color, background-color, border-color, box-shadow, opacity, filter, transform;
-  transition-duration: 180ms;
+  transition-duration: 140ms;
   transition-timing-function: ease;
 }
 
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(6, 7, 10, 0.9), 0 0 0 4px rgba(91, 141, 239, 0.55);
+  box-shadow: 0 0 0 2px #070b12, 0 0 0 4px rgba(77, 141, 255, 0.55);
   border-radius: inherit;
 }
 
@@ -82,215 +82,91 @@ summary,
   }
 }
 
-/* ── Liquid glass background ─────────────────────────────────────────────── */
-
-.aurora-root {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  background: linear-gradient(160deg, #07101f 0%, #050914 45%, #010204 100%);
-}
-
-.aurora-layer {
-  position: absolute;
-  inset: -30%;
-  filter: blur(58px);
-  animation: aurora-drift 40s ease-in-out infinite alternate;
-  background:
-    radial-gradient(1220px 1040px at 94% 8%, rgba(92,140,255,0.78), transparent 74%),
-    radial-gradient(980px 860px at 88% 18%, rgba(78,196,255,0.42), transparent 68%),
-    radial-gradient(900px 820px at 96% 72%, rgba(70,130,255,0.28), transparent 72%),
-    radial-gradient(620px 620px at 4% 94%, rgba(255,150,120,0.22), transparent 60%);
-}
-
-@keyframes aurora-drift {
-  0%   { transform: translate(-4%, -3%) rotate(-3deg) scale(1.12); }
-  100% { transform: translate(4%, 3%) rotate(3deg) scale(1.18); }
-}
-
 @keyframes ledger-ring-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .aurora-layer {
-    animation: none;
-  }
+/* Solid canvas. Class names are historical; the material is opaque and quiet. */
+
+.aurora-root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: #070b12;
 }
 
-/* ── Glass surfaces ───────────────────────────────────────────────────────── */
+.aurora-layer {
+  display: none;
+}
 
-/* One window sitting in the aurora. Login still uses a standalone .glass-card;
-   inside the frame, cards quiet down so they don't each glow like a separate app. */
 .glass-frame {
-  border-radius: 24px;
-  border: 1px solid rgba(255,255,255,0.22);
-  background: linear-gradient(155deg, rgba(255,255,255,0.16), rgba(255,255,255,0.045) 42%, rgba(12,16,28,0.28));
-  backdrop-filter: blur(36px) saturate(155%);
-  -webkit-backdrop-filter: blur(36px) saturate(155%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.5),
-    inset 0 0 40px rgba(255,255,255,0.04),
-    0 28px 70px -28px rgba(0,0,0,0.78),
-    0 0 70px rgba(92,140,255,0.14);
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .glass-card {
-  background: linear-gradient(140deg,
-    rgba(255,255,255,0.24),
-    rgba(255,255,255,0.085) 34%,
-    rgba(255,255,255,0.06) 70%,
-    rgba(255,255,255,0.13));
-  border: 1px solid rgba(255,255,255,0.22);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.55),
-    inset 0 0 30px rgba(255,255,255,0.06),
-    0 20px 50px -28px rgba(10,10,40,0.55),
-    0 0 46px rgba(150,170,255,0.10);
-  border-radius: 22px;
-}
-
-.glass-frame .glass-card {
-  background: rgba(255,255,255,0.045);
-  border: 1px solid rgba(255,255,255,0.10);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14);
-  border-radius: 16px;
+  background: #0c1219;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+  border-radius: 12px;
 }
 
 .glass-overlay {
-  background: rgba(4, 6, 10, 0.42);
-  backdrop-filter: blur(14px) saturate(115%);
-  -webkit-backdrop-filter: blur(14px) saturate(115%);
+  background: rgba(4, 7, 12, 0.72);
 }
 
 .glass-modal {
-  background: linear-gradient(180deg,
-    rgba(18, 21, 30, 0.94) 0%,
-    rgba(14, 17, 25, 0.92) 52%,
-    rgba(11, 14, 21, 0.94) 100%);
-  border: 1px solid rgba(255,255,255,0.14);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.14),
-    inset 0 0 0 1px rgba(255,255,255,0.03),
-    0 30px 80px -34px rgba(0,0,0,0.82),
-    0 0 42px rgba(91,141,239,0.08);
-  backdrop-filter: blur(24px) saturate(120%);
-  -webkit-backdrop-filter: blur(24px) saturate(120%);
-  border-radius: 22px;
+  background: #0e151e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  border-radius: 14px;
 }
 
 .glass-chip {
-  background: linear-gradient(140deg,
-    rgba(255,255,255,0.24),
-    rgba(255,255,255,0.085) 34%,
-    rgba(255,255,255,0.06) 70%,
-    rgba(255,255,255,0.13));
-  border: 1px solid rgba(255,255,255,0.22);
-  border-radius: 9px;
-}
-
-.glass-frame .glass-chip {
-  background: rgba(255,255,255,0.055);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: #111820;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
 }
 
 .glass-sidebar {
-  border-radius: 26px;
-  border: 1px solid rgba(255,255,255,0.20);
-  background: linear-gradient(160deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
-  backdrop-filter: blur(30px) saturate(150%);
-  -webkit-backdrop-filter: blur(30px) saturate(150%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.5),
-    inset 0 0 30px rgba(255,255,255,0.05),
-    0 24px 60px -22px rgba(0,0,0,0.75),
-    0 0 46px rgba(150,170,255,0.10);
-}
-
-.glass-frame .glass-sidebar {
   border-radius: 0;
   border: none;
-  border-right: 1px solid rgba(255,255,255,0.10);
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: #05080e;
   box-shadow: none;
 }
 
 .glass-shell {
-  border-radius: 26px;
-  border: 1px solid rgba(255,255,255,0.14);
-}
-
-.glass-frame .glass-shell {
-  border: none;
   border-radius: 0;
+  border: none;
+  background: #070b12;
 }
 
 .glass-header {
-  background: linear-gradient(140deg,
-    rgba(255,255,255,0.24),
-    rgba(255,255,255,0.085) 34%,
-    rgba(255,255,255,0.06) 70%,
-    rgba(255,255,255,0.13));
-  border-bottom: 1px solid rgba(255,255,255,0.16);
-}
-
-.glass-frame .glass-header {
-  background: transparent;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: #070b12;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .inset-panel {
-  background: linear-gradient(140deg,
-    rgba(255,255,255,0.16),
-    rgba(255,255,255,0.05) 40%,
-    rgba(255,255,255,0.08));
-  border: 1px solid rgba(255,255,255,0.16);
-  border-radius: 12px;
-}
-
-.glass-frame .inset-panel {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: #111820;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
 }
 
 .metric-label {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.3;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: rgba(255,255,255,0.52);
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .glass-sidebar,
-  .glass-overlay,
-  .glass-modal,
-  .glass-frame {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-
-  .glass-sidebar {
-    background: #12151c;
-  }
-
-  .glass-frame {
-    background: #12151c;
-  }
-
-  .glass-overlay {
-    background: rgba(5, 7, 11, 0.88);
-  }
+  letter-spacing: 0.01em;
+  font-weight: 500;
+  color: #8b95a5;
 }
 
 .soft-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.16) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
 }
 
 .soft-scrollbar::-webkit-scrollbar {
@@ -302,13 +178,13 @@ summary,
 }
 
 .soft-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.14);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 .soft-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.22);
+  background: rgba(255, 255, 255, 0.2);
   background-clip: padding-box;
 }

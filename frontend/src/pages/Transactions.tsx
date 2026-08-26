@@ -382,19 +382,19 @@ export default function Transactions() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-ledger-border-subtle">
-                <th className="text-left px-[20px] py-[12px]">
+                <th className="text-left px-4 py-2">
                   <ThBtn field="merchant" label="Merchant" />
                 </th>
-                <th className="text-left px-[20px] py-[12px]">
+                <th className="text-left px-4 py-2">
                   <ThBtn field="account" label="Account" />
                 </th>
-                <th className="text-left px-[20px] py-[12px]">
+                <th className="text-left px-4 py-2">
                   <ThBtn field="category" label="Category" />
                 </th>
-                <th className="text-left px-[20px] py-[12px]">
+                <th className="text-left px-4 py-2">
                   <ThBtn field="date" label="Date" />
                 </th>
-                <th className="text-right px-[20px] py-[12px]">
+                <th className="text-right px-4 py-2">
                   <div className="flex justify-end">
                     <ThBtn field="amount" label="Amount" />
                   </div>
@@ -431,7 +431,7 @@ export default function Transactions() {
                   return (
                     <Fragment key={txn.id}>
                       <tr className={`border-b border-ledger-border-subtle last:border-0 hover:bg-ledger-hover transition-colors group ${txn.hidden ? 'opacity-35' : ''}`}>
-                        <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-primary">
+                        <td className="px-4 py-2 text-[13px] text-ledger-text-primary">
                           <div className="flex items-center gap-[8px]">
                             {iconUrl ? (
                               <img
@@ -444,10 +444,10 @@ export default function Transactions() {
                           </div>
                           {txn.hidden && <span className="ml-[6px] text-[10px] text-ledger-text-faintest">(hidden)</span>}
                         </td>
-                        <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-secondary">
+                        <td className="px-4 py-2 text-[13px] text-ledger-text-secondary">
                           {txn.account_name ?? <span className="text-ledger-text-faintest">—</span>}
                         </td>
-                        <td className="px-[20px] py-[11px]">
+                        <td className="px-4 py-2">
                           <button
                             onClick={() => setAction(isRecat ? null : { type: 'recategorize', id: txn.id, draft: categoryPickerDraft(txn) })}
                             className={`inline-flex max-w-full items-center gap-[6px] text-[11px] px-[9px] py-[3px] rounded-[7px] border transition-all ${
@@ -460,10 +460,10 @@ export default function Transactions() {
                             <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 transition-transform ${isRecat ? 'rotate-180 text-ledger-accent' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
                           </button>
                         </td>
-                        <td className="px-[20px] py-[11px] text-[12.5px] text-ledger-text-muted font-mono">
+                        <td className="px-4 py-2 text-[12.5px] text-ledger-text-muted tabular-nums">
                           {new Date(txn.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
-                        <td className={`px-[20px] py-[11px] text-right text-[13.5px] font-semibold font-mono ${
+                        <td className={`px-4 py-2 text-right text-[13px] font-medium tabular-nums ${
                           txn.amount < 0 ? 'text-ledger-positive' : ''
                         }`}>
                           {txn.amount < 0 ? '+' : '−'}${Math.abs(txn.amount).toFixed(2)}

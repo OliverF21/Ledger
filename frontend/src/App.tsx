@@ -17,22 +17,19 @@ import { useAccounts } from './hooks/useAccounts'
 import { useStartupSync } from './hooks/useSync'
 import { apiFetch, getToken, clearToken } from './api/client'
 import { getPlaidConfig } from './api/plaidConfig'
-import { CATEGORY_PALETTE } from './utils/chartTheme'
 
 type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
 
-/** Rotating gradient ring shown during the initial token check (mirrors the
- *  login page's loading state). Kept inline to avoid a shared export. */
+/** Minimal spinner shown during the initial token check. */
 function BootLoader() {
   return (
-    <div className="relative z-10 min-h-dvh flex flex-col items-center justify-center gap-4 text-ledger-text-primary">
+    <div className="min-h-dvh flex flex-col items-center justify-center gap-3 bg-ledger-bg text-ledger-text-primary">
       <div
-        className="w-[92px] h-[92px] rounded-full"
+        className="w-8 h-8 rounded-full"
         style={{
-          animation: 'ledger-ring-spin 2.4s linear infinite',
-          background: `conic-gradient(from 0deg, ${[...CATEGORY_PALETTE.slice(0, 8), CATEGORY_PALETTE[0]].join(', ')})`,
-          WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
-          mask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
+          animation: 'ledger-ring-spin 0.9s linear infinite',
+          border: '2px solid rgba(77,141,255,0.22)',
+          borderTopColor: '#4d8dff',
         }}
       />
       <div className="text-[13px] text-ledger-text-faint">Loading…</div>
@@ -142,39 +139,19 @@ function App() {
     : screenHeaders[activeScreen]
 
   if (auth === 'loading') {
-    return (
-      <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
-        <BootLoader />
-      </>
-    )
+    return <BootLoader />
   }
 
   if (auth === 'unauthenticated') {
-    return (
-      <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
-        <Login onAuthenticated={loadMe} />
-      </>
-    )
+    return <Login onAuthenticated={loadMe} />
   }
 
   if (auth === 'authenticated' && setupNeeded === null) {
-    return (
-      <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
-        <BootLoader />
-      </>
-    )
+    return <BootLoader />
   }
 
   if (auth === 'authenticated' && setupNeeded) {
-    return (
-      <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
-        <Setup onDone={() => setSetupNeeded(false)} />
-      </>
-    )
+    return <Setup onDone={() => setSetupNeeded(false)} />
   }
 
   const renderScreen = () => {
@@ -207,31 +184,23 @@ function App() {
   }
 
   return (
-    <>
-      <div className="aurora-root">
-        <div className="aurora-layer" />
-      </div>
+    <div className="h-dvh flex bg-ledger-bg text-ledger-text-primary overflow-hidden">
+      <Sidebar
+        activeScreen={activeScreen}
+        onScreenChange={navigate}
+        onSignOut={signOut}
+        advisorCount={advisor.pendingCount}
+        accounts={linkedAccounts.accounts}
+      />
 
-      <div className="relative z-10 h-dvh text-ledger-text-primary p-2.5 short:p-3 tall:p-4 overflow-hidden">
-        <div className="glass-frame h-full min-h-0 flex overflow-hidden">
-          <Sidebar
-            activeScreen={activeScreen}
-            onScreenChange={navigate}
-            onSignOut={signOut}
-            advisorCount={advisor.pendingCount}
-            accounts={linkedAccounts.accounts}
-          />
+      <main className="flex-1 flex flex-col min-h-0 min-w-0 glass-shell overflow-hidden">
+        <Header title={header.title} subtitle={header.subtitle} name={userName} />
 
-          <main className="flex-1 flex flex-col min-h-0 min-w-0 glass-shell overflow-hidden">
-            <Header title={header.title} subtitle={header.subtitle} name={userName} />
-
-            <div className="flex-1 min-h-0 overflow-auto p-3 short:p-4 tall:p-5 soft-scrollbar">
-              {renderScreen()}
-            </div>
-          </main>
+        <div className="flex-1 min-h-0 overflow-auto px-6 py-5 soft-scrollbar">
+          {renderScreen()}
         </div>
-      </div>
-    </>
+      </main>
+    </div>
   )
 }
 
