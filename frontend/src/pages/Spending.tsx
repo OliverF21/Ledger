@@ -318,6 +318,7 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
           >{label}</text>
           <text x={labelX} y={n.labelCy + 11}
             textAnchor={textAnchor} fontSize={12}
+            fontFamily="JetBrains Mono, monospace"
             fill={nodeVis(n.id) ? amountClass : SANKEY_DIMMED}
             style={{ transition: 'fill 0.15s', userSelect: 'none', pointerEvents: 'none' }}
           >{amountPrefix}${fmt(n.amount)}</text>
@@ -420,23 +421,28 @@ export default function Spending() {
           {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
+        {/* This is the page's summary, so it reads at metric weight. It used to
+            be the smallest text on the screen, set inline beside the month
+            picker. */}
         {data && (
-          <div className="flex gap-[20px] ml-[6px] text-[13px]">
-            <span className="text-ledger-text-faint">
-              Income <span className="text-ledger-positive font-semibold">${fmt(data.total_income)}</span>
-            </span>
-            <span className="text-ledger-text-faint">
-              Spending <span className="text-ledger-text-secondary font-semibold">${fmt(consumptiveSpending)}</span>
-            </span>
-            {invested > 0.01 && (
-              <span className="text-ledger-text-faint">
-                Invested <span className="text-ledger-accent font-semibold">${fmt(invested)}</span>
-              </span>
-            )}
-            {deficit > 0
-              ? <span className="text-ledger-negative font-semibold">−${fmt(deficit)} over</span>
-              : <span className="text-ledger-text-faint">Saved <span className="text-ledger-positive font-semibold">${fmt(data.savings)}</span></span>
-            }
+          <div className="inset-panel flex divide-x divide-ledger-border-input ml-[6px]">
+            {[
+              { label: 'Income', value: `$${fmt(data.total_income)}`, tone: 'text-ledger-positive' },
+              { label: 'Spending', value: `$${fmt(consumptiveSpending)}`, tone: 'text-ledger-text-primary' },
+              ...(invested > 0.01
+                ? [{ label: 'Invested', value: `$${fmt(invested)}`, tone: 'text-ledger-accent-text' }]
+                : []),
+              deficit > 0
+                ? { label: 'Over', value: `−$${fmt(deficit)}`, tone: 'text-ledger-negative' }
+                : { label: 'Saved', value: `$${fmt(data.savings)}`, tone: 'text-ledger-positive' },
+            ].map(item => (
+              <div key={item.label} className="px-3.5 py-1.5">
+                <div className="metric-label">{item.label}</div>
+                <div className={`text-[15px] font-semibold font-mono leading-tight mt-[1px] ${item.tone}`}>
+                  {item.value}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -495,12 +501,12 @@ export default function Spending() {
                 />
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY - 6}
-                  textAnchor="middle" fontSize={10} fill={CHART_TEXT.faintest} letterSpacing="0.10em"
+                  textAnchor="middle" fontSize={10} fill={CHART_TEXT.faint} letterSpacing="0.07em" fontWeight={600}
                   style={{ userSelect: 'none' }}
                 >INCOME</text>
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY + layout.tunnelH + 14}
-                  textAnchor="middle" fontSize={11} fill={CHART_TEXT.faintest}
+                  textAnchor="middle" fontSize={11} fill={CHART_TEXT.muted} fontFamily="JetBrains Mono, monospace"
                   style={{ userSelect: 'none' }}
                 >${fmt(data!.total_income)}</text>
               </g>

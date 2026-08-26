@@ -136,8 +136,8 @@ export default function Trends() {
       {/* KPI row + range control */}
       <div className="flex gap-[18px] items-stretch flex-wrap">
         <div className="glass-card p-[18px] flex-1 min-w-[180px]">
-          <div className="text-[12.5px] text-ledger-text-faint">Avg monthly spend</div>
-          <div className="text-[25px] font-bold mt-[4px] tabular-nums">
+          <div className="metric-label">Avg monthly spend</div>
+          <div className="text-stat font-bold mt-[5px] font-mono text-ledger-text-heading">
             {loading ? '—' : `$${fmt(data?.monthly_avg_spending ?? 0)}`}
           </div>
           <div className="mt-[4px] flex items-center gap-[6px]">
@@ -149,8 +149,8 @@ export default function Trends() {
         </div>
 
         <div className="glass-card p-[18px] flex-1 min-w-[180px]">
-          <div className="text-[12.5px] text-ledger-text-faint">Spent · {periodLabel || 'this period'}</div>
-          <div className="text-[25px] font-bold mt-[4px] tabular-nums">
+          <div className="metric-label">Spent · {periodLabel || 'this period'}</div>
+          <div className="text-stat font-bold mt-[5px] font-mono text-ledger-text-heading">
             {loading ? '—' : `$${fmt(data?.period_spending ?? 0)}`}
           </div>
           {partialMonth && !loading && (
@@ -161,8 +161,8 @@ export default function Trends() {
         </div>
 
         <div className="glass-card p-[18px] flex-1 min-w-[180px]">
-          <div className="text-[12.5px] text-ledger-text-faint">Income · same period</div>
-          <div className="text-[25px] font-bold mt-[4px] tabular-nums text-ledger-positive">
+          <div className="metric-label">Income · same period</div>
+          <div className="text-stat font-bold mt-[5px] font-mono text-ledger-positive">
             {loading ? '—' : `$${fmt(data?.period_income ?? 0)}`}
           </div>
         </div>
@@ -209,7 +209,7 @@ export default function Trends() {
       {/* Main chart */}
       <div className="glass-card p-[22px]">
         <div className="flex items-center gap-[10px] mb-[16px]">
-          <div className="text-[14px] font-semibold">
+          <div className="text-section font-semibold">
             {focused ? `${formatCategory(focused.name)} by month` : 'Spending vs income by month'}
           </div>
           {focused && (
@@ -283,7 +283,7 @@ export default function Trends() {
       {/* Category breakdown table */}
       {!loading && categories.length > 0 && (
         <div className="glass-card overflow-hidden">
-          <div className="px-[20px] pt-[18px] pb-[10px] text-[14px] font-semibold">
+          <div className="px-[20px] pt-[18px] pb-[10px] text-section font-semibold">
             Category breakdown
             <span className="ml-[8px] text-[11.5px] font-normal text-ledger-text-faintest">
               click a row to isolate it in the chart
@@ -293,12 +293,12 @@ export default function Trends() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-ledger-border-subtle">
-                  <th className="text-left px-[20px] py-[10px] text-[11.5px] text-ledger-text-faintest uppercase font-medium">Category</th>
-                  <th className="text-left px-[20px] py-[10px] text-[11.5px] text-ledger-text-faintest uppercase font-medium">Trend</th>
-                  <th className="text-right px-[20px] py-[10px] text-[11.5px] text-ledger-text-faintest uppercase font-medium">Total</th>
-                  <th className="text-right px-[20px] py-[10px] text-[11.5px] text-ledger-text-faintest uppercase font-medium">Avg / mo</th>
-                  <th className="text-right px-[20px] py-[10px] text-[11.5px] text-ledger-text-faintest uppercase font-medium">Vs typical</th>
-                  <th className="text-left px-[20px] py-[10px] text-[11.5px] text-ledger-text-faintest uppercase font-medium w-[160px]">Share</th>
+                  <th className="text-left px-[20px] py-[10px] metric-label">Category</th>
+                  <th className="text-left px-[20px] py-[10px] metric-label">Trend</th>
+                  <th className="text-right px-[20px] py-[10px] metric-label">Total</th>
+                  <th className="text-right px-[20px] py-[10px] metric-label">Avg / mo</th>
+                  <th className="text-right px-[20px] py-[10px] metric-label">Vs typical</th>
+                  <th className="text-left px-[20px] py-[10px] metric-label w-[160px]">Share</th>
                 </tr>
               </thead>
               <tbody>
@@ -312,7 +312,7 @@ export default function Trends() {
                       key={c.name}
                       onClick={() => setFocus(isFocused ? null : c.name)}
                       className={`border-b border-ledger-border-subtle last:border-0 cursor-pointer transition-colors ${
-                        isFocused ? 'bg-ledger-inset' : 'hover:bg-ledger-inset'
+                        isFocused ? 'bg-ledger-accent-soft' : 'hover:bg-ledger-hover'
                       }`}
                     >
                       <td className="px-[20px] py-[11px]">
@@ -324,10 +324,10 @@ export default function Trends() {
                       <td className="px-[20px] py-[11px]">
                         <Sparkline values={sparkValues} color={c.color} />
                       </td>
-                      <td className="px-[20px] py-[11px] text-right text-[13px] font-semibold tabular-nums">
+                      <td className="px-[20px] py-[11px] text-right text-[13px] font-semibold font-mono">
                         ${fmt(c.total)}
                       </td>
-                      <td className="px-[20px] py-[11px] text-right text-[13px] text-ledger-text-secondary tabular-nums">
+                      <td className="px-[20px] py-[11px] text-right text-[13px] text-ledger-text-muted font-mono">
                         ${fmt(c.monthly_avg)}
                       </td>
                       <td className="px-[20px] py-[11px] text-right">
@@ -338,10 +338,10 @@ export default function Trends() {
                           <div className="flex-1 h-[5px] rounded-full bg-ledger-track overflow-hidden">
                             <div
                               className="h-full rounded-full"
-                              style={{ width: `${Math.min(100, c.share_pct)}%`, backgroundColor: c.color }}
+                              style={{ width: `${Math.min(100, c.share_pct)}%`, backgroundColor: CHART_ACCENT }}
                             />
                           </div>
-                          <span className="text-[11px] text-ledger-text-faint tabular-nums w-[36px] text-right">
+                          <span className="text-[11px] text-ledger-text-faint font-mono w-[36px] text-right">
                             {c.share_pct.toFixed(0)}%
                           </span>
                         </div>
