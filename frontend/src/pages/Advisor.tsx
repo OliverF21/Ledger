@@ -134,8 +134,8 @@ export default function Advisor({ advisor }: AdvisorProps) {
           <p className="text-[12.5px] text-ledger-text-faint leading-[1.5] mb-[14px]">
             The AI Advisor runs through Claude Desktop. Generate a connection key, add it to your
             Claude Desktop config, and Claude can propose budgets for you to approve here. The key
-            only lets Claude <span className="text-ledger-text-secondary">suggest</span> changes —
-            you always apply them yourself.
+            only lets Claude <span className="text-ledger-text-secondary">suggest</span> changes.
+            You always apply them yourself.
           </p>
           <button
             onClick={generateKey}
@@ -199,7 +199,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
               <ol className="text-[12.5px] text-ledger-text-faint leading-[1.6] list-decimal pl-[18px] space-y-[2px]">
                 <li>Paste the block above into your Claude Desktop <span className="font-mono text-ledger-text-secondary">claude_desktop_config.json</span>.</li>
                 <li>Fully quit and reopen Claude Desktop.</li>
-                <li>Ask Claude, e.g. “Am I overspending on dining? Propose a budget.” — its suggestions appear below.</li>
+                <li>Ask Claude, e.g. “Am I overspending on dining? Propose a budget.” Suggestions appear below.</li>
               </ol>
 
               <button

@@ -411,7 +411,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       const res = await apiFetch('/api/weekly-email/send', { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || 'Send failed')
-      setTestEmailResult('Sent — check your inbox.')
+      setTestEmailResult('Sent. Check your inbox.')
     } catch (error) {
       setTestEmailResult(error instanceof Error ? error.message : 'Send failed')
     } finally {
@@ -661,7 +661,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       setShowRuleForm(false)
       setRuleSuccess(
         data.applied_to_existing > 0
-          ? `Rule created — applied to ${data.applied_to_existing} existing transaction${data.applied_to_existing === 1 ? '' : 's'}.`
+          ? `Rule created. Applied to ${data.applied_to_existing} existing transaction${data.applied_to_existing === 1 ? '' : 's'}.`
           : 'Rule created.'
       )
       await fetchRules()
@@ -764,7 +764,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
           failures.map(f => {
             const name = f.institution_name || `Item ${f.item_id}`
             if (f.status === 'login_required') {
-              return `${name}: login required — use Update connection`
+              return `${name}: login required. Use Update connection.`
             }
             return `${name}: ${f.error || 'sync failed'}`
           }),
@@ -825,7 +825,12 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
             {loadingAccounts ? (
               <div className="text-center py-8 text-ledger-text-faint">Loading accounts...</div>
             ) : accounts.length === 0 ? (
-              <div className="text-center py-8 text-ledger-text-faint mb-4">No accounts linked yet</div>
+              <div className="text-center py-8 mb-4">
+                <div className="text-[14px] font-semibold mb-1.5">No accounts linked yet</div>
+                <div className="text-[13px] text-ledger-text-faint">
+                  Connect a bank or brokerage below to start syncing.
+                </div>
+              </div>
             ) : (
               <div className="space-y-[16px] mb-4">
                 {accountsByItem.map(([itemId, itemAccounts]) => {
@@ -971,7 +976,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               />
               <p className="text-[11.5px] text-ledger-text-faint leading-snug">
                 Create a free Alchemy app with Robinhood Chain Mainnet, then paste the key here.
-                Free at dashboard.alchemy.com — stored encrypted on this device.
+                Free at dashboard.alchemy.com. Stored encrypted on this device.
               </p>
               {alchemyKeySaveResult && (
                 <p className="text-[11.5px] text-ledger-text-faint">{alchemyKeySaveResult}</p>
@@ -1120,7 +1125,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               deposits) are added to net worth. Never paste a private key.
             </p>
             <p className="text-[11.5px] text-ledger-text-faint mt-[6px]">
-              Robinhood Earn: paste the address that actually holds vault shares — often an
+              Robinhood Earn: paste the address that actually holds vault shares, often an
               ERC-4337 smart account visible on{' '}
               <a
                 href="https://robinhoodchain.blockscout.com"
@@ -1446,7 +1451,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
               {!weeklyEmailTransportConfigured && (
                 <p className="mt-[12px] text-[11.5px] text-ledger-warning">
-                  No Resend API key configured — the toggle will save, but no email will actually send until you add one below.
+                  No Resend API key configured. The toggle will save, but no email will actually send until you add one below.
                 </p>
               )}
 
@@ -1586,7 +1591,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               {freshRecoveryCode && (
                 <div className="mb-[12px] flex flex-col gap-[8px]">
                   <div className="text-[11px] text-ledger-text-faint">
-                    Save this now — it won't be shown again:
+                    Save this now. It won't be shown again:
                   </div>
                   <div className="flex items-center gap-[8px]">
                     <code className="glass-chip rounded-[8px] px-[12px] py-[9px] text-[13px] font-mono text-ledger-text-primary flex-1 text-center">

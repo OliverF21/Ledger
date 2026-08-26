@@ -467,7 +467,7 @@ function OnboardingPrompt({ onSuggest, onDismiss }: { onSuggest: () => void; onD
         </div>
         <h3 className="text-[17px] font-bold mb-[8px]">Set up your budgets</h3>
         <p className="text-[13px] text-ledger-text-faint leading-relaxed mb-[24px]">
-          Ledger can analyse your income and spending history to suggest a personalised monthly budget — or you can set one up manually.
+          Ledger can analyse your income and spending history to suggest a personalised monthly budget, or you can set one up manually.
         </p>
         <div className="flex flex-col gap-[10px] w-full">
           <button

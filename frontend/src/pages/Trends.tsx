@@ -119,7 +119,7 @@ export default function Trends() {
   }))
 
   const periodLabel = months.length > 0
-    ? `${months[0].full_label} – ${months[months.length - 1].full_label}`
+    ? `${months[0].full_label} to ${months[months.length - 1].full_label}`
     : ''
 
   // Insights: categories whose last complete month moved meaningfully vs. their

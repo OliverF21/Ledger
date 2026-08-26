@@ -375,7 +375,15 @@ export default function Spending() {
     return () => ro.disconnect()
   }, [onResize])
 
-  const layout = data && svgW > 0 ? buildLayout(data, svgW, SVG_H) : null
+  const hasFlow = Boolean(
+    data && (
+      data.income_sources.length > 0
+      || data.spending_categories.length > 0
+      || data.total_income > 0.01
+      || data.total_spending > 0.01
+    ),
+  )
+  const layout = data && hasFlow && svgW > 0 ? buildLayout(data, svgW, SVG_H) : null
 
   // Highlighting: hover an income source → dim other income things; hover expense → dim other expenses.
   // Hovering a left node keeps right ribbons visible (income flows to all expenses via tunnel).
@@ -451,9 +459,14 @@ export default function Spending() {
       <div className="glass-card p-[14px]">
         <div ref={wrapRef} className="relative" style={{ width: '100%' }}>
           {loading ? (
-            <div className="flex items-center justify-center text-ledger-text-faint text-[13px]" style={{ height: SVG_H }}>Loading…</div>
+            <div className="flex items-center justify-center text-ledger-text-faint text-[13px] py-16">Loading…</div>
           ) : !layout ? (
-            <div className="flex items-center justify-center text-ledger-text-faint text-[13px]" style={{ height: SVG_H }}>No data for this month</div>
+            <div className="flex flex-col items-center justify-center text-center py-16 px-6">
+              <div className="text-[14px] font-semibold mb-1.5">No cash flow this month</div>
+              <div className="text-[13px] text-ledger-text-faint max-w-[360px]">
+                Link an account or import a CSV to see income and spending here.
+              </div>
+            </div>
           ) : (
             <>
             <svg width={svgW} height={SVG_H} style={{ display: 'block', overflow: 'visible' }}>
