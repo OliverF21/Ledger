@@ -287,7 +287,7 @@ export default function Transactions() {
   const ThBtn = ({ field, label }: { field: SortField; label: string }) => (
     <button
       onClick={() => toggleSort(field)}
-      className="flex items-center gap-[4px] text-[11.5px] text-ledger-text-faintest uppercase font-medium hover:text-ledger-text-muted transition-colors"
+      className="metric-label flex items-center gap-[4px] hover:text-ledger-text-primary"
     >
       {label}
       <SortIcon active={sortField === field} dir={sortDir} />
@@ -354,16 +354,16 @@ export default function Transactions() {
             placeholder="Min"
             value={minAmount}
             onChange={e => setMinAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-            className="w-[52px] bg-transparent text-ledger-text-primary text-[13px] tabular-nums placeholder-ledger-text-faint focus:outline-none"
+            className="w-[52px] bg-transparent text-ledger-text-primary text-[13px] font-mono placeholder-ledger-text-faint focus:outline-none"
           />
-          <span className="text-[12px] text-ledger-text-faintest select-none">–</span>
+          <span className="text-[12px] text-ledger-text-faintest select-none">to</span>
           <input
             type="text"
             inputMode="decimal"
             placeholder="Max"
             value={maxAmount}
             onChange={e => setMaxAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-            className="w-[52px] bg-transparent text-ledger-text-primary text-[13px] tabular-nums placeholder-ledger-text-faint focus:outline-none"
+            className="w-[52px] bg-transparent text-ledger-text-primary text-[13px] font-mono placeholder-ledger-text-faint focus:outline-none"
           />
         </div>
 
@@ -430,7 +430,7 @@ export default function Transactions() {
 
                   return (
                     <Fragment key={txn.id}>
-                      <tr className={`border-b border-ledger-border-subtle last:border-0 hover:bg-ledger-inset transition-colors group ${txn.hidden ? 'opacity-35' : ''}`}>
+                      <tr className={`border-b border-ledger-border-subtle last:border-0 hover:bg-ledger-hover transition-colors group ${txn.hidden ? 'opacity-35' : ''}`}>
                         <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-primary">
                           <div className="flex items-center gap-[8px]">
                             {iconUrl ? (
@@ -453,18 +453,19 @@ export default function Transactions() {
                             className={`inline-flex max-w-full items-center gap-[6px] text-[11px] px-[9px] py-[3px] rounded-[7px] border transition-all ${
                               isRecat
                                 ? 'bg-ledger-accent/18 text-ledger-text-primary border-ledger-accent/40'
-                                : 'glass-chip text-ledger-text-muted border-white/15 hover:text-ledger-text-primary hover:border-ledger-accent/30'
+                                : 'glass-chip text-ledger-text-muted hover:text-ledger-text-primary hover:border-ledger-accent/40'
                             }`}
                           >
                             <span className="truncate">{formatTransactionCategory(txn)}</span>
                             <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 transition-transform ${isRecat ? 'rotate-180 text-ledger-accent' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
                           </button>
                         </td>
-                        <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-faintest tabular-nums">
+                        <td className="px-[20px] py-[11px] text-[12.5px] text-ledger-text-muted font-mono">
                           {new Date(txn.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
-                        <td className="px-[20px] py-[11px] text-right text-[14px] font-semibold tabular-nums"
-                          style={{ color: txn.amount < 0 ? '#4ec38a' : undefined }}>
+                        <td className={`px-[20px] py-[11px] text-right text-[13.5px] font-semibold font-mono ${
+                          txn.amount < 0 ? 'text-ledger-positive' : ''
+                        }`}>
                           {txn.amount < 0 ? '+' : '−'}${Math.abs(txn.amount).toFixed(2)}
                           {txn.user_split_pct && txn.user_split_pct < 1 && (
                             <span className="ml-[5px] text-[10px] font-normal text-ledger-text-faintest">

@@ -3,6 +3,7 @@ import { Sparkles, Check, X, Undo2, AlertCircle, Copy, KeyRound, RefreshCw } fro
 import type { useProposals } from '../hooks/useAdvisor'
 import { getAdvisorConfig, generateAdvisorKey, type AdvisorConfig } from '../api/plaidConfig'
 import { CHART_POSITIVE, CHART_TEXT, CHART_WARNING } from '../utils/chartTheme'
+import { formatCategory } from '../utils/categories'
 
 interface AdvisorProps {
   advisor: ReturnType<typeof useProposals>
@@ -105,10 +106,10 @@ export default function Advisor({ advisor }: AdvisorProps) {
             <Sparkles className="w-[18px] h-[18px] text-ledger-accent" strokeWidth={2} />
           </div>
           <div>
-            <div className="text-[14px] font-semibold mb-[4px]">AI Advisor</div>
+            <div className="text-section font-semibold mb-[5px]">AI Advisor</div>
             <div className="text-[12.5px] text-ledger-text-faint leading-[1.5]">
               Suggestions you asked Claude for show up here as proposals. Nothing changes
-              until you apply one — review the before → after and click Apply. Applied
+              until you apply one. Review the before and after, then click Apply. Applied
               budgets land in the <span className="text-ledger-text-secondary">current month</span> on
               the Budgets page, and you can undo one from the history below.
             </div>
@@ -117,8 +118,8 @@ export default function Advisor({ advisor }: AdvisorProps) {
       </div>
 
       {actionError && (
-        <div className="glass-card p-[14px] flex items-center gap-[10px] border border-[#e7705f]/40">
-          <AlertCircle className="w-[16px] h-[16px] text-[#e7705f] flex-shrink-0" strokeWidth={2} />
+        <div className="glass-card p-[14px] flex items-center gap-[10px] border-ledger-negative-border bg-ledger-negative-soft">
+          <AlertCircle className="w-[16px] h-[16px] text-ledger-negative flex-shrink-0" strokeWidth={2} />
           <span className="text-[12.5px] text-ledger-text-secondary">{actionError}</span>
         </div>
       )}
@@ -162,7 +163,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
           {showSetup && (
             <div className="mt-[16px] flex flex-col gap-[16px]">
               <div>
-                <div className="text-[11px] uppercase tracking-wide text-ledger-text-faint mb-[6px]">Connection key</div>
+                <div className="metric-label mb-[6px]">Connection key</div>
                 <div className="flex items-center gap-[8px]">
                   <code className="glass-chip rounded-[8px] px-[12px] py-[8px] text-[12px] text-ledger-text-primary font-mono truncate flex-1">
                     {cfg.service_key}
@@ -216,7 +217,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
 
       {/* Pending queue */}
       <div className="flex flex-col gap-[14px]">
-        <div className="text-[11px] uppercase tracking-widest text-ledger-text-faintest">Pending</div>
+        <div className="metric-label">Pending</div>
         {loading && pending.length === 0 ? (
           <div className="text-center py-10 text-ledger-text-faint text-[13px]">Loading…</div>
         ) : error ? (
@@ -245,21 +246,21 @@ export default function Advisor({ advisor }: AdvisorProps) {
                 <div className="flex items-start gap-[14px]">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-[8px] mb-[8px]">
-                      <span className="text-[10px] uppercase tracking-widest glass-chip px-[8px] py-[2px] rounded-[6px] text-ledger-text-muted">
+                      <span className="metric-label bg-ledger-inset border border-ledger-border px-[8px] py-[2px] rounded-[6px]">
                         Budget · {p.month}
                       </span>
                     </div>
                     <div className="flex items-baseline gap-[10px] mb-[10px] flex-wrap">
-                      <span className="text-[15px] font-semibold">{p.category_name}</span>
+                      <span className="text-[15px] font-semibold">{formatCategory(p.category_name)}</span>
                       {hasBasis && (
                         <>
-                          <span className="text-[14px] text-ledger-text-faint line-through tabular-nums">
+                          <span className="text-[14px] text-ledger-text-faint line-through font-mono">
                             {money(p.basis_limit)}
                           </span>
                           <span className="text-ledger-text-faint">→</span>
                         </>
                       )}
-                      <span className="text-[16px] font-bold text-ledger-accent tabular-nums">
+                      <span className="text-[16px] font-bold text-ledger-accent-text font-mono">
                         {money(p.proposed_limit)}
                       </span>
                     </div>
@@ -295,7 +296,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
       {/* History */}
       {history.length > 0 && (
         <div className="flex flex-col gap-[10px]">
-          <div className="text-[11px] uppercase tracking-widest text-ledger-text-faintest">History</div>
+          <div className="metric-label">History</div>
           {history.map(p => {
             const meta = STATUS_META[p.status] ?? { label: p.status, color: CHART_TEXT.faintest }
             return (
@@ -308,7 +309,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12.5px] text-ledger-text-secondary truncate">
-                    {p.category_name} · {money(p.proposed_limit)}
+                    {formatCategory(p.category_name)} · {money(p.proposed_limit)}
                     <span className="text-ledger-text-faint"> · {p.month}</span>
                   </div>
                 </div>

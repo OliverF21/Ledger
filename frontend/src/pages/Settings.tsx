@@ -815,7 +815,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
         <div className="flex flex-col gap-[24px]">
           {/* Linked Accounts */}
           <div className="glass-card p-[22px]">
-            <h3 className="text-[14px] font-semibold mb-[16px]">Linked accounts</h3>
+            <h3 className="text-section font-semibold mb-[16px]">Linked accounts</h3>
 
             {removeItemError && (
               <p className="text-[12px] text-ledger-negative mb-[12px]">{removeItemError}</p>
@@ -840,7 +840,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                           color={itemAccounts[0].institution_color}
                           size={20}
                         />
-                        <span className="text-[12px] font-semibold text-ledger-text-faint uppercase tracking-wide truncate">
+                        <span className="metric-label truncate">
                           {itemAccounts[0].institution_name || 'Unknown Institution'}
                         </span>
                       </div>
@@ -915,7 +915,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <div className="text-[13px] font-semibold">${account.current_balance.toFixed(2)}</div>
+                            <div className="text-[13.5px] font-semibold font-mono">${account.current_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div className="text-[11px] text-ledger-text-faint">{account.type}</div>
                           </div>
                         </div>
@@ -937,7 +937,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
           {/* Crypto wallets */}
           <div className="glass-card p-[22px]">
             <div className="flex items-center justify-between gap-[12px] mb-[16px]">
-              <h3 className="text-[14px] font-semibold">Crypto wallets</h3>
+              <h3 className="text-section font-semibold">Crypto wallets</h3>
               {(cryptoData?.wallets.length ?? 0) > 0 && (
                 <button
                   type="button"
@@ -1136,7 +1136,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
           {/* Plaid */}
           <div className="glass-card p-[22px]">
-            <h3 className="text-[14px] font-semibold mb-[16px]">Plaid</h3>
+            <h3 className="text-section font-semibold mb-[16px]">Plaid</h3>
 
             {plaidLoading ? (
               <div className="text-center py-8 text-ledger-text-faint">Loading…</div>
@@ -1209,7 +1209,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
         <div className="flex flex-col gap-[24px]">
           {/* Categorization Rules */}
           <div className="glass-card p-[22px]">
-            <h3 className="text-[14px] font-semibold mb-[16px]">Categorization rules</h3>
+            <h3 className="text-section font-semibold mb-[16px]">Categorization rules</h3>
 
             {rules.length === 0 ? (
               <div className="text-center py-6 text-ledger-text-faint text-[13px] mb-[12px]">
@@ -1257,7 +1257,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     <div key={rule.id} className="border border-ledger-border-subtle rounded-[9px] p-[12px] group">
                       <div className="flex items-start justify-between gap-[10px]">
                         <div className="min-w-0 flex-1">
-                          <div className="text-[11px] text-ledger-text-faint uppercase tracking-wide mb-[6px]">Merchant</div>
+                          <div className="metric-label mb-[6px]">Merchant</div>
                           <div className="glass-chip px-[10px] py-[7px] text-[12px] text-ledger-text-primary truncate">
                             {rule.merchant_pattern}
                           </div>
@@ -1298,7 +1298,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                       </div>
 
                       <div className="mt-[10px] flex items-center justify-between gap-[10px]">
-                        <span className="text-[11px] text-ledger-text-faint uppercase tracking-wide">Category</span>
+                        <span className="metric-label">Category</span>
                         <span className="flex items-center gap-[6px] text-[11px] glass-chip px-[8px] py-[4px] rounded-[6px] text-ledger-text-primary font-medium shrink-0">
                           {rule.category_color && (
                             <span className="w-[7px] h-[7px] rounded-[2px]" style={{ backgroundColor: rule.category_color }} />
@@ -1366,14 +1366,14 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
           <div className="flex flex-col gap-[24px] xl:pt-[18px]">
             {/* Alerts */}
             <div className="glass-card p-[22px]">
-              <h3 className="text-[14px] font-semibold mb-[16px]">Alerts</h3>
+              <h3 className="text-section font-semibold mb-[16px]">Alerts</h3>
 
               <div className="space-y-[16px]">
                 <div className="flex items-center justify-between">
                   <span className="text-[13px]">Budget exceeded</span>
                   <button
                     onClick={handleToggleBudgetExceeded}
-                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${budgetExceededEnabled ? 'bg-ledger-accent' : 'bg-ledger-track'}`}
+                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${budgetExceededEnabled ? 'bg-ledger-accent' : 'bg-ledger-track border border-ledger-border-input'}`}
                   >
                     <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${budgetExceededEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
                   </button>
@@ -1396,7 +1396,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     )}
                     <button
                       onClick={handleToggleLargeTxn}
-                      className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${largeTxnEnabled ? 'bg-ledger-accent' : 'bg-ledger-track'}`}
+                      className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${largeTxnEnabled ? 'bg-ledger-accent' : 'bg-ledger-track border border-ledger-border-input'}`}
                     >
                       <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${largeTxnEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
                     </button>
@@ -1405,7 +1405,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
                 <div className="flex items-center justify-between opacity-40">
                   <span className="text-[13px]">Webhook <span className="text-[11px] text-ledger-text-faint">(Coming soon)</span></span>
-                  <div className="w-[40px] h-[23px] bg-ledger-track rounded-full relative cursor-not-allowed">
+                  <div className="w-[40px] h-[23px] bg-ledger-track border border-ledger-border-input rounded-full relative cursor-not-allowed">
                     <div className="w-[17px] h-[17px] bg-ledger-text-faint rounded-full absolute left-[3px] top-[3px]" />
                   </div>
                 </div>
@@ -1414,7 +1414,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
             {/* Weekly summary email */}
             <div className="glass-card p-[22px]">
-              <h3 className="text-[14px] font-semibold mb-[4px]">Weekly summary email</h3>
+              <h3 className="text-section font-semibold mb-[4px]">Weekly summary email</h3>
               <p className="text-[12px] text-ledger-text-faint mb-[16px]">
                 Budget pace vs. this week's spending, sent every Monday.
               </p>
@@ -1436,7 +1436,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                   )}
                   <button
                     onClick={handleToggleWeeklyEmail}
-                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${weeklyEmailEnabled ? 'bg-ledger-accent' : 'bg-ledger-track'}`}
+                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${weeklyEmailEnabled ? 'bg-ledger-accent' : 'bg-ledger-track border border-ledger-border-input'}`}
                   >
                     <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${weeklyEmailEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
                   </button>
@@ -1502,7 +1502,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
             {/* Sync Settings */}
             <div className="glass-card p-[22px]">
-              <h3 className="text-[14px] font-semibold mb-[16px]">Sync settings</h3>
+              <h3 className="text-section font-semibold mb-[16px]">Sync settings</h3>
 
               <div className="space-y-[12px]">
                 <div>
@@ -1565,7 +1565,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
             <div className="glass-card p-[22px]">
               <div className="flex items-center gap-[8px] mb-[6px]">
                 <KeyRound className="w-[15px] h-[15px] text-ledger-accent" strokeWidth={2} />
-                <h3 className="text-[14px] font-semibold">Recovery code</h3>
+                <h3 className="text-section font-semibold">Recovery code</h3>
               </div>
               <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[14px]">
                 Since this app has no email, a recovery code is the only way to reset your
@@ -1623,7 +1623,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
             <div className="glass-card p-[22px]">
               <div className="flex items-center gap-[8px] mb-[6px]">
                 <KeyRound className="w-[15px] h-[15px] text-ledger-accent" strokeWidth={2} />
-                <h3 className="text-[14px] font-semibold">Recovery email</h3>
+                <h3 className="text-section font-semibold">Recovery email</h3>
               </div>
               <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[14px]">
                 Set an email to unlock "Email me a code" on the login screen, in addition to
