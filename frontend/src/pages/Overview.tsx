@@ -399,7 +399,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
         <div className="glass-card p-3 short:p-3.5 tall:p-4 min-w-0 min-h-0 overflow-hidden flex flex-col">
           <div className="flex justify-between items-start">
             <div>
-              <div className="metric-label">Net worth</div>
+              <div className="text-[12px] text-ledger-text-faint font-medium">Net Worth</div>
               <div className="text-[26px] short:text-[24px] tall:text-[28px] font-bold tracking-tightest mt-[2px] font-mono leading-tight text-ledger-text-heading">
                 {nwLoading ? '—' : `$${fmt(nwData?.current_net_worth ?? 0)}`}
               </div>
@@ -733,8 +733,8 @@ export default function Overview({ onNavigate }: OverviewProps) {
             </div>
 
             <div className="grid grid-cols-3 gap-2.5">
-              <div className="inset-panel px-3 py-2">
-                <div className="metric-label">Spending</div>
+              <div className="glass-chip px-3 py-2">
+                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Spending</div>
                 <div className="text-[17px] font-bold mt-[3px] font-mono tracking-tight leading-tight">
                   {data ? totalSpendingLabel : '—'}
                 </div>
@@ -747,8 +747,8 @@ export default function Overview({ onNavigate }: OverviewProps) {
                   </div>
                 )}
               </div>
-              <div className="inset-panel px-3 py-2">
-                <div className="metric-label">Income</div>
+              <div className="glass-chip px-3 py-2">
+                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Income</div>
                 <div className="text-[17px] font-bold mt-[3px] font-mono tracking-tight leading-tight">
                   {data ? totalIncomeLabel : '—'}
                 </div>
@@ -756,8 +756,8 @@ export default function Overview({ onNavigate }: OverviewProps) {
                   {data && data.total_income > 0 ? 'This month' : 'No deposits'}
                 </div>
               </div>
-              <div className="inset-panel px-3 py-2">
-                <div className="metric-label">Savings rate</div>
+              <div className="glass-chip px-3 py-2">
+                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Savings rate</div>
                 <div className="text-[17px] font-bold mt-[3px] font-mono tracking-tight leading-tight">
                   {data ? savingsRateLabel : '—'}
                 </div>

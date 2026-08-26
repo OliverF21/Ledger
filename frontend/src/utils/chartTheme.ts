@@ -1,30 +1,21 @@
-// Chart theming, kept next to the design tokens rather than inline per page.
-//
-// Recharts takes colours as props, not classes, so chart chrome cannot read the
-// Tailwind theme. Before this module every page hardcoded its own tooltip
-// background, axis stroke and category palette, which meant a token change left
-// the charts on the previous surface colour. Import from here instead so chart
-// chrome moves with the tokens.
-//
-// Values mirror `tailwind.config.js`. Keep them in step.
+// Recharts takes colours as props, not classes. Keep chart chrome next to the
+// glass surfaces so tooltips and axes match the rest of the app.
 
-/** Surfaces and hairlines, mirroring the `ledger-*` colour tokens. */
 export const CHART_SURFACE = {
-  card: '#13171e',
-  cardAlt: '#171b24',
-  inset: '#101319',
-  bg: '#0a0c11',
-  border: '#20252f',
-  borderStrong: '#333b4a',
+  card: 'rgba(18, 21, 30, 0.94)',
+  cardAlt: 'rgba(16, 19, 27, 0.96)',
+  inset: '#161a21',
+  bg: '#0d0f14',
+  border: 'rgba(255,255,255,0.14)',
+  borderStrong: 'rgba(255,255,255,0.22)',
 } as const
 
-/** Text steps, mirroring the `ledger-text-*` tokens. */
 export const CHART_TEXT = {
-  primary: '#e5e8ef',
-  secondary: '#c5cbd8',
-  muted: '#a4acbb',
-  faint: '#969eab',
-  faintest: '#858d9a',
+  primary: '#e9ebf0',
+  secondary: 'rgba(255,255,255,0.74)',
+  muted: 'rgba(255,255,255,0.66)',
+  faint: 'rgba(255,255,255,0.60)',
+  faintest: 'rgba(255,255,255,0.52)',
 } as const
 
 export const CHART_ACCENT = '#5b8def'
@@ -32,25 +23,20 @@ export const CHART_POSITIVE = '#4ec38a'
 export const CHART_NEGATIVE = '#e7705f'
 export const CHART_WARNING = '#d9a85b'
 
-/**
- * Categorical series colours. Adjacent entries differ in both hue and
- * lightness so neighbouring donut slices and stacked bars stay separable.
- */
 export const CATEGORY_PALETTE = [
   '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
-  '#e7705f', '#f0a87d', '#7fb0ff', '#9ed3a8', '#b98ae0',
+  '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
 ] as const
 
-/** Fallback for a slice with no assigned colour. */
-export const CATEGORY_FALLBACK = '#5d6472'
+export const CATEGORY_FALLBACK = '#565c69'
 
-/** Shared Recharts `<Tooltip>` chrome. */
 export const tooltipStyle = {
   backgroundColor: CHART_SURFACE.cardAlt,
-  border: `1px solid ${CHART_SURFACE.borderStrong}`,
-  borderRadius: '10px',
-  boxShadow: '0 20px 48px -20px rgba(3,5,10,0.80)',
+  border: `1px solid ${CHART_SURFACE.border}`,
+  borderRadius: '12px',
+  boxShadow: '0 20px 50px -28px rgba(10,10,40,0.55)',
   fontSize: '12px',
+  backdropFilter: 'blur(16px)',
 } as const
 
 export const tooltipLabelStyle = {
@@ -63,6 +49,5 @@ export const tooltipItemStyle = {
   color: CHART_TEXT.primary,
 } as const
 
-/** Axis tick/line colour. Deliberately quiet: axes frame data, not compete. */
-export const AXIS_STROKE = CHART_TEXT.faintest
-export const GRID_STROKE = CHART_SURFACE.border
+export const AXIS_STROKE = 'rgba(255,255,255,0.42)'
+export const GRID_STROKE = '#0d0f14'

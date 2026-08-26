@@ -20,8 +20,8 @@ body {
   font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0a0c11;
-  color: #e5e8ef;
+  background-color: #0d0f14;
+  color: #e9ebf0;
   height: 100%;
   overflow: hidden;
 }
@@ -31,19 +31,23 @@ body {
   overflow: hidden;
 }
 
-/* Figures line up in columns wherever they are compared. */
-.font-mono,
-th,
-td {
+.tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
-code {
+/* Figures stay in Hanken. Mono is for actual code, not every dollar amount. */
+.font-mono {
+  font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+code,
+pre,
+kbd,
+samp {
   font-family: 'JetBrains Mono', source-code-pro, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Only things that respond to the pointer transition. A blanket transition on
-   every element makes unrelated repaints animate and muddies real feedback. */
 a,
 button,
 input,
@@ -53,15 +57,14 @@ summary,
 [role='button'],
 [role='tab'],
 [role='option'] {
-  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
-  transition-duration: 160ms;
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  transition-property: color, background-color, border-color, box-shadow, opacity, filter, transform;
+  transition-duration: 180ms;
+  transition-timing-function: ease;
 }
 
-/* One focus treatment for the whole app, on keyboard focus only. */
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #0a0c11, 0 0 0 4px rgba(91, 141, 239, 0.55);
+  box-shadow: 0 0 0 2px rgba(6, 7, 10, 0.9), 0 0 0 4px rgba(91, 141, 239, 0.55);
   border-radius: inherit;
 }
 
@@ -79,49 +82,33 @@ summary,
   }
 }
 
-/* ── Ambient field ────────────────────────────────────────────────────────────
-   The app body is a solid instrument sitting on an ambient background. The
-   field is deliberately quiet: it reads as depth behind the enclosure, not as
-   gradient wallpaper, so it never competes with the data on top of it. */
+/* ── Liquid glass background ─────────────────────────────────────────────── */
 
 .aurora-root {
   position: fixed;
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background:
-    radial-gradient(120% 90% at 88% 4%, #131c2e 0%, transparent 58%),
-    linear-gradient(168deg, #0b1017 0%, #090c12 46%, #06080c 100%);
+  background: linear-gradient(160deg, #07101f 0%, #050914 45%, #010204 100%);
 }
 
 .aurora-layer {
   position: absolute;
-  inset: -25%;
-  filter: blur(72px);
-  animation: aurora-drift 48s ease-in-out infinite alternate;
+  inset: -30%;
+  filter: blur(58px);
+  animation: aurora-drift 40s ease-in-out infinite alternate;
   background:
-    radial-gradient(1040px 900px at 92% 6%, rgba(74, 118, 214, 0.26), transparent 70%),
-    radial-gradient(820px 720px at 82% 26%, rgba(64, 150, 186, 0.14), transparent 66%),
-    radial-gradient(760px 700px at 6% 92%, rgba(196, 122, 96, 0.09), transparent 62%);
-}
-
-/* Fixed, pointer-events-none grain. Keeps large dark areas from banding and
-   gives the surfaces a physical texture instead of flat vector black. */
-.aurora-root::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+    radial-gradient(1220px 1040px at 94% 8%, rgba(92,140,255,0.78), transparent 74%),
+    radial-gradient(980px 860px at 88% 18%, rgba(78,196,255,0.42), transparent 68%),
+    radial-gradient(900px 820px at 96% 72%, rgba(70,130,255,0.28), transparent 72%),
+    radial-gradient(620px 620px at 4% 94%, rgba(255,150,120,0.22), transparent 60%);
 }
 
 @keyframes aurora-drift {
-  0%   { transform: translate(-3%, -2%) scale(1.08); }
-  100% { transform: translate(3%, 2%) scale(1.14); }
+  0%   { transform: translate(-4%, -3%) rotate(-3deg) scale(1.12); }
+  100% { transform: translate(4%, 3%) rotate(3deg) scale(1.18); }
 }
 
-/* Login/loading gradient ring rotation */
 @keyframes ledger-ring-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
@@ -133,138 +120,101 @@ summary,
   }
 }
 
-/* ── Surfaces ─────────────────────────────────────────────────────────────────
-   In @layer components so Tailwind's own utilities still win: a `rounded-well`
-   or `bg-ledger-inset` in JSX overrides the default set here instead of losing
-   to it on source order.
+/* ── Glass surfaces ───────────────────────────────────────────────────────── */
 
-   Depth is built from an opaque tinted fill, a hairline border, and a shadow
-   cast in the background's own hue. No white translucent wash, and no outer
-   glow: on a data-dense screen those cost contrast and give every surface the
-   same weight. */
-
-@layer components {
-
-  /* Primary panel. Holds a titled group of content. */
-  .glass-card {
-    background: linear-gradient(180deg, #161a22 0%, #13171e 62%, #12161d 100%);
-    border: 1px solid #20252f;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.045),
-      0 4px 14px -4px rgba(4, 6, 11, 0.62),
-      0 1px 2px rgba(4, 6, 11, 0.45);
-    border-radius: 14px;
-  }
-
-  /* Control surface: inputs, buttons, table headers, filter pills. Sits lower
-     than a panel so a control never reads as loud as the panel holding it. */
-  .glass-chip {
-    background: #101319;
-    border: 1px solid #262c37;
-    border-radius: 8px;
-  }
-
-  /* Interactive chips get real hover and press feedback. */
-  button.glass-chip:not(:disabled):hover,
-  a.glass-chip:hover,
-  summary.glass-chip:hover {
-    background: #1a1f28;
-    border-color: #333b4a;
-  }
-
-  button.glass-chip:not(:disabled):active,
-  a.glass-chip:active {
-    background: #0e1116;
-    transform: translateY(1px);
-  }
-
-  input.glass-chip:hover,
-  select.glass-chip:hover,
-  textarea.glass-chip:hover {
-    border-color: #2f3542;
-  }
-
-  input.glass-chip:focus,
-  select.glass-chip:focus,
-  textarea.glass-chip:focus {
-    outline: none;
-    border-color: #3d5f9e;
-    background: #12161d;
-  }
-
-  .glass-overlay {
-    background: rgba(5, 7, 11, 0.62);
-    backdrop-filter: blur(10px) saturate(105%);
-    -webkit-backdrop-filter: blur(10px) saturate(105%);
-  }
-
-  .glass-modal {
-    background: linear-gradient(180deg, #191d26 0%, #14181f 58%, #12161c 100%);
-    border: 1px solid #2b323e;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.05),
-      0 20px 48px -20px rgba(3, 5, 10, 0.80),
-      0 2px 6px rgba(3, 5, 10, 0.52);
-    border-radius: 16px;
-  }
-
-  /* Navigation. The one surface kept genuinely translucent: it is a fixed,
-     non-scrolling layer, so the blur costs nothing per frame and it lets the
-     ambient field read somewhere in the composition. */
-  .glass-sidebar {
-    border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.075);
-    background: linear-gradient(168deg, rgba(30, 36, 48, 0.72), rgba(14, 17, 23, 0.78));
-    backdrop-filter: blur(26px) saturate(125%);
-    -webkit-backdrop-filter: blur(26px) saturate(125%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.06),
-      0 20px 48px -20px rgba(3, 5, 10, 0.72);
-  }
-
-  /* Main content column. Opaque on purpose: text and figures need a stable
-     base, not a drifting gradient behind them. */
-  .glass-shell {
-    border-radius: 18px;
-    border: 1px solid #1c212b;
-    background: #0e1116;
-    box-shadow: 0 20px 48px -22px rgba(3, 5, 10, 0.7);
-  }
-
-  /* Page header inside the shell. Full-bleed, so only a bottom hairline. */
-  .glass-header {
-    background: linear-gradient(180deg, #14181f 0%, #111419 100%);
-    border-bottom: 1px solid #1f242e;
-  }
-
-  /* Recessed area inside a panel: grouped metrics, read-only figures, wells.
-     Steps down from the panel fill and carries a control-weight border, so it
-     reads as machined into the panel rather than floating on it. */
-  .inset-panel {
-    background: #0d1015;
-    border: 1px solid #262c37;
-    border-radius: 10px;
-  }
-
-  /* Small-caps label used for metric names. Defined once so the treatment
-     cannot drift page to page. */
-  .metric-label {
-    font-size: 10.5px;
-    line-height: 1.3;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    font-weight: 600;
-    color: #969eab;
-  }
-
-  /* Hairline data separator: the density-appropriate alternative to giving
-     every row its own card. */
-  .row-divide > * + * {
-    border-top: 1px solid #171b23;
-  }
+.glass-card {
+  background: linear-gradient(140deg,
+    rgba(255,255,255,0.24),
+    rgba(255,255,255,0.085) 34%,
+    rgba(255,255,255,0.06) 70%,
+    rgba(255,255,255,0.13));
+  border: 1px solid rgba(255,255,255,0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    inset 0 0 30px rgba(255,255,255,0.06),
+    0 20px 50px -28px rgba(10,10,40,0.55),
+    0 0 46px rgba(150,170,255,0.10);
+  border-radius: 22px;
 }
 
-/* Translucency is decorative here, so drop it when the OS asks. */
+.glass-overlay {
+  background: rgba(4, 6, 10, 0.42);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+}
+
+.glass-modal {
+  background: linear-gradient(180deg,
+    rgba(18, 21, 30, 0.94) 0%,
+    rgba(14, 17, 25, 0.92) 52%,
+    rgba(11, 14, 21, 0.94) 100%);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    inset 0 0 0 1px rgba(255,255,255,0.03),
+    0 30px 80px -34px rgba(0,0,0,0.82),
+    0 0 42px rgba(91,141,239,0.08);
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+  border-radius: 22px;
+}
+
+.glass-chip {
+  background: linear-gradient(140deg,
+    rgba(255,255,255,0.24),
+    rgba(255,255,255,0.085) 34%,
+    rgba(255,255,255,0.06) 70%,
+    rgba(255,255,255,0.13));
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 9px;
+}
+
+.glass-sidebar {
+  border-radius: 26px;
+  border: 1px solid rgba(255,255,255,0.20);
+  background: linear-gradient(160deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 0 30px rgba(255,255,255,0.05),
+    0 24px 60px -22px rgba(0,0,0,0.75),
+    0 0 46px rgba(150,170,255,0.10);
+}
+
+.glass-shell {
+  border-radius: 26px;
+  border: 1px solid rgba(255,255,255,0.14);
+}
+
+.glass-header {
+  background: linear-gradient(140deg,
+    rgba(255,255,255,0.24),
+    rgba(255,255,255,0.085) 34%,
+    rgba(255,255,255,0.06) 70%,
+    rgba(255,255,255,0.13));
+  border-bottom: 1px solid rgba(255,255,255,0.16);
+}
+
+/* Recessed group inside a glass panel: same material as a chip, not a flat well. */
+.inset-panel {
+  background: linear-gradient(140deg,
+    rgba(255,255,255,0.16),
+    rgba(255,255,255,0.05) 40%,
+    rgba(255,255,255,0.08));
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 12px;
+}
+
+.metric-label {
+  font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: rgba(255,255,255,0.52);
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .glass-sidebar,
   .glass-overlay,
@@ -274,7 +224,7 @@ summary,
   }
 
   .glass-sidebar {
-    background: #12161d;
+    background: #12151c;
   }
 
   .glass-overlay {
@@ -284,12 +234,11 @@ summary,
 
 .soft-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: #2a313d transparent;
+  scrollbar-color: rgba(255,255,255,0.16) transparent;
 }
 
 .soft-scrollbar::-webkit-scrollbar {
   width: 8px;
-  height: 8px;
 }
 
 .soft-scrollbar::-webkit-scrollbar-track {
@@ -297,13 +246,13 @@ summary,
 }
 
 .soft-scrollbar::-webkit-scrollbar-thumb {
-  background: #2a313d;
+  background: rgba(255,255,255,0.14);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 .soft-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #3a4353;
+  background: rgba(255,255,255,0.22);
   background-clip: padding-box;
 }
