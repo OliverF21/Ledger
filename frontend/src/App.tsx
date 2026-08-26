@@ -20,16 +20,18 @@ import { getPlaidConfig } from './api/plaidConfig'
 
 type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
 
-/** Minimal spinner shown during the initial token check. */
+/** Rotating gradient ring shown during the initial token check (mirrors the
+ *  login page's loading state). Kept inline to avoid a shared export. */
 function BootLoader() {
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center gap-3 bg-ledger-bg text-ledger-text-primary">
+    <div className="relative z-10 min-h-dvh flex flex-col items-center justify-center gap-4 text-ledger-text-primary">
       <div
-        className="w-8 h-8 rounded-full"
+        className="w-[92px] h-[92px] rounded-full"
         style={{
-          animation: 'ledger-ring-spin 0.9s linear infinite',
-          border: '2px solid rgba(77,141,255,0.22)',
-          borderTopColor: '#4d8dff',
+          animation: 'ledger-ring-spin 2.4s linear infinite',
+          background: 'conic-gradient(from 0deg, #5b8def, #4fc4c4, #8a7df0, #4ec38a, #d9a85b, #e7705f, #f0a87d, #7fb0ff, #5b8def)',
+          WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
+          mask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
         }}
       />
       <div className="text-[13px] text-ledger-text-faint">Loading…</div>
@@ -139,19 +141,39 @@ function App() {
     : screenHeaders[activeScreen]
 
   if (auth === 'loading') {
-    return <BootLoader />
+    return (
+      <>
+        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <BootLoader />
+      </>
+    )
   }
 
   if (auth === 'unauthenticated') {
-    return <Login onAuthenticated={loadMe} />
+    return (
+      <>
+        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Login onAuthenticated={loadMe} />
+      </>
+    )
   }
 
   if (auth === 'authenticated' && setupNeeded === null) {
-    return <BootLoader />
+    return (
+      <>
+        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <BootLoader />
+      </>
+    )
   }
 
   if (auth === 'authenticated' && setupNeeded) {
-    return <Setup onDone={() => setSetupNeeded(false)} />
+    return (
+      <>
+        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Setup onDone={() => setSetupNeeded(false)} />
+      </>
+    )
   }
 
   const renderScreen = () => {
@@ -184,23 +206,29 @@ function App() {
   }
 
   return (
-    <div className="h-dvh flex bg-ledger-bg text-ledger-text-primary overflow-hidden">
-      <Sidebar
-        activeScreen={activeScreen}
-        onScreenChange={navigate}
-        onSignOut={signOut}
-        advisorCount={advisor.pendingCount}
-        accounts={linkedAccounts.accounts}
-      />
+    <>
+      <div className="aurora-root">
+        <div className="aurora-layer" />
+      </div>
 
-      <main className="flex-1 flex flex-col min-h-0 min-w-0 glass-shell overflow-hidden">
-        <Header title={header.title} subtitle={header.subtitle} name={userName} />
+      <div className="relative z-10 h-dvh text-ledger-text-primary flex p-2 short:p-3 tall:p-4 gap-2 short:gap-3 tall:gap-4 overflow-hidden">
+        <Sidebar
+          activeScreen={activeScreen}
+          onScreenChange={navigate}
+          onSignOut={signOut}
+          advisorCount={advisor.pendingCount}
+          accounts={linkedAccounts.accounts}
+        />
 
-        <div className="flex-1 min-h-0 overflow-auto px-6 py-5 soft-scrollbar">
-          {renderScreen()}
-        </div>
-      </main>
-    </div>
+        <main className="flex-1 flex flex-col min-h-0 glass-shell overflow-hidden">
+          <Header title={header.title} subtitle={header.subtitle} name={userName} />
+
+          <div className="flex-1 min-h-0 overflow-auto p-3 short:p-4 tall:p-5 soft-scrollbar">
+            {renderScreen()}
+          </div>
+        </main>
+      </div>
+    </>
   )
 }
 

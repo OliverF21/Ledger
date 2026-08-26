@@ -1,19 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ArrowUp, ArrowDown, ChevronDown } from 'lucide-react'
-import { AreaChart, Area, PieChart, Pie, Cell, Sector, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, PieChart, Pie, Cell, Sector, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { apiFetch } from '../api/client'
 import { useAnalytics, type CategorySpend } from '../hooks/useAnalytics'
 import { useOnSyncComplete } from '../hooks/useSync'
 import AlertsPanel from '../components/AlertsPanel'
 import { formatCategory, formatTransactionCategory, transactionDisplayIcon } from '../utils/categories'
 import { getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl, getMonthFromUrl, formatMonthLabel } from '../utils/months'
-import {
-  CHART_ACCENT,
-  CHART_NEGATIVE,
-  tooltipItemStyle,
-  tooltipLabelStyle,
-  tooltipStyle,
-} from '../utils/chartTheme'
+import { alphaColor, mixHex } from '../utils/color'
 import { groupAssetAccounts, type AssetGroup, type AssetAccount } from '../utils/accountGroups'
 
 function fmt(n: number) {
@@ -387,179 +381,153 @@ export default function Overview({ onNavigate }: OverviewProps) {
   }
 
   return (
-    <div className="min-h-full flex flex-col gap-4 min-w-0">
+    <div className="min-h-full flex flex-col gap-3 min-w-0">
       <AlertsPanel />
 
-      <section className="glass-card px-5 pt-5 pb-4 min-w-0 overflow-hidden">
-        <div className="flex justify-between items-start gap-4">
-          <div>
-            <div className="text-[13px] text-ledger-text-muted font-medium">Net worth</div>
-            <div className="text-[40px] short:text-[34px] tall:text-[48px] font-semibold tracking-tightest mt-1 leading-none tabular-nums text-ledger-text-heading">
-              {nwLoading ? '—' : `$${fmt(nwData?.current_net_worth ?? 0)}`}
-            </div>
-            {!nwLoading && nwData && nwData.snapshots.length >= 2 && nwData.change_amount !== 0 && (
-              <div className="flex items-center gap-[6px] mt-2">
-                {nwData.change_pct !== 0 && (
-                  <span className={`inline-flex items-center gap-[3px] text-[12px] font-semibold ${
-                    nwData.change_pct >= 0 ? 'text-ledger-positive' : 'text-ledger-negative'
-                  }`}>
-                    {nwData.change_pct >= 0
-                      ? <ArrowUp className="w-[12px] h-[12px]" strokeWidth={2.5} />
-                      : <ArrowDown className="w-[12px] h-[12px]" strokeWidth={2.5} />}
-                    {Math.abs(nwData.change_pct).toFixed(1)}%
+      {/* Row 1: Net Worth + Spending by Category */}
+      <div className="grid grid-cols-[2fr_1.4fr] gap-3 min-w-0 items-stretch shrink-0">
+        {/* Net Worth Card */}
+        <div className="glass-card p-3 short:p-3.5 tall:p-4 min-w-0 min-h-0 overflow-hidden flex flex-col">
+          <div className="flex justify-between items-start">
+            <div>
+              <div className="text-[12px] text-ledger-text-faint font-medium">Net Worth</div>
+              <div className="text-[26px] short:text-[24px] tall:text-[28px] font-bold letter-spacing-[-0.02em] mt-[2px] tabular-nums leading-tight">
+                {nwLoading ? '—' : `$${fmt(nwData?.current_net_worth ?? 0)}`}
+              </div>
+              {!nwLoading && nwData && nwData.snapshots.length >= 2 && nwData.change_amount !== 0 && (
+                <div className="flex items-center gap-[6px] mt-[4px]">
+                  {nwData.change_pct !== 0 && (
+                    <span className={`inline-flex items-center gap-[3px] text-[11.5px] font-semibold px-[6px] py-[2px] rounded-[6px] ${
+                      nwData.change_pct >= 0
+                        ? 'bg-[rgba(78,195,138,0.13)] text-ledger-positive'
+                        : 'bg-[rgba(231,112,95,0.13)] text-ledger-negative'
+                    }`}>
+                      {nwData.change_pct >= 0
+                        ? <ArrowUp className="w-[11px] h-[11px]" strokeWidth={2.5} />
+                        : <ArrowDown className="w-[11px] h-[11px]" strokeWidth={2.5} />}
+                      {Math.abs(nwData.change_pct).toFixed(1)}%
+                    </span>
+                  )}
+                  <span className={`text-[12px] tabular-nums font-semibold ${nwData.change_amount >= 0 ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
+                    {nwData.change_amount >= 0 ? '+' : '−'}${fmt(Math.abs(nwData.change_amount))}
                   </span>
-                )}
-                <span className={`text-[13px] font-semibold tabular-nums ${nwData.change_amount >= 0 ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
-                  {nwData.change_amount >= 0 ? '+' : '−'}${fmt(Math.abs(nwData.change_amount))}
-                </span>
-                <span className="text-[13px] text-ledger-text-faint">this period</span>
+                  <span className="text-[12px] text-ledger-text-faint">this period</span>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-[5px]">
+              {(['6M', '1Y'] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setTimeRange(r)}
+                  className={`text-[11.5px] px-[8px] py-[3px] rounded-[6px] font-semibold transition-all ${
+                    timeRange === r
+                      ? 'bg-ledger-accent text-ledger-accent-on'
+                      : 'glass-chip text-ledger-text-faint hover:text-ledger-text-primary'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-[8px] short:mt-[6px] h-[clamp(56px,9vh,100px)] shrink-0">
+            {nwLoading ? (
+              <div className="h-full flex items-center justify-center text-[12.5px] text-ledger-text-faintest">Loading…</div>
+            ) : nwData && nwData.snapshots.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={nwData.snapshots.map(s => ({ date: s.date, value: s.total }))}>
+                  <defs>
+                    <linearGradient id="colorNetWorth" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#5b8def" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#5b8def" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="0" stroke="#0d0f14" horizontal={false} vertical={false} />
+                  <XAxis dataKey="date" hide />
+                  <YAxis hide domain={['auto', 'auto']} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px' }}
+                    formatter={(val: number) => [`$${fmt(val)}`, 'Net Worth']}
+                    cursor={false}
+                  />
+                  <Area type="monotone" dataKey="value" stroke="#5b8def" strokeWidth={2.5} fill="url(#colorNetWorth)" dot={nwData.snapshots.length === 1} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-[12.5px] text-ledger-text-faintest">
+                No accounts linked
               </div>
             )}
           </div>
-          <div className="flex gap-[5px]">
-            {(['6M', '1Y'] as const).map(r => (
-              <button
-                key={r}
-                onClick={() => setTimeRange(r)}
-                className={`text-[12px] px-[9px] py-[4px] rounded-[7px] font-medium ${
-                  timeRange === r
-                    ? 'bg-ledger-accent text-ledger-accent-on'
-                    : 'text-ledger-text-faint hover:text-ledger-text-primary hover:bg-ledger-hover'
-                }`}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
-        </div>
 
-        <div className="mt-4 h-[clamp(120px,18vh,176px)]">
-          {nwLoading ? (
-            <div className="h-full flex items-center justify-center text-[13px] text-ledger-text-faintest">Loading…</div>
-          ) : nwData && nwData.snapshots.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={nwData.snapshots.map(s => ({ date: s.date, value: s.total }))}>
-                <defs>
-                  <linearGradient id="colorNetWorth" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.18} />
-                    <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="date" hide />
-                <YAxis hide domain={['auto', 'auto']} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  labelStyle={tooltipLabelStyle}
-                  itemStyle={tooltipItemStyle}
-                  formatter={(val: number) => [`$${fmt(val)}`, 'Net worth']}
-                  cursor={false}
-                />
-                <Area type="monotone" dataKey="value" stroke={CHART_ACCENT} strokeWidth={2} fill="url(#colorNetWorth)" dot={nwData.snapshots.length === 1} />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-full flex items-center justify-center text-[13px] text-ledger-text-faintest">
-              No accounts linked
-            </div>
-          )}
-        </div>
-
-        {!nwLoading && nwData && nwData.accounts.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-ledger-border-subtle grid grid-cols-2 gap-x-8">
-            <div>
-              <div className="metric-label mb-2">Assets</div>
-              <div className="flex flex-col gap-[6px]">
-                {assetGroups.map(entry => (
-                  <AssetGroupDropdown
-                    key={entry.group}
-                    group={entry.group}
-                    label={entry.label}
-                    accounts={entry.accounts}
-                    total={entry.total}
-                    expanded={expandedAssetGroups.has(entry.group)}
-                    onToggle={toggleAssetGroup}
-                  />
-                ))}
-              </div>
-              <div className="flex justify-between text-[12px] mt-2 pt-2 border-t border-ledger-border-subtle">
-                <span className="text-ledger-text-faint">Total</span>
-                <span className="text-ledger-positive tabular-nums font-semibold">${fmt(nwData.total_assets)}</span>
-              </div>
-            </div>
-
-            <div>
-              <div className="metric-label mb-2">Liabilities</div>
-              {nwData.accounts.filter(a => a.is_liability).length === 0 ? (
-                <div className="text-[12px] text-ledger-text-faintest">None</div>
-              ) : (
-                <div className="flex flex-col gap-[6px]">
-                  {nwData.accounts.filter(a => a.is_liability).map(a => (
-                    <div key={a.id} className="flex justify-between text-[12px] leading-tight">
-                      <span className="text-ledger-text-secondary truncate pr-2">{a.name}</span>
-                      <span className="text-ledger-negative tabular-nums flex-shrink-0">−${fmt(a.balance)}</span>
-                    </div>
+          {/* Assets / Liabilities — totals + account names, no nested scroll */}
+          {!nwLoading && nwData && nwData.accounts.length > 0 && (
+            <div className="mt-2 short:mt-1.5 pt-2 short:pt-1.5 grid grid-cols-2 gap-x-3 short:gap-x-2 flex-1 min-h-0 overflow-y-auto soft-scrollbar">
+              {/* Assets column */}
+              <div>
+                <div className="text-[10px] text-ledger-text-faintest uppercase font-semibold tracking-wide mb-[4px]">Assets</div>
+                <div className="flex flex-col gap-[5px]">
+                  {assetGroups.map(entry => (
+                    <AssetGroupDropdown
+                      key={entry.group}
+                      group={entry.group}
+                      label={entry.label}
+                      accounts={entry.accounts}
+                      total={entry.total}
+                      expanded={expandedAssetGroups.has(entry.group)}
+                      onToggle={toggleAssetGroup}
+                    />
                   ))}
                 </div>
-              )}
-              <div className="flex justify-between text-[12px] mt-2 pt-2 border-t border-ledger-border-subtle">
-                <span className="text-ledger-text-faint">Total</span>
-                <span className="text-ledger-negative tabular-nums font-semibold">−${fmt(nwData.total_liabilities)}</span>
+                <div className="flex justify-between text-[11px] mt-[4px] pt-[4px] border-t border-ledger-border-subtle/50">
+                  <span className="text-ledger-text-faint">Total</span>
+                  <span className="text-ledger-positive tabular-nums font-semibold">${fmt(nwData.total_assets)}</span>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
-      </section>
 
-      <section className={`glass-card px-5 py-4 grid grid-cols-3 divide-x divide-ledger-border-subtle ${loading ? 'opacity-80' : ''}`}>
-        <div className="pr-5">
-          <div className="text-[13px] text-ledger-text-muted">Spending</div>
-          <div className="text-[22px] font-semibold mt-1 tabular-nums tracking-tight leading-none">
-            {data ? totalSpendingLabel : '—'}
-          </div>
-          {spendingChange !== null && (
-            <div className={`text-[12px] mt-1.5 flex items-center gap-1 ${spendingChange <= 0 ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
-              {spendingChange <= 0
-                ? <><ArrowDown className="w-[11px] h-[11px]" strokeWidth={2.5} />{Math.abs(spendingChange).toFixed(0)}% vs prior</>
-                : <><ArrowUp className="w-[11px] h-[11px]" strokeWidth={2.5} />{spendingChange.toFixed(0)}% vs prior</>
-              }
+              {/* Liabilities column */}
+              <div>
+                <div className="text-[10px] text-ledger-text-faintest uppercase font-semibold tracking-wide mb-[4px]">Liabilities</div>
+                {nwData.accounts.filter(a => a.is_liability).length === 0 ? (
+                  <div className="text-[11px] text-ledger-text-faintest italic">None</div>
+                ) : (
+                  <div className="flex flex-col gap-[3px]">
+                    {nwData.accounts.filter(a => a.is_liability).map(a => (
+                      <div key={a.id} className="flex justify-between text-[11.5px] leading-tight">
+                        <span className="text-ledger-text-secondary truncate pr-2">{a.name}</span>
+                        <span className="text-ledger-negative tabular-nums font-medium flex-shrink-0">−${fmt(a.balance)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between text-[11px] mt-[4px] pt-[4px] border-t border-ledger-border-subtle/50">
+                  <span className="text-ledger-text-faint">Total</span>
+                  <span className="text-ledger-negative tabular-nums font-semibold">−${fmt(nwData.total_liabilities)}</span>
+                </div>
+              </div>
             </div>
           )}
         </div>
-        <div className="px-5">
-          <div className="text-[13px] text-ledger-text-muted">Income</div>
-          <div className="text-[22px] font-semibold mt-1 tabular-nums tracking-tight leading-none text-ledger-positive">
-            {data ? totalIncomeLabel : '—'}
-          </div>
-          <div className="text-[12px] text-ledger-text-faint mt-1.5">
-            {data && data.total_income > 0 ? monthLabel : 'No deposits'}
-          </div>
-        </div>
-        <div className="pl-5">
-          <div className="text-[13px] text-ledger-text-muted">Savings rate</div>
-          <div className="text-[22px] font-semibold mt-1 tabular-nums tracking-tight leading-none">
-            {data ? savingsRateLabel : '—'}
-          </div>
-          <div className="text-[12px] text-ledger-text-faint mt-1.5 truncate">
-            {data ? (data.savings_rate >= 0 ? 'Income exceeds spending' : 'Spending exceeds income') : ''}
-          </div>
-        </div>
-      </section>
 
-      <div className="grid grid-cols-[1.15fr_1fr] gap-4 items-stretch min-w-0">
+        {/* Spending by Category Donut */}
         <div
           ref={spendingChartRef}
-          className="glass-card p-5 min-w-0 grid grid-cols-[180px_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-x-5 gap-y-3 overflow-hidden"
+          className="glass-card p-4 min-w-0 h-full grid grid-cols-[200px_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 overflow-hidden"
         >
           <div className="col-span-2 flex items-center justify-between gap-3">
-            <div className="text-[14px] font-semibold">Spending by category</div>
+            <div className="text-[13px] text-ledger-text-faint font-medium">Spending by Category</div>
             <div className="flex items-center gap-2 shrink-0">
               {monthRefreshing && data && (
-                <span className="text-[11px] text-ledger-text-faintest">Updating</span>
+                <span className="text-[10px] uppercase tracking-[0.14em] text-ledger-text-faintest">
+                  Updating
+                </span>
               )}
               <select
                 value={selectedMonth}
                 onChange={e => selectMonth(e.target.value)}
-                className="text-[12px] glass-chip px-[8px] py-[4px] text-ledger-text-primary cursor-pointer outline-none"
+                className="text-[11.5px] glass-chip px-[7px] py-[3px] text-ledger-text-primary cursor-pointer outline-none"
               >
                 {monthOptions.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -569,29 +537,52 @@ export default function Overview({ onNavigate }: OverviewProps) {
           </div>
 
           {loading && !data ? (
-            <div className="col-span-2 flex items-center justify-center text-ledger-text-faint text-[13px] min-h-[180px]">Loading…</div>
+            <div className="col-span-2 flex items-center justify-center text-ledger-text-faint text-[13px] min-h-[210px]">Loading…</div>
           ) : !data || (spendingChartData.length === 0 && data.spending_by_category.length === 0) ? (
-            <div className="col-span-2 flex items-center justify-center text-ledger-text-faint text-[13px] min-h-[180px]">No expense data</div>
+            <div className="col-span-2 flex items-center justify-center text-ledger-text-faint text-[12px] min-h-[210px]">No expense data</div>
           ) : (
             <>
-              <div
-                className={`relative h-[180px] w-[180px] self-center ${loading ? 'opacity-80' : 'opacity-100'}`}
-                onClick={event => {
-                  const target = event.target as Element | null
-                  if (target?.closest('[data-spending-legend-item="true"]') || target?.closest('.recharts-pie-sector')) {
-                    return
-                  }
-                  setSelectedSlice(null)
-                  setHoveredSlice(null)
-                }}
-              >
+            <div
+              className={`relative h-[200px] w-[200px] self-center transition-opacity duration-200 ${loading ? 'opacity-80' : 'opacity-100'}`}
+              onClick={event => {
+                const target = event.target as Element | null
+                if (target?.closest('[data-spending-legend-item="true"]') || target?.closest('.recharts-pie-sector')) {
+                  return
+                }
+                setSelectedSlice(null)
+                setHoveredSlice(null)
+              }}
+            >
+                <div
+                  className="absolute left-1/2 top-1/2 h-[196px] w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[28px] pointer-events-none"
+                  style={{
+                    background: `radial-gradient(circle, ${alphaColor(activeCategory?.color ?? '#8ea5ff', activeCategory ? 0.28 : 0.16)} 0%, ${alphaColor(activeCategory?.color ?? '#8ea5ff', activeCategory ? 0.18 : 0.10)} 28%, ${alphaColor(activeCategory?.color ?? '#8ea5ff', 0.08)} 54%, transparent 82%)`,
+                  }}
+                />
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
+                    <defs>
+                      {spendingChartData.map((entry, i) => (
+                        <radialGradient
+                          id={`overview-spending-slice-${i}`}
+                          key={entry.name}
+                          cx="42%"
+                          cy="42%"
+                          r="78%"
+                          fx="36%"
+                          fy="36%"
+                        >
+                          <stop offset="0%" stopColor={mixHex(entry.color, '#ffffff', 0.22)} stopOpacity={0.98} />
+                          <stop offset="48%" stopColor={entry.color} stopOpacity={0.94} />
+                          <stop offset="100%" stopColor={mixHex(entry.color, '#0d0f14', 0.12)} stopOpacity={0.88} />
+                        </radialGradient>
+                      ))}
+                    </defs>
                     <Pie
                       data={spendingChartData}
                       cx="50%" cy="50%"
-                      innerRadius={58} outerRadius={82}
-                      paddingAngle={1.5}
+                      innerRadius={64} outerRadius={92}
+                      paddingAngle={1}
                       dataKey="value"
                       activeIndex={activeSlice ?? undefined}
                       activeShape={renderActiveSpendingShape}
@@ -606,54 +597,87 @@ export default function Overview({ onNavigate }: OverviewProps) {
                       }}
                       style={{ outline: 'none' }}
                     >
-                      {spendingChartData.map((entry) => (
+                      {spendingChartData.map((entry, i) => (
                         <Cell
                           key={entry.name}
-                          fill={entry.color}
-                          stroke="#070b12"
-                          strokeWidth={2}
-                          style={{ outline: 'none', cursor: 'pointer' }}
+                          fill={`url(#overview-spending-slice-${i})`}
+                          stroke={activeSlice === i ? alphaColor(entry.color, 0.34) : 'rgba(255,255,255,0.06)'}
+                          strokeWidth={activeSlice === i ? 0.9 : 0.4}
+                          style={{
+                            outline: 'none',
+                            cursor: 'pointer',
+                            filter: activeSlice === i ? `drop-shadow(0 0 12px ${alphaColor(entry.color, 0.22)})` : undefined,
+                          }}
                         />
                       ))}
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
+                {/* Center label — updates on hover */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  {activeCategory ? (
-                    <>
-                      <span className="w-[88px] text-center text-[11px] font-medium leading-snug text-ledger-text-faint break-words">
-                        {formatCategory(activeCategory.name)}
-                      </span>
-                      <span className="mt-1 text-[16px] font-semibold tabular-nums tracking-tight">
-                        ${fmt(activeCategory.value)}
-                      </span>
-                      {activeCategoryShare !== null && (
-                        <span className="mt-0.5 text-[11px] text-ledger-text-faintest">
-                          {activeCategoryShare.toFixed(0)}% of spend
+                  <div
+                    className="absolute left-1/2 top-1/2 h-[168px] w-[168px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[18px]"
+                    style={{
+                      background: `radial-gradient(circle, ${alphaColor(activeCategory?.color ?? '#8ea5ff', activeCategory ? 0.42 : 0.28)} 0%, ${alphaColor(activeCategory?.color ?? '#8ea5ff', activeCategory ? 0.30 : 0.18)} 18%, rgba(54,60,92,0.24) 34%, rgba(26,30,44,0.10) 56%, rgba(18,21,30,0.04) 72%, rgba(18,21,30,0) 100%)`,
+                    }}
+                  />
+                  <div
+                    className="absolute left-1/2 top-1/2 h-[112px] w-[112px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[10px]"
+                    style={{
+                      background: `radial-gradient(circle, ${alphaColor(activeCategory?.color ?? '#8ea5ff', activeCategory ? 0.30 : 0.20)} 0%, ${alphaColor(activeCategory?.color ?? '#8ea5ff', activeCategory ? 0.14 : 0.10)} 42%, rgba(20,24,34,0) 78%)`,
+                    }}
+                  />
+                  <div className="relative flex h-[88px] w-[88px] flex-col items-center justify-center">
+                    {activeCategory ? (
+                      <>
+                        <span className="relative z-10 w-[72px] text-center text-[9.5px] font-medium leading-snug text-ledger-text-faint break-words">
+                          {formatCategory(activeCategory.name)}
                         </span>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-[11px] text-ledger-text-faint">{monthLabel}</span>
-                      <span className="mt-1 text-[16px] font-semibold tabular-nums tracking-tight">
-                        ${fmt(spendingChartTotal)}
-                      </span>
-                      <span className="mt-0.5 text-[11px] text-ledger-text-faintest">Total spent</span>
-                    </>
-                  )}
+                        <span className="relative z-10 mt-[3px] text-[15px] font-bold tabular-nums tracking-tight">
+                          ${fmt(activeCategory.value)}
+                        </span>
+                        {activeCategoryShare !== null && (
+                          <span className="relative z-10 mt-[2px] text-[8.5px] font-semibold uppercase tracking-[0.1em] text-ledger-text-faintest">
+                            {activeCategoryShare.toFixed(0)}% of spend
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="relative z-10 text-[8.5px] font-semibold uppercase tracking-[0.12em] text-ledger-text-faintest">
+                          {monthLabel}
+                        </span>
+                        <span className="relative z-10 mt-[3px] text-[15px] font-bold tabular-nums tracking-tight">
+                          ${fmt(spendingChartTotal)}
+                        </span>
+                        <span className="relative z-10 mt-[2px] text-[8.5px] font-medium text-ledger-text-faint">
+                          Total spent
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-[2px] min-w-0 min-h-0 self-stretch overflow-y-auto soft-scrollbar">
+              {/* Legend — own grid column, below header row */}
+              <div className="flex flex-col gap-[6px] min-w-0 min-h-0 self-stretch overflow-y-auto soft-scrollbar">
                 {spendingChartData.map((cat, i) => (
                   <div
                     key={cat.name}
                     data-spending-legend-item="true"
-                    className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[8px] px-2 py-[6px] cursor-pointer ${
-                      activeSlice === i ? 'bg-ledger-hover' : 'hover:bg-ledger-hover/60'
+                    className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] px-2.5 py-[6px] min-h-[32px] cursor-pointer transition-all hover:opacity-100 ${
+                      activeSlice === i ? 'border' : 'border border-transparent'
                     }`}
-                    style={{ opacity: activeSlice === null || activeSlice === i ? 1 : 0.45 }}
+                    style={{
+                      opacity: activeSlice === null || activeSlice === i ? 1 : 0.62,
+                      borderColor: activeSlice === i ? alphaColor(cat.color, 0.36) : 'transparent',
+                      background: activeSlice === i
+                        ? `linear-gradient(135deg, ${alphaColor(cat.color, 0.24)} 0%, ${alphaColor(cat.color, 0.12)} 52%, rgba(255,255,255,0.04) 100%)`
+                        : 'transparent',
+                      boxShadow: activeSlice === i
+                        ? `inset 0 1px 0 rgba(255,255,255,0.12), 0 0 20px ${alphaColor(cat.color, 0.12)}`
+                        : 'none',
+                    }}
                     onMouseEnter={() => {
                       if (selectedSlice === null) setHoveredSlice(i)
                     }}
@@ -663,13 +687,18 @@ export default function Overview({ onNavigate }: OverviewProps) {
                       setHoveredSlice(i)
                     }}
                   >
-                    <div className="min-w-0 flex items-center gap-2">
-                      <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: cat.color }} />
-                      <span className="min-w-0 truncate text-[13px] text-ledger-text-secondary">
+                    <div className="min-w-0">
+                      <div
+                        className={`min-w-0 truncate text-[12px] leading-tight transition-colors ${activeSlice === i ? 'font-semibold' : 'font-medium text-ledger-text-secondary'}`}
+                        style={activeSlice === i ? { color: cat.color } : undefined}
+                      >
                         {formatCategory(cat.name)}
-                      </span>
+                      </div>
                     </div>
-                    <span className="text-[13px] tabular-nums text-ledger-text-primary">
+                    <span
+                      className={`text-[11px] tabular-nums font-semibold ${activeSlice === i ? '' : 'text-ledger-text-faint'}`}
+                      style={activeSlice === i ? { color: cat.color } : undefined}
+                    >
                       ${fmt(cat.value)}
                     </span>
                   </div>
@@ -678,75 +707,192 @@ export default function Overview({ onNavigate }: OverviewProps) {
             </>
           )}
         </div>
+      </div>
 
-        <div className="glass-card px-5 py-4 flex flex-col min-h-0 min-w-0">
-          <div className="flex justify-between items-center mb-3 shrink-0">
-            <span className="text-[14px] font-semibold">Budget progress</span>
+      {/* Row 2: Monthly overview + transactions (left) | Budget progress (right) */}
+      <div className="grid grid-cols-[2fr_1fr] gap-3 items-stretch min-w-0 flex-1 min-h-0">
+        {/* Left: KPIs + recent transactions */}
+        <div className="glass-card overflow-hidden flex flex-col min-h-0 min-w-0 h-full">
+          <div className={`px-4 pt-3.5 pb-3 border-b border-white/10 transition-opacity duration-200 shrink-0 ${loading ? 'opacity-80' : 'opacity-100'}`}>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="text-[13px] font-semibold">
+                Monthly overview
+                <span className="text-ledger-text-faint font-normal ml-2">{monthLabel}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2.5">
+              <div className="glass-chip px-3 py-2">
+                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Spending</div>
+                <div className="text-[17px] font-bold mt-[2px] tabular-nums tracking-tight leading-tight">
+                  {data ? totalSpendingLabel : '—'}
+                </div>
+                {spendingChange !== null && (
+                  <div className={`text-[10px] mt-[2px] flex items-center gap-[2px] ${spendingChange <= 0 ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
+                    {spendingChange <= 0
+                      ? <><ArrowDown className="w-[9px] h-[9px]" strokeWidth={2.5} />{Math.abs(spendingChange).toFixed(0)}% vs prior</>
+                      : <><ArrowUp className="w-[9px] h-[9px]" strokeWidth={2.5} />{spendingChange.toFixed(0)}% vs prior</>
+                    }
+                  </div>
+                )}
+              </div>
+              <div className="glass-chip px-3 py-2">
+                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Income</div>
+                <div className="text-[17px] font-bold mt-[2px] tabular-nums tracking-tight leading-tight">
+                  {data ? totalIncomeLabel : '—'}
+                </div>
+                <div className="text-[10px] text-ledger-text-faint mt-[2px]">
+                  {data && data.total_income > 0 ? 'This month' : 'No deposits'}
+                </div>
+              </div>
+              <div className="glass-chip px-3 py-2">
+                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Savings rate</div>
+                <div className="text-[17px] font-bold mt-[2px] tabular-nums tracking-tight leading-tight">
+                  {data ? savingsRateLabel : '—'}
+                </div>
+                <div className="text-[10px] text-ledger-text-faint mt-[2px] truncate">
+                  {data ? (data.savings_rate >= 0 ? 'Income exceeds spending' : 'Over budget') : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center px-4 py-2 shrink-0">
+            <span className="text-[13px] font-semibold">Recent transactions</span>
+            <button
+              onClick={() => onNavigate('transactions')}
+              className="text-[12px] text-ledger-accent font-semibold cursor-pointer hover:opacity-80"
+            >
+              View all
+            </button>
+          </div>
+
+          <div className="flex flex-col flex-1 min-h-0">
+            {recentLoading && recentTxns.length === 0 ? (
+              <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">Loading…</div>
+            ) : recentTxns.length === 0 ? (
+              <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">
+                No transactions this month. Import a CSV or sync an account.
+              </div>
+            ) : (
+              <div className={`flex flex-col flex-1 transition-opacity duration-200 ${recentLoading ? 'opacity-80' : 'opacity-100'}`}>
+                {recentTxns.map(txn => (
+                <div key={txn.id} className="flex items-center gap-2.5 px-4 py-[7px] border-t border-white/10 flex-1 min-h-[44px]">
+                  {transactionDisplayIcon(txn) ? (
+                    <img
+                      src={transactionDisplayIcon(txn)!}
+                      alt=""
+                      className="w-[26px] h-[26px] rounded-[7px] shrink-0 bg-ledger-inset object-contain"
+                    />
+                  ) : (
+                    <div
+                      className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[10.5px] font-bold flex-shrink-0"
+                      style={{
+                        backgroundColor: txn.amount < 0 ? '#0f2a52' : '#1a1e27',
+                        color: txn.amount < 0 ? '#7fb0ff' : '#aeb4bf',
+                      }}
+                    >
+                      {txnInitials(txn.merchant, txn.amount)}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12.5px] font-semibold truncate leading-tight">{txn.merchant}</div>
+                    <div className="text-[10.5px] text-ledger-text-faint leading-tight">
+                      {txn.account_name ?? 'Unknown'} · {formatTxnDate(txn.date)}
+                    </div>
+                  </div>
+                  <span
+                    className="text-[10px] px-[6px] py-[1px] rounded-[5px] whitespace-nowrap"
+                    style={{
+                      backgroundColor: txn.amount < 0 ? 'rgba(78,195,138,0.1)' : '#161a21',
+                      color: txn.amount < 0 ? '#4ec38a' : '#9aa0ad',
+                      border: txn.amount < 0 ? '1px solid rgba(78,195,138,0.25)' : '1px solid #232834',
+                    }}
+                  >
+                    {formatTransactionCategory(txn)}
+                  </span>
+                  <span
+                    className="text-[12.5px] font-semibold w-[70px] text-right tabular-nums flex-shrink-0"
+                    style={{ color: txn.amount < 0 ? '#4ec38a' : undefined }}
+                  >
+                    {txn.amount < 0 ? '+' : '−'}${Math.abs(txn.amount).toFixed(2)}
+                  </span>
+                </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: budget progress */}
+        <div className="glass-card px-4 py-3.5 flex flex-col min-h-0 min-w-0 h-full">
+          <div className="flex justify-between items-center mb-2.5 shrink-0">
+            <span className="text-[13px] font-semibold">Budget progress</span>
             <button
               onClick={() => onNavigate('budgets')}
-              className="text-[13px] text-ledger-accent font-medium hover:opacity-80"
+              className="text-[12px] text-ledger-accent font-semibold hover:opacity-80"
             >
               Manage
             </button>
           </div>
 
           {budgetLoading && !budgetData ? (
-            <div className="text-center py-4 text-ledger-text-faint text-[13px]">Loading…</div>
+            <div className="text-center py-4 text-ledger-text-faint text-[12px]">Loading…</div>
           ) : !budgetData || budgetData.budgets.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-2 py-4 rounded-[8px] border border-dashed border-ledger-border-input">
-              <div className="text-[13px] text-ledger-text-secondary mb-1.5">No budgets for {monthLabel}</div>
+              <div className="text-[12px] text-ledger-text-secondary mb-1.5">No budgets for {monthLabel}</div>
               <button
                 onClick={() => onNavigate('budgets')}
-                className="text-[13px] text-ledger-accent font-medium hover:opacity-80"
+                className="text-[11.5px] text-ledger-accent font-semibold hover:opacity-80"
               >
-                Set up budgets
+                Set up budgets →
               </button>
             </div>
           ) : (
-            <div className={`flex flex-col flex-1 min-h-0 ${budgetLoading ? 'opacity-80' : ''}`}>
-              <div className="mb-3 pb-3 border-b border-ledger-border-subtle shrink-0">
-                <div className="flex justify-between text-[13px] mb-1.5">
+            <div className={`flex flex-col flex-1 min-h-0 transition-opacity duration-200 ${budgetLoading ? 'opacity-80' : 'opacity-100'}`}>
+              <div className="mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
+                <div className="flex justify-between text-[12px] mb-1">
                   <span className="text-ledger-text-secondary">Total</span>
                   <span className="tabular-nums font-semibold">
                     ${fmt(budgetData.total_spent)}
                     <span className="text-ledger-text-faint font-normal"> / ${fmt(budgetData.total_limit)}</span>
                   </span>
                 </div>
-                <div className="h-[5px] rounded-full bg-ledger-track overflow-hidden">
+                <div className="h-[6px] rounded-[3px] bg-ledger-track overflow-hidden">
                   <div
-                    className="h-full rounded-full"
+                    className="h-full rounded-[3px] transition-all"
                     style={{
                       width: `${Math.min(budgetPct ?? 0, 100)}%`,
-                      backgroundColor: budgetOver ? CHART_NEGATIVE : CHART_ACCENT,
+                      backgroundColor: budgetOver ? '#e7705f' : '#5b8def',
                     }}
                   />
                 </div>
-                <div className={`text-[12px] mt-1.5 ${budgetOver ? 'text-ledger-negative' : 'text-ledger-text-faint'}`}>
+                <div className={`text-[10px] mt-1 ${budgetOver ? 'text-ledger-negative' : 'text-ledger-text-faint'}`}>
                   {budgetOver
                     ? `$${fmt(budgetData.total_spent - budgetData.total_limit)} over`
                     : `$${fmt(budgetData.total_limit - budgetData.total_spent)} remaining`}
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2.5 flex-1 min-h-0 overflow-y-auto">
+              <div className="flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto justify-evenly">
                 {sortedBudgetItems.map(b => {
                   const isVirtual = Boolean(b.virtual)
                   const pct = b.limit > 0 ? (b.spent / b.limit) * 100 : (isVirtual ? 100 : 0)
                   const over = !isVirtual && b.spent > b.limit
                   return (
                     <div key={b.id}>
-                      <div className="flex justify-between text-[13px] mb-1 leading-tight">
-                        <span className="truncate pr-2 text-ledger-text-secondary">{formatCategory(b.category)}</span>
-                        <span className="tabular-nums text-ledger-text-muted flex-shrink-0 text-[12px]">
+                      <div className="flex justify-between text-[11.5px] mb-1 leading-tight">
+                        <span className="truncate pr-2">{formatCategory(b.category)}</span>
+                        <span className="tabular-nums text-ledger-text-muted flex-shrink-0 text-[11px]">
                           {isVirtual ? `$${fmt(b.spent)}` : `$${fmt(b.spent)} / $${fmt(b.limit)}`}
                         </span>
                       </div>
-                      <div className="h-[4px] rounded-full bg-ledger-track overflow-hidden">
+                      <div className="h-[5px] rounded-[3px] bg-ledger-track overflow-hidden">
                         <div
-                          className="h-full rounded-full"
+                          className="h-full rounded-[3px]"
                           style={{
                             width: `${Math.min(pct, 100)}%`,
-                            backgroundColor: over ? CHART_NEGATIVE : CHART_ACCENT,
+                            backgroundColor: over ? '#e7705f' : b.color,
                           }}
                         />
                       </div>
@@ -758,68 +904,6 @@ export default function Overview({ onNavigate }: OverviewProps) {
           )}
         </div>
       </div>
-
-      <section className="glass-card overflow-hidden min-w-0">
-        <div className="flex justify-between items-center px-5 py-3">
-          <span className="text-[14px] font-semibold">Recent transactions</span>
-          <button
-            onClick={() => onNavigate('transactions')}
-            className="text-[13px] text-ledger-accent font-medium cursor-pointer hover:opacity-80"
-          >
-            View all
-          </button>
-        </div>
-
-        <div className="flex flex-col">
-          {recentLoading && recentTxns.length === 0 ? (
-            <div className="px-5 py-6 text-center text-ledger-text-faint text-[13px]">Loading…</div>
-          ) : recentTxns.length === 0 ? (
-            <div className="px-5 py-6 text-center text-ledger-text-faint text-[13px]">
-              No transactions this month. Import a CSV or sync an account.
-            </div>
-          ) : (
-            <div className={recentLoading ? 'opacity-80' : ''}>
-              {recentTxns.map(txn => (
-                <div key={txn.id} className="flex items-center gap-3 px-5 py-2 border-t border-ledger-border-subtle min-h-[40px]">
-                  {transactionDisplayIcon(txn) ? (
-                    <img
-                      src={transactionDisplayIcon(txn)!}
-                      alt=""
-                      className="w-6 h-6 rounded-[6px] shrink-0 bg-ledger-inset object-contain"
-                    />
-                  ) : (
-                    <div
-                      className={`w-6 h-6 rounded-[6px] flex items-center justify-center text-[10px] font-semibold flex-shrink-0 ${
-                        txn.amount < 0
-                          ? 'bg-ledger-positive-soft text-ledger-positive'
-                          : 'bg-ledger-inset text-ledger-text-muted'
-                      }`}
-                    >
-                      {txnInitials(txn.merchant, txn.amount)}
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium truncate leading-tight">{txn.merchant}</div>
-                    <div className="text-[11.5px] text-ledger-text-faint leading-tight">
-                      {txn.account_name ?? 'Unknown'} · {formatTxnDate(txn.date)}
-                    </div>
-                  </div>
-                  <span className="text-[12px] text-ledger-text-faint whitespace-nowrap hidden sm:block">
-                    {formatTransactionCategory(txn)}
-                  </span>
-                  <span
-                    className={`text-[13px] font-medium w-[76px] text-right tabular-nums flex-shrink-0 ${
-                      txn.amount < 0 ? 'text-ledger-positive' : 'text-ledger-text-primary'
-                    }`}
-                  >
-                    {txn.amount < 0 ? '+' : '−'}${Math.abs(txn.amount).toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
     </div>
   )
 }

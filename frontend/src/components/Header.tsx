@@ -33,21 +33,19 @@ export default function Header({ title, subtitle, name }: HeaderProps) {
   }
 
   return (
-    <header className="glass-header px-6 py-3.5 flex items-center justify-between shrink-0">
+    <header className="glass-header px-5 short:px-6 tall:px-7 py-3 short:py-[14px] tall:py-[18px] flex items-center justify-between shrink-0">
       <div>
-        <h1 className="text-[20px] font-semibold tracking-tight leading-tight">{title}</h1>
-        {subtitle ? (
-          <p className="text-[12.5px] text-ledger-text-faint mt-0.5">{subtitle}</p>
-        ) : null}
+        <h1 className="text-lg font-bold tracking-tight">{title}</h1>
+        <p className="text-sm text-ledger-text-faint mt-0.5">{subtitle}</p>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <button
           onClick={() => {
             const settingsNav = document.querySelector('[data-nav-settings]') as HTMLButtonElement
             if (settingsNav) settingsNav.click()
           }}
-          className="flex items-center gap-1.5 glass-chip text-ledger-text-primary px-3 py-[7px] font-medium text-[13px] cursor-pointer hover:bg-ledger-hover"
+          className="flex items-center gap-1.5 glass-chip text-ledger-text-primary px-3.5 py-2 font-semibold text-sm cursor-pointer hover:brightness-110 transition-all"
         >
           Link Account
         </button>
@@ -55,10 +53,10 @@ export default function Header({ title, subtitle, name }: HeaderProps) {
         <button
           onClick={handleSync}
           disabled={isSyncing}
-          className="flex items-center gap-1.5 bg-ledger-accent text-ledger-accent-on border-none rounded-btn px-3 py-[7px] font-semibold text-[13px] cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 bg-ledger-accent text-ledger-accent-on border-none rounded-lg px-3.5 py-2 font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw
-            className={`w-[14px] h-[14px] flex-shrink-0 ${isSyncing ? 'animate-spin' : ''}`}
+            className={`w-4 h-4 flex-shrink-0 ${isSyncing ? 'animate-spin' : ''}`}
             strokeWidth={2.2}
           />
           {isSyncing ? 'Syncing...' : 'Sync'}
@@ -69,7 +67,7 @@ export default function Header({ title, subtitle, name }: HeaderProps) {
             const settingsNav = document.querySelector('[data-nav-settings]') as HTMLButtonElement
             if (settingsNav) settingsNav.click()
           }}
-          className="w-8 h-8 rounded-full bg-ledger-inset border border-ledger-border flex items-center justify-center text-[12px] font-semibold text-ledger-text-secondary hover:text-ledger-text-primary cursor-pointer"
+          className="w-9 h-9 rounded-full bg-gradient-to-br from-[#3a4252] to-[#222632] flex items-center justify-center text-sm font-bold text-[#cdd2da] hover:opacity-80 transition-opacity cursor-pointer"
         >
           {initials(name)}
         </button>

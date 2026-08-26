@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { apiFetch } from '../api/client'
-import { CHART_POSITIVE, CHART_TEXT } from '../utils/chartTheme'
 import { formatCategory } from '../utils/categories'
 import { useOnSyncComplete } from '../hooks/useSync'
 import { getMonthOptions } from '../utils/months'
@@ -27,10 +26,6 @@ interface CashFlowData {
 }
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
-
-// Label colour for a node the pointer has dimmed. Dark enough to recede, light
-// enough that the row is still locatable.
-const SANKEY_DIMMED = '#2b3242'
 
 const NODE_W    = 20   // width of income-source / expense bars
 const TUNNEL_W  = 40   // width of the center income tunnel
@@ -143,7 +138,7 @@ function stackIncomeBands(
 
 const INVESTMENTS_NODE_ID = 'Investments'
 const SAVINGS_NODE_ID = '__savings__'
-const SAVINGS_COLOR = CHART_POSITIVE
+const SAVINGS_COLOR = '#4ec38a'
 
 function isAllocationNode(id: string): boolean {
   return id === SAVINGS_NODE_ID || id === INVESTMENTS_NODE_ID
@@ -312,21 +307,20 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
         <>
           <text x={labelX} y={n.labelCy - 6}
             textAnchor={textAnchor} fontSize={13}
-            fill={nodeVis(n.id) ? CHART_TEXT.secondary : SANKEY_DIMMED}
+            fill={nodeVis(n.id) ? '#d4dae4' : '#2a3040'}
             fontWeight={nodeVis(n.id) ? 500 : 400}
             style={{ transition: 'fill 0.15s', userSelect: 'none', pointerEvents: 'none' }}
           >{label}</text>
           <text x={labelX} y={n.labelCy + 11}
             textAnchor={textAnchor} fontSize={12}
-            fontFamily="Hanken Grotesk, sans-serif"
-            fill={nodeVis(n.id) ? amountClass : SANKEY_DIMMED}
+            fill={nodeVis(n.id) ? amountClass : '#2a3040'}
             style={{ transition: 'fill 0.15s', userSelect: 'none', pointerEvents: 'none' }}
           >{amountPrefix}${fmt(n.amount)}</text>
         </>
       ) : (
         <text x={labelX} y={n.labelCy + 4}
           textAnchor={textAnchor} fontSize={11}
-          fill={nodeVis(n.id) ? CHART_TEXT.secondary : SANKEY_DIMMED}
+          fill={nodeVis(n.id) ? '#d4dae4' : '#2a3040'}
           style={{ userSelect: 'none', pointerEvents: 'none' }}
         >{formatLabel(n)}</text>
       )}
@@ -375,15 +369,7 @@ export default function Spending() {
     return () => ro.disconnect()
   }, [onResize])
 
-  const hasFlow = Boolean(
-    data && (
-      data.income_sources.length > 0
-      || data.spending_categories.length > 0
-      || data.total_income > 0.01
-      || data.total_spending > 0.01
-    ),
-  )
-  const layout = data && hasFlow && svgW > 0 ? buildLayout(data, svgW, SVG_H) : null
+  const layout = data && svgW > 0 ? buildLayout(data, svgW, SVG_H) : null
 
   // Highlighting: hover an income source → dim other income things; hover expense → dim other expenses.
   // Hovering a left node keeps right ribbons visible (income flows to all expenses via tunnel).
@@ -429,28 +415,23 @@ export default function Spending() {
           {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
-        {/* This is the page's summary, so it reads at metric weight. It used to
-            be the smallest text on the screen, set inline beside the month
-            picker. */}
         {data && (
-          <div className="inset-panel flex divide-x divide-ledger-border-input ml-[6px]">
-            {[
-              { label: 'Income', value: `$${fmt(data.total_income)}`, tone: 'text-ledger-positive' },
-              { label: 'Spending', value: `$${fmt(consumptiveSpending)}`, tone: 'text-ledger-text-primary' },
-              ...(invested > 0.01
-                ? [{ label: 'Invested', value: `$${fmt(invested)}`, tone: 'text-ledger-accent-text' }]
-                : []),
-              deficit > 0
-                ? { label: 'Over', value: `−$${fmt(deficit)}`, tone: 'text-ledger-negative' }
-                : { label: 'Saved', value: `$${fmt(data.savings)}`, tone: 'text-ledger-positive' },
-            ].map(item => (
-              <div key={item.label} className="px-3.5 py-1.5">
-                <div className="metric-label">{item.label}</div>
-                <div className={`text-[15px] font-semibold font-mono leading-tight mt-[1px] ${item.tone}`}>
-                  {item.value}
-                </div>
-              </div>
-            ))}
+          <div className="flex gap-[20px] ml-[6px] text-[13px]">
+            <span className="text-ledger-text-faint">
+              Income <span className="text-ledger-positive font-semibold">${fmt(data.total_income)}</span>
+            </span>
+            <span className="text-ledger-text-faint">
+              Spending <span className="text-ledger-text-secondary font-semibold">${fmt(consumptiveSpending)}</span>
+            </span>
+            {invested > 0.01 && (
+              <span className="text-ledger-text-faint">
+                Invested <span className="text-ledger-accent font-semibold">${fmt(invested)}</span>
+              </span>
+            )}
+            {deficit > 0
+              ? <span className="text-ledger-negative font-semibold">−${fmt(deficit)} over</span>
+              : <span className="text-ledger-text-faint">Saved <span className="text-ledger-positive font-semibold">${fmt(data.savings)}</span></span>
+            }
           </div>
         )}
       </div>
@@ -459,21 +440,16 @@ export default function Spending() {
       <div className="glass-card p-[14px]">
         <div ref={wrapRef} className="relative" style={{ width: '100%' }}>
           {loading ? (
-            <div className="flex items-center justify-center text-ledger-text-faint text-[13px] py-16">Loading…</div>
+            <div className="flex items-center justify-center text-ledger-text-faint text-[13px]" style={{ height: SVG_H }}>Loading…</div>
           ) : !layout ? (
-            <div className="flex flex-col items-center justify-center text-center py-16 px-6">
-              <div className="text-[14px] font-semibold mb-1.5">No cash flow this month</div>
-              <div className="text-[13px] text-ledger-text-faint max-w-[360px]">
-                Link an account or import a CSV to see income and spending here.
-              </div>
-            </div>
+            <div className="flex items-center justify-center text-ledger-text-faint text-[13px]" style={{ height: SVG_H }}>No data for this month</div>
           ) : (
             <>
             <svg width={svgW} height={SVG_H} style={{ display: 'block', overflow: 'visible' }}>
               <defs>
                 <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#4b74b4" stopOpacity="0.95" />
-                  <stop offset="100%" stopColor="#1d2c46" stopOpacity="0.95" />
+                  <stop offset="0%"   stopColor="#4a6fa5" stopOpacity="0.95" />
+                  <stop offset="100%" stopColor="#1e2d45" stopOpacity="0.95" />
                 </linearGradient>
               </defs>
 
@@ -514,12 +490,12 @@ export default function Spending() {
                 />
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY - 6}
-                  textAnchor="middle" fontSize={10} fill={CHART_TEXT.faint} letterSpacing="0.07em" fontWeight={600}
+                  textAnchor="middle" fontSize={10} fill="#6a7a94" letterSpacing="0.10em"
                   style={{ userSelect: 'none' }}
                 >INCOME</text>
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY + layout.tunnelH + 14}
-                  textAnchor="middle" fontSize={11} fill={CHART_TEXT.muted} fontFamily="Hanken Grotesk, sans-serif"
+                  textAnchor="middle" fontSize={11} fill="#6a7a94"
                   style={{ userSelect: 'none' }}
                 >${fmt(data!.total_income)}</text>
               </g>
@@ -534,7 +510,7 @@ export default function Spending() {
                   nodeVis={nodeVis}
                   formatLabel={n => formatCategory(n.label)}
                   amountPrefix="+"
-                  amountClass={CHART_POSITIVE}
+                  amountClass="#4ec38a"
                   onHover={setHovered}
                 />
               ))}
@@ -549,7 +525,7 @@ export default function Spending() {
                   nodeVis={nodeVis}
                   formatLabel={n => n.id === SAVINGS_NODE_ID ? 'Savings' : formatCategory(n.label)}
                   amountPrefix=""
-                  amountClass={isAllocationNode(n.id) ? (n.id === SAVINGS_NODE_ID ? SAVINGS_COLOR : n.color) : CHART_TEXT.muted}
+                  amountClass={isAllocationNode(n.id) ? (n.id === SAVINGS_NODE_ID ? SAVINGS_COLOR : n.color) : '#9aa2b2'}
                   onHover={setHovered}
                 />
               ))}

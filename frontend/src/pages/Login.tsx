@@ -3,7 +3,9 @@ import { apiFetch, setToken } from '../api/client'
 import { getResetOptions, requestResetCode, resetPasswordWithEmailCode, type ResetOptions } from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
 
-const BLUE = '#4d8dff'
+// The pie-chart Transportation blue (#5b8def). Rendered as a large glow that
+// diffuses outward from behind the liquid-glass card, not a tint on the card.
+const BLUE = '#5b8def'
 
 /** Minimal ring spinner for the "checking" state (no donut chart). */
 function Spinner() {
@@ -154,8 +156,26 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center p-4 bg-ledger-bg text-ledger-text-primary">
-      <div className="glass-modal w-[400px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden">
+    <div className="relative z-10 min-h-dvh flex items-center justify-center p-4 text-ledger-text-primary">
+      {/* Large blue gradient diffusing outward from behind the glass card */}
+      <div
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+        style={{
+          width: 900,
+          height: 760,
+          filter: 'blur(80px)',
+          background: `radial-gradient(circle at 50% 46%, ${alphaColor(BLUE, 0.55)} 0%, ${alphaColor(BLUE, 0.30)} 28%, ${alphaColor(BLUE, 0.12)} 52%, ${alphaColor(BLUE, 0.04)} 68%, transparent 80%)`,
+        }}
+      />
+
+      <div
+        className="glass-modal w-[400px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden"
+        style={{
+          // Translucent frosted fill (overrides glass-modal's near-opaque dark
+          // one) so the blue glow behind shows through the backdrop blur.
+          background: 'linear-gradient(150deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05) 46%, rgba(255,255,255,0.10))',
+        }}
+      >
         {phase === 'checking' ? (
           <div className="relative flex flex-col items-center gap-[16px] py-[20px]">
             <Spinner />
@@ -454,8 +474,8 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
 
                 {!resetOptions?.email_available && (
                   <div className="text-[11.5px] text-ledger-text-faintest text-center mt-[2px] leading-[1.5]">
-                    No recovery code? There's no email-based recovery configured for this app.
-                    The only fallback is wiping the app's local data and starting over
+                    No recovery code? There's no email-based recovery configured for this app —
+                    the only fallback is wiping the app's local data and starting over
                     (delete <code className="font-mono">~/Library/Application Support/Ledger</code> on
                     macOS, or <code className="font-mono">%APPDATA%\Ledger</code> on Windows, then
                     relaunch). This permanently deletes all local transactions and settings.
@@ -469,8 +489,8 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
               <div className="w-full flex flex-col gap-[14px]">
                 <div className="text-[12.5px] text-ledger-text-secondary leading-[1.5]">
                   This is the <span className="text-ledger-text-primary font-semibold">only</span> way
-                  to reset your password without wiping your data. Save it somewhere safe.
-                  It won't be shown again.
+                  to reset your password without wiping your data. Save it somewhere safe —
+                  it won't be shown again.
                 </div>
                 <div className="flex items-center gap-[8px]">
                   <code className="glass-chip rounded-[9px] px-[14px] py-[12px] text-[16px] font-mono tracking-wide text-ledger-text-primary flex-1 text-center">
@@ -487,7 +507,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   onClick={continueFromReveal}
                   className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 transition-opacity"
                 >
-                  I've saved it. Continue
+                  I've saved it — Continue
                 </button>
               </div>
             )}

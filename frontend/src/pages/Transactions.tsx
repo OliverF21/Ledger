@@ -287,7 +287,7 @@ export default function Transactions() {
   const ThBtn = ({ field, label }: { field: SortField; label: string }) => (
     <button
       onClick={() => toggleSort(field)}
-      className="metric-label flex items-center gap-[4px] hover:text-ledger-text-primary"
+      className="flex items-center gap-[4px] text-[11.5px] text-ledger-text-faintest uppercase font-medium hover:text-ledger-text-muted transition-colors"
     >
       {label}
       <SortIcon active={sortField === field} dir={sortDir} />
@@ -354,16 +354,16 @@ export default function Transactions() {
             placeholder="Min"
             value={minAmount}
             onChange={e => setMinAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-            className="w-[52px] bg-transparent text-ledger-text-primary text-[13px] font-mono placeholder-ledger-text-faint focus:outline-none"
+            className="w-[52px] bg-transparent text-ledger-text-primary text-[13px] tabular-nums placeholder-ledger-text-faint focus:outline-none"
           />
-          <span className="text-[12px] text-ledger-text-faintest select-none">to</span>
+          <span className="text-[12px] text-ledger-text-faintest select-none">–</span>
           <input
             type="text"
             inputMode="decimal"
             placeholder="Max"
             value={maxAmount}
             onChange={e => setMaxAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-            className="w-[52px] bg-transparent text-ledger-text-primary text-[13px] font-mono placeholder-ledger-text-faint focus:outline-none"
+            className="w-[52px] bg-transparent text-ledger-text-primary text-[13px] tabular-nums placeholder-ledger-text-faint focus:outline-none"
           />
         </div>
 
@@ -382,19 +382,19 @@ export default function Transactions() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-ledger-border-subtle">
-                <th className="text-left px-4 py-2">
+                <th className="text-left px-[20px] py-[12px]">
                   <ThBtn field="merchant" label="Merchant" />
                 </th>
-                <th className="text-left px-4 py-2">
+                <th className="text-left px-[20px] py-[12px]">
                   <ThBtn field="account" label="Account" />
                 </th>
-                <th className="text-left px-4 py-2">
+                <th className="text-left px-[20px] py-[12px]">
                   <ThBtn field="category" label="Category" />
                 </th>
-                <th className="text-left px-4 py-2">
+                <th className="text-left px-[20px] py-[12px]">
                   <ThBtn field="date" label="Date" />
                 </th>
-                <th className="text-right px-4 py-2">
+                <th className="text-right px-[20px] py-[12px]">
                   <div className="flex justify-end">
                     <ThBtn field="amount" label="Amount" />
                   </div>
@@ -430,8 +430,8 @@ export default function Transactions() {
 
                   return (
                     <Fragment key={txn.id}>
-                      <tr className={`border-b border-ledger-border-subtle last:border-0 hover:bg-ledger-hover transition-colors group ${txn.hidden ? 'opacity-35' : ''}`}>
-                        <td className="px-4 py-2 text-[13px] text-ledger-text-primary">
+                      <tr className={`border-b border-ledger-border-subtle last:border-0 hover:bg-ledger-inset transition-colors group ${txn.hidden ? 'opacity-35' : ''}`}>
+                        <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-primary">
                           <div className="flex items-center gap-[8px]">
                             {iconUrl ? (
                               <img
@@ -444,28 +444,27 @@ export default function Transactions() {
                           </div>
                           {txn.hidden && <span className="ml-[6px] text-[10px] text-ledger-text-faintest">(hidden)</span>}
                         </td>
-                        <td className="px-4 py-2 text-[13px] text-ledger-text-secondary">
+                        <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-secondary">
                           {txn.account_name ?? <span className="text-ledger-text-faintest">—</span>}
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="px-[20px] py-[11px]">
                           <button
                             onClick={() => setAction(isRecat ? null : { type: 'recategorize', id: txn.id, draft: categoryPickerDraft(txn) })}
                             className={`inline-flex max-w-full items-center gap-[6px] text-[11px] px-[9px] py-[3px] rounded-[7px] border transition-all ${
                               isRecat
                                 ? 'bg-ledger-accent/18 text-ledger-text-primary border-ledger-accent/40'
-                                : 'glass-chip text-ledger-text-muted hover:text-ledger-text-primary hover:border-ledger-accent/40'
+                                : 'glass-chip text-ledger-text-muted border-white/15 hover:text-ledger-text-primary hover:border-ledger-accent/30'
                             }`}
                           >
                             <span className="truncate">{formatTransactionCategory(txn)}</span>
                             <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 transition-transform ${isRecat ? 'rotate-180 text-ledger-accent' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
                           </button>
                         </td>
-                        <td className="px-4 py-2 text-[12.5px] text-ledger-text-muted tabular-nums">
+                        <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-faintest tabular-nums">
                           {new Date(txn.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
-                        <td className={`px-4 py-2 text-right text-[13px] font-medium tabular-nums ${
-                          txn.amount < 0 ? 'text-ledger-positive' : ''
-                        }`}>
+                        <td className="px-[20px] py-[11px] text-right text-[14px] font-semibold tabular-nums"
+                          style={{ color: txn.amount < 0 ? '#4ec38a' : undefined }}>
                           {txn.amount < 0 ? '+' : '−'}${Math.abs(txn.amount).toFixed(2)}
                           {txn.user_split_pct && txn.user_split_pct < 1 && (
                             <span className="ml-[5px] text-[10px] font-normal text-ledger-text-faintest">
@@ -526,14 +525,14 @@ export default function Transactions() {
                                 </button>
                                 <button
                                   onClick={() => setAction(null)}
-                                  className="p-[6px] rounded-[7px] text-ledger-text-faint hover:bg-ledger-hover transition-colors"
+                                  className="p-[6px] rounded-[7px] text-ledger-text-faint hover:bg-white/10 transition-colors"
                                 >
                                   <X className="w-[14px] h-[14px]" strokeWidth={2} />
                                 </button>
                               </div>
 
-                              <div className="rounded-[10px] border border-ledger-border bg-black/10 overflow-hidden">
-                                <div className="px-[10px] py-[7px] text-[10px] uppercase tracking-[0.12em] text-ledger-text-faintest border-b border-ledger-border-subtle">
+                              <div className="rounded-[10px] border border-white/10 bg-black/10 overflow-hidden">
+                                <div className="px-[10px] py-[7px] text-[10px] uppercase tracking-[0.12em] text-ledger-text-faintest border-b border-white/10">
                                   Categories
                                 </div>
                                 <CategoryPicker
@@ -649,7 +648,7 @@ export default function Transactions() {
               </div>
               <button
                 onClick={() => setAction(null)}
-                className="p-[6px] rounded-[8px] text-ledger-text-faint hover:bg-ledger-hover transition-colors"
+                className="p-[6px] rounded-[8px] text-ledger-text-faint hover:bg-white/10 transition-colors"
               >
                 <X className="w-[16px] h-[16px]" strokeWidth={2} />
               </button>

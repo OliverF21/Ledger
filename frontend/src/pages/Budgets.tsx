@@ -4,7 +4,6 @@ import { PieChart, Pie, Cell, Sector, ResponsiveContainer } from 'recharts'
 import { apiFetch } from '../api/client'
 import { formatCategory } from '../utils/categories'
 import { getMonthOptions } from '../utils/months'
-import { CATEGORY_PALETTE, CHART_ACCENT, CHART_NEGATIVE, CHART_SURFACE, CHART_TEXT } from '../utils/chartTheme'
 
 interface BudgetItem {
   id: number
@@ -42,7 +41,10 @@ interface SuggestData {
   suggestions: Suggestion[]
 }
 
-const PALETTE = CATEGORY_PALETTE
+const PALETTE = [
+  '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
+  '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
+]
 
 interface SuggestPanelProps {
   month: string
@@ -50,7 +52,7 @@ interface SuggestPanelProps {
   onApplied: () => void
 }
 
-const UNALLOCATED_COLOR = CHART_SURFACE.borderStrong
+const UNALLOCATED_COLOR = '#2a2e38'
 
 function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
   const [data, setData] = useState<SuggestData | null>(null)
@@ -244,7 +246,7 @@ function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
                           className="w-[15px] h-[15px] rounded-[4px] border flex-shrink-0 flex items-center justify-center transition-colors"
                           style={{
                             backgroundColor: isSelected ? s.color : 'transparent',
-                            borderColor: isSelected ? s.color : CHART_SURFACE.borderStrong,
+                            borderColor: isSelected ? s.color : '#3a4050',
                           }}
                         >
                           {isSelected && (
@@ -286,7 +288,7 @@ function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
                             <div className="w-full h-[3px] rounded-full bg-ledger-track">
                               <div
                                 className="h-full rounded-full"
-                                style={{ width: `${sliderPct}%`, backgroundColor: isSelected ? s.color : CHART_SURFACE.borderStrong }}
+                                style={{ width: `${sliderPct}%`, backgroundColor: isSelected ? s.color : '#374151' }}
                               />
                             </div>
                           </div>
@@ -294,13 +296,13 @@ function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
                           {avgPct > 0 && (
                             <div
                               className="absolute top-[3px] bottom-[3px] w-[1.5px] rounded-full pointer-events-none"
-                              style={{ left: `${avgPct}%`, backgroundColor: CHART_TEXT.faintest }}
+                              style={{ left: `${avgPct}%`, backgroundColor: '#4a5060' }}
                             />
                           )}
                           {/* Thumb — only visible on hover */}
                           <div
                             className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[10px] h-[10px] rounded-full pointer-events-none opacity-0 group-hover/slider:opacity-100 transition-opacity duration-100"
-                            style={{ left: `${sliderPct}%`, backgroundColor: isSelected ? s.color : CHART_SURFACE.borderStrong }}
+                            style={{ left: `${sliderPct}%`, backgroundColor: isSelected ? s.color : '#374151' }}
                           />
                         </div>
                         {s.actual_avg > 0 && (
@@ -467,7 +469,7 @@ function OnboardingPrompt({ onSuggest, onDismiss }: { onSuggest: () => void; onD
         </div>
         <h3 className="text-[17px] font-bold mb-[8px]">Set up your budgets</h3>
         <p className="text-[13px] text-ledger-text-faint leading-relaxed mb-[24px]">
-          Ledger can analyse your income and spending history to suggest a personalised monthly budget, or you can set one up manually.
+          Ledger can analyse your income and spending history to suggest a personalised monthly budget — or you can set one up manually.
         </p>
         <div className="flex flex-col gap-[10px] w-full">
           <button
@@ -584,22 +586,22 @@ export default function Budgets() {
 
       {/* Summary bar */}
       <div className="glass-card p-[22px]">
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto_auto_auto] gap-[24px] items-center">
+        <div className="grid grid-cols-[1fr_1fr_1fr_auto_auto] gap-[24px] items-center">
           <div>
-            <div className="metric-label">Total budget</div>
-            <div className="text-stat font-bold mt-[6px] font-mono text-ledger-text-heading">
+            <div className="text-[12.5px] text-ledger-text-faint">Total budget</div>
+            <div className="text-[25px] font-bold mt-[6px] tabular-nums">
               {loading ? '—' : `$${fmt(totalBudget)}`}
             </div>
           </div>
           <div>
-            <div className="metric-label">Spent</div>
-            <div className="text-stat font-bold mt-[6px] font-mono text-ledger-text-heading">
+            <div className="text-[12.5px] text-ledger-text-faint">Spent</div>
+            <div className="text-[25px] font-bold mt-[6px] tabular-nums">
               {loading ? '—' : `$${fmt(totalSpent)}`}
             </div>
           </div>
           <div>
-            <div className="metric-label">Remaining</div>
-            <div className={`text-stat font-bold mt-[6px] font-mono ${remaining < 0 ? 'text-ledger-negative' : 'text-ledger-positive'}`}>
+            <div className="text-[12.5px] text-ledger-text-faint">Remaining</div>
+            <div className={`text-[25px] font-bold mt-[6px] tabular-nums ${remaining < 0 ? 'text-ledger-negative' : 'text-ledger-positive'}`}>
               {loading ? '—' : `$${fmt(Math.abs(remaining))}`}
             </div>
           </div>
@@ -655,12 +657,12 @@ export default function Budgets() {
               <div key={budget.id} className="glass-card p-[18px]">
                 <div className="flex items-center gap-[10px] mb-[12px]">
                   <span className="w-[10px] h-[10px] rounded-[3px] flex-shrink-0" style={{ backgroundColor: budget.color }} />
-                  <span className="text-title font-semibold flex-1 truncate">{formatCategory(budget.category)}</span>
+                  <span className="text-[13px] font-semibold flex-1 truncate">{formatCategory(budget.category)}</span>
                   {isVirtual
-                    ? <span className="text-ledger-text-muted text-[11px] px-[6px] py-[2px] rounded-[4px] bg-ledger-inset border border-ledger-border shrink-0">Unbudgeted</span>
+                    ? <span className="text-ledger-text-secondary text-[11px] px-[6px] py-[2px] rounded-[4px] bg-ledger-inset shrink-0">Unbudgeted</span>
                     : isOver
-                      ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-ledger-negative-soft border border-ledger-negative-border shrink-0">Over</span>
-                      : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-ledger-positive-soft border border-ledger-positive-border shrink-0">On track</span>
+                      ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(231,112,95,0.1)] shrink-0">Over</span>
+                      : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(78,195,138,0.1)] shrink-0">On track</span>
                   }
                   {!isVirtual && (
                     <div className="flex items-center gap-[6px] shrink-0">
@@ -711,7 +713,7 @@ export default function Budgets() {
                   </div>
                 )}
 
-                <div className="text-[15px] font-bold mb-[9px] font-mono">
+                <div className="text-[14px] font-bold mb-[8px] tabular-nums">
                   {isVirtual ? (
                     <>${fmt(budget.spent)}</>
                   ) : (
@@ -724,7 +726,7 @@ export default function Budgets() {
                 <div className="h-[7px] rounded-[4px] bg-ledger-track overflow-hidden mb-[10px]">
                   <div
                     className="h-full rounded-[4px] transition-all"
-                    style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: isOver ? CHART_NEGATIVE : CHART_ACCENT }}
+                    style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: isOver ? '#e7705f' : budget.color }}
                   />
                 </div>
 

@@ -34,14 +34,14 @@ export default function Subscriptions() {
       <div className="glass-card p-[22px]">
         <div className="grid grid-cols-2 gap-[24px] items-center">
           <div>
-            <div className="metric-label">Detected recurring charges</div>
-            <div className="text-stat font-bold mt-[6px] font-mono text-ledger-text-heading">
+            <div className="text-[12.5px] text-ledger-text-faint">Detected recurring charges</div>
+            <div className="text-[25px] font-bold mt-[6px] tabular-nums">
               {loading ? '—' : subscriptions.length}
             </div>
           </div>
           <div>
-            <div className="metric-label">Est. monthly cost</div>
-            <div className="text-stat font-bold mt-[6px] font-mono text-ledger-text-heading">
+            <div className="text-[12.5px] text-ledger-text-faint">Est. monthly cost</div>
+            <div className="text-[25px] font-bold mt-[6px] tabular-nums">
               {loading ? '—' : `$${fmt(monthlyTotal)}`}
             </div>
           </div>
@@ -56,7 +56,7 @@ export default function Subscriptions() {
           <Repeat className="w-[24px] h-[24px] text-ledger-text-faint mx-auto mb-[10px]" strokeWidth={1.8} />
           <div className="text-[14px] font-semibold mb-[8px]">No recurring charges detected</div>
           <div className="text-[13px] text-ledger-text-faint">
-            Subscriptions are detected from transaction history: merchants billed on a
+            Subscriptions are detected from transaction history — merchants billed on a
             regular schedule for a consistent amount, at least 3 times.
           </div>
         </div>
@@ -65,17 +65,17 @@ export default function Subscriptions() {
           {subscriptions.map((sub, i) => (
             <div key={`${sub.merchant}-${i}`} className="glass-card p-[18px]">
               <div className="flex items-center gap-[10px] mb-[12px]">
-                <span className="text-title font-semibold flex-1 truncate">{sub.merchant}</span>
-                <span className="text-[11px] px-[8px] py-[2px] rounded-[6px] bg-ledger-inset border border-ledger-border text-ledger-text-muted whitespace-nowrap">
+                <span className="text-[13px] font-semibold flex-1 truncate">{sub.merchant}</span>
+                <span className="text-[11px] glass-chip px-[8px] py-[2px] rounded-[6px] text-ledger-text-muted whitespace-nowrap">
                   {formatCadence(sub.cadence)}
                 </span>
               </div>
 
-              <div className="text-[19px] font-bold mb-[10px] font-mono text-ledger-text-heading">
+              <div className="text-[14px] font-bold mb-[10px] tabular-nums">
                 ${fmt(sub.average_amount)}
               </div>
 
-              <div className="text-[11.5px] text-ledger-text-muted mb-[4px]">
+              <div className="text-[11px] text-ledger-text-faint mb-[4px]">
                 {formatCategory(sub.category)}
               </div>
               <div className="text-[11px] text-ledger-text-faint">

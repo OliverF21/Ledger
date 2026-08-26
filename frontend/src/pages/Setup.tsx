@@ -3,6 +3,10 @@ import {
   putPlaidConfig, testPlaidConfig, markWizardDone, importData,
   putRecoveryEmail, putResetEmailKey,
 } from '../api/plaidConfig'
+import { alphaColor } from '../utils/color'
+
+// The same Transportation blue used behind the Login card.
+const BLUE = '#5b8def'
 
 type Step = 'welcome' | 'byok' | 'plaid' | 'import'
 
@@ -125,8 +129,24 @@ export default function Setup({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center p-4 bg-ledger-bg text-ledger-text-primary">
-      <div className="glass-modal w-[440px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden">
+    <div className="relative z-10 min-h-dvh flex items-center justify-center p-4 text-ledger-text-primary">
+      {/* Large blue gradient diffusing outward from behind the glass card, matching Login. */}
+      <div
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+        style={{
+          width: 900,
+          height: 760,
+          filter: 'blur(80px)',
+          background: `radial-gradient(circle at 50% 46%, ${alphaColor(BLUE, 0.55)} 0%, ${alphaColor(BLUE, 0.30)} 28%, ${alphaColor(BLUE, 0.12)} 52%, ${alphaColor(BLUE, 0.04)} 68%, transparent 80%)`,
+        }}
+      />
+
+      <div
+        className="glass-modal w-[440px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(150deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05) 46%, rgba(255,255,255,0.10))',
+        }}
+      >
         {step === 'import' ? (
           <div className="relative w-full flex flex-col items-center">
             <div className="text-[22px] font-bold tracking-tight">Import existing data</div>
@@ -143,7 +163,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 </p>
                 <button
                   onClick={() => { window.location.hash = ''; setStep('welcome') }}
-                  className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors"
+                  className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors"
                 >
                   Back to Welcome
                 </button>
@@ -217,7 +237,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
           <div className="relative w-full flex flex-col items-center">
             <div className="text-[22px] font-bold tracking-tight">Set up account recovery</div>
             <div className="text-[13px] text-ledger-text-faint mb-[22px] text-center">
-              You're about to import years of financial history. Worth setting up email-based
+              You're about to import years of financial history — worth setting up email-based
               password recovery first, in case you ever lose your recovery code afterward.
             </div>
 
@@ -244,7 +264,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 />
                 <div className="mt-[4px] text-[11px] text-ledger-text-faintest">
                   Free at <span className="underline">resend.com/api-keys</span>. Used only for
-                  password-reset emails, never for anything else.
+                  password-reset emails — never for anything else.
                 </div>
               </div>
 
@@ -254,7 +274,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={goToImport}
                   disabled={byokSaving}
-                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
                 >
                   Skip for now
                 </button>
@@ -279,7 +299,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
           <div className="relative w-full flex flex-col items-center">
             <div className="text-[22px] font-bold tracking-tight">Connect Plaid</div>
             <div className="text-[13px] text-ledger-text-faint mb-[22px] text-center">
-              Optional. Add your Plaid keys now, or skip and add them later in Settings.
+              Optional — add your Plaid keys now, or skip and add them later in Settings.
             </div>
 
             <div className="w-full space-y-[12px]">
@@ -327,7 +347,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
               <button
                 onClick={handleTest}
                 disabled={testing}
-                className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
+                className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
               >
                 {testing ? 'Testing…' : 'Test connection'}
               </button>
@@ -336,7 +356,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={handleSkip}
                   disabled={skipping || saving}
-                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-hover transition-colors disabled:opacity-50"
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
                 >
                   {skipping ? 'Please wait…' : 'Skip for now'}
                 </button>
