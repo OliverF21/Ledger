@@ -212,22 +212,24 @@ function App() {
         <div className="aurora-layer" />
       </div>
 
-      <div className="relative z-10 h-dvh text-ledger-text-primary flex p-2 short:p-3 tall:p-4 gap-2 short:gap-3 tall:gap-4 overflow-hidden">
-        <Sidebar
-          activeScreen={activeScreen}
-          onScreenChange={navigate}
-          onSignOut={signOut}
-          advisorCount={advisor.pendingCount}
-          accounts={linkedAccounts.accounts}
-        />
+      <div className="relative z-10 h-dvh text-ledger-text-primary p-2.5 short:p-3 tall:p-4 overflow-hidden">
+        <div className="glass-frame h-full min-h-0 flex overflow-hidden">
+          <Sidebar
+            activeScreen={activeScreen}
+            onScreenChange={navigate}
+            onSignOut={signOut}
+            advisorCount={advisor.pendingCount}
+            accounts={linkedAccounts.accounts}
+          />
 
-        <main className="flex-1 flex flex-col min-h-0 glass-shell overflow-hidden">
-          <Header title={header.title} subtitle={header.subtitle} name={userName} />
+          <main className="flex-1 flex flex-col min-h-0 min-w-0 glass-shell overflow-hidden">
+            <Header title={header.title} subtitle={header.subtitle} name={userName} />
 
-          <div className="flex-1 min-h-0 overflow-auto p-3 short:p-4 tall:p-5 soft-scrollbar">
-            {renderScreen()}
-          </div>
-        </main>
+            <div className="flex-1 min-h-0 overflow-auto p-3 short:p-4 tall:p-5 soft-scrollbar">
+              {renderScreen()}
+            </div>
+          </main>
+        </div>
       </div>
     </>
   )

@@ -122,6 +122,21 @@ summary,
 
 /* ── Glass surfaces ───────────────────────────────────────────────────────── */
 
+/* One window sitting in the aurora. Login still uses a standalone .glass-card;
+   inside the frame, cards quiet down so they don't each glow like a separate app. */
+.glass-frame {
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.22);
+  background: linear-gradient(155deg, rgba(255,255,255,0.16), rgba(255,255,255,0.045) 42%, rgba(12,16,28,0.28));
+  backdrop-filter: blur(36px) saturate(155%);
+  -webkit-backdrop-filter: blur(36px) saturate(155%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 0 40px rgba(255,255,255,0.04),
+    0 28px 70px -28px rgba(0,0,0,0.78),
+    0 0 70px rgba(92,140,255,0.14);
+}
+
 .glass-card {
   background: linear-gradient(140deg,
     rgba(255,255,255,0.24),
@@ -135,6 +150,13 @@ summary,
     0 20px 50px -28px rgba(10,10,40,0.55),
     0 0 46px rgba(150,170,255,0.10);
   border-radius: 22px;
+}
+
+.glass-frame .glass-card {
+  background: rgba(255,255,255,0.045);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14);
+  border-radius: 16px;
 }
 
 .glass-overlay {
@@ -169,6 +191,11 @@ summary,
   border-radius: 9px;
 }
 
+.glass-frame .glass-chip {
+  background: rgba(255,255,255,0.055);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
 .glass-sidebar {
   border-radius: 26px;
   border: 1px solid rgba(255,255,255,0.20);
@@ -182,9 +209,24 @@ summary,
     0 0 46px rgba(150,170,255,0.10);
 }
 
+.glass-frame .glass-sidebar {
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid rgba(255,255,255,0.10);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
 .glass-shell {
   border-radius: 26px;
   border: 1px solid rgba(255,255,255,0.14);
+}
+
+.glass-frame .glass-shell {
+  border: none;
+  border-radius: 0;
 }
 
 .glass-header {
@@ -196,7 +238,11 @@ summary,
   border-bottom: 1px solid rgba(255,255,255,0.16);
 }
 
-/* Recessed group inside a glass panel: same material as a chip, not a flat well. */
+.glass-frame .glass-header {
+  background: transparent;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
 .inset-panel {
   background: linear-gradient(140deg,
     rgba(255,255,255,0.16),
@@ -204,6 +250,11 @@ summary,
     rgba(255,255,255,0.08));
   border: 1px solid rgba(255,255,255,0.16);
   border-radius: 12px;
+}
+
+.glass-frame .inset-panel {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
 .metric-label {
@@ -218,12 +269,17 @@ summary,
 @media (prefers-reduced-transparency: reduce) {
   .glass-sidebar,
   .glass-overlay,
-  .glass-modal {
+  .glass-modal,
+  .glass-frame {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
 
   .glass-sidebar {
+    background: #12151c;
+  }
+
+  .glass-frame {
     background: #12151c;
   }
 
