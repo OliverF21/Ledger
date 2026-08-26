@@ -10,6 +10,7 @@ import { getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl, getMo
 import { alphaColor, mixHex } from '../utils/color'
 import {
   CHART_ACCENT,
+  CHART_NEGATIVE,
   CHART_SURFACE,
   GRID_STROKE,
   tooltipItemStyle,
@@ -398,8 +399,8 @@ export default function Overview({ onNavigate }: OverviewProps) {
         <div className="glass-card p-3 short:p-3.5 tall:p-4 min-w-0 min-h-0 overflow-hidden flex flex-col">
           <div className="flex justify-between items-start">
             <div>
-              <div className="text-[12px] text-ledger-text-faint font-medium">Net Worth</div>
-              <div className="text-[26px] short:text-[24px] tall:text-[28px] font-bold letter-spacing-[-0.02em] mt-[2px] tabular-nums leading-tight">
+              <div className="metric-label">Net worth</div>
+              <div className="text-[26px] short:text-[24px] tall:text-[28px] font-bold tracking-tightest mt-[2px] font-mono leading-tight text-ledger-text-heading">
                 {nwLoading ? '—' : `$${fmt(nwData?.current_net_worth ?? 0)}`}
               </div>
               {!nwLoading && nwData && nwData.snapshots.length >= 2 && nwData.change_amount !== 0 && (
@@ -416,7 +417,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
                       {Math.abs(nwData.change_pct).toFixed(1)}%
                     </span>
                   )}
-                  <span className={`text-[12px] tabular-nums font-semibold ${nwData.change_amount >= 0 ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
+                  <span className={`text-[12px] font-mono font-semibold ${nwData.change_amount >= 0 ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
                     {nwData.change_amount >= 0 ? '+' : '−'}${fmt(Math.abs(nwData.change_amount))}
                   </span>
                   <span className="text-[12px] text-ledger-text-faint">this period</span>
@@ -477,7 +478,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
             <div className="mt-2 short:mt-1.5 pt-2 short:pt-1.5 grid grid-cols-2 gap-x-3 short:gap-x-2 flex-1 min-h-0 overflow-y-auto soft-scrollbar">
               {/* Assets column */}
               <div>
-                <div className="text-[10px] text-ledger-text-faintest uppercase font-semibold tracking-wide mb-[4px]">Assets</div>
+                <div className="metric-label mb-[5px]">Assets</div>
                 <div className="flex flex-col gap-[5px]">
                   {assetGroups.map(entry => (
                     <AssetGroupDropdown
@@ -493,13 +494,13 @@ export default function Overview({ onNavigate }: OverviewProps) {
                 </div>
                 <div className="flex justify-between text-[11px] mt-[4px] pt-[4px] border-t border-ledger-border-subtle/50">
                   <span className="text-ledger-text-faint">Total</span>
-                  <span className="text-ledger-positive tabular-nums font-semibold">${fmt(nwData.total_assets)}</span>
+                  <span className="text-ledger-positive font-mono font-semibold">${fmt(nwData.total_assets)}</span>
                 </div>
               </div>
 
               {/* Liabilities column */}
               <div>
-                <div className="text-[10px] text-ledger-text-faintest uppercase font-semibold tracking-wide mb-[4px]">Liabilities</div>
+                <div className="metric-label mb-[5px]">Liabilities</div>
                 {nwData.accounts.filter(a => a.is_liability).length === 0 ? (
                   <div className="text-[11px] text-ledger-text-faintest italic">None</div>
                 ) : (
@@ -507,14 +508,14 @@ export default function Overview({ onNavigate }: OverviewProps) {
                     {nwData.accounts.filter(a => a.is_liability).map(a => (
                       <div key={a.id} className="flex justify-between text-[11.5px] leading-tight">
                         <span className="text-ledger-text-secondary truncate pr-2">{a.name}</span>
-                        <span className="text-ledger-negative tabular-nums font-medium flex-shrink-0">−${fmt(a.balance)}</span>
+                        <span className="text-ledger-negative font-mono font-medium flex-shrink-0">−${fmt(a.balance)}</span>
                       </div>
                     ))}
                   </div>
                 )}
                 <div className="flex justify-between text-[11px] mt-[4px] pt-[4px] border-t border-ledger-border-subtle/50">
                   <span className="text-ledger-text-faint">Total</span>
-                  <span className="text-ledger-negative tabular-nums font-semibold">−${fmt(nwData.total_liabilities)}</span>
+                  <span className="text-ledger-negative font-mono font-semibold">−${fmt(nwData.total_liabilities)}</span>
                 </div>
               </div>
             </div>
@@ -527,7 +528,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
           className="glass-card p-4 min-w-0 h-full grid grid-cols-[200px_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 overflow-hidden"
         >
           <div className="col-span-2 flex items-center justify-between gap-3">
-            <div className="text-[13px] text-ledger-text-faint font-medium">Spending by Category</div>
+            <div className="text-title font-semibold">Spending by category</div>
             <div className="flex items-center gap-2 shrink-0">
               {monthRefreshing && data && (
                 <span className="text-[10px] uppercase tracking-[0.14em] text-ledger-text-faintest">
@@ -706,7 +707,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
                       </div>
                     </div>
                     <span
-                      className={`text-[11px] tabular-nums font-semibold ${activeSlice === i ? '' : 'text-ledger-text-faint'}`}
+                      className={`text-[11.5px] font-mono font-semibold ${activeSlice === i ? '' : 'text-ledger-text-muted'}`}
                       style={activeSlice === i ? { color: cat.color } : undefined}
                     >
                       ${fmt(cat.value)}
@@ -725,16 +726,16 @@ export default function Overview({ onNavigate }: OverviewProps) {
         <div className="glass-card overflow-hidden flex flex-col min-h-0 min-w-0 h-full">
           <div className={`px-4 pt-3.5 pb-3 border-b border-ledger-border-subtle transition-opacity duration-200 shrink-0 ${loading ? 'opacity-80' : 'opacity-100'}`}>
             <div className="flex items-center justify-between mb-2.5">
-              <div className="text-[13px] font-semibold">
+              <div className="text-title font-semibold">
                 Monthly overview
                 <span className="text-ledger-text-faint font-normal ml-2">{monthLabel}</span>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2.5">
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Spending</div>
-                <div className="text-[17px] font-bold mt-[2px] tabular-nums tracking-tight leading-tight">
+              <div className="inset-panel px-3 py-2">
+                <div className="metric-label">Spending</div>
+                <div className="text-[17px] font-bold mt-[3px] font-mono tracking-tight leading-tight">
                   {data ? totalSpendingLabel : '—'}
                 </div>
                 {spendingChange !== null && (
@@ -746,18 +747,18 @@ export default function Overview({ onNavigate }: OverviewProps) {
                   </div>
                 )}
               </div>
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Income</div>
-                <div className="text-[17px] font-bold mt-[2px] tabular-nums tracking-tight leading-tight">
+              <div className="inset-panel px-3 py-2">
+                <div className="metric-label">Income</div>
+                <div className="text-[17px] font-bold mt-[3px] font-mono tracking-tight leading-tight">
                   {data ? totalIncomeLabel : '—'}
                 </div>
                 <div className="text-[10px] text-ledger-text-faint mt-[2px]">
                   {data && data.total_income > 0 ? 'This month' : 'No deposits'}
                 </div>
               </div>
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] text-ledger-text-faintest uppercase tracking-wide font-semibold">Savings rate</div>
-                <div className="text-[17px] font-bold mt-[2px] tabular-nums tracking-tight leading-tight">
+              <div className="inset-panel px-3 py-2">
+                <div className="metric-label">Savings rate</div>
+                <div className="text-[17px] font-bold mt-[3px] font-mono tracking-tight leading-tight">
                   {data ? savingsRateLabel : '—'}
                 </div>
                 <div className="text-[10px] text-ledger-text-faint mt-[2px] truncate">
@@ -768,7 +769,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
           </div>
 
           <div className="flex justify-between items-center px-4 py-2 shrink-0">
-            <span className="text-[13px] font-semibold">Recent transactions</span>
+            <span className="text-title font-semibold">Recent transactions</span>
             <button
               onClick={() => onNavigate('transactions')}
               className="text-[12px] text-ledger-accent font-semibold cursor-pointer hover:opacity-80"
@@ -837,7 +838,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
         {/* Right: budget progress */}
         <div className="glass-card px-4 py-3.5 flex flex-col min-h-0 min-w-0 h-full">
           <div className="flex justify-between items-center mb-2.5 shrink-0">
-            <span className="text-[13px] font-semibold">Budget progress</span>
+            <span className="text-title font-semibold">Budget progress</span>
             <button
               onClick={() => onNavigate('budgets')}
               className="text-[12px] text-ledger-accent font-semibold hover:opacity-80"
@@ -863,7 +864,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
               <div className="mb-2.5 pb-2.5 border-b border-ledger-border-subtle shrink-0">
                 <div className="flex justify-between text-[12px] mb-1">
                   <span className="text-ledger-text-secondary">Total</span>
-                  <span className="tabular-nums font-semibold">
+                  <span className="font-mono font-semibold">
                     ${fmt(budgetData.total_spent)}
                     <span className="text-ledger-text-faint font-normal"> / ${fmt(budgetData.total_limit)}</span>
                   </span>
@@ -873,7 +874,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
                     className="h-full rounded-[3px] transition-all"
                     style={{
                       width: `${Math.min(budgetPct ?? 0, 100)}%`,
-                      backgroundColor: budgetOver ? '#e7705f' : '#5b8def',
+                      backgroundColor: budgetOver ? CHART_NEGATIVE : CHART_ACCENT,
                     }}
                   />
                 </div>
@@ -893,7 +894,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
                     <div key={b.id}>
                       <div className="flex justify-between text-[11.5px] mb-1 leading-tight">
                         <span className="truncate pr-2">{formatCategory(b.category)}</span>
-                        <span className="tabular-nums text-ledger-text-muted flex-shrink-0 text-[11px]">
+                        <span className="font-mono text-ledger-text-muted flex-shrink-0 text-[11px]">
                           {isVirtual ? `$${fmt(b.spent)}` : `$${fmt(b.spent)} / $${fmt(b.limit)}`}
                         </span>
                       </div>
@@ -902,7 +903,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
                           className="h-full rounded-[3px]"
                           style={{
                             width: `${Math.min(pct, 100)}%`,
-                            backgroundColor: over ? '#e7705f' : b.color,
+                            backgroundColor: over ? CHART_NEGATIVE : CHART_ACCENT,
                           }}
                         />
                       </div>
