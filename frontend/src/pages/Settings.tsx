@@ -19,6 +19,7 @@ import { PLAID_CATEGORY_LABELS } from '../utils/plaidCategories'
 interface RuleItem {
   id: number
   merchant_pattern: string
+  description_pattern: string | null
   category_name: string
   category_color: string | null
 }
@@ -97,6 +98,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
   const [showRuleForm, setShowRuleForm] = useState(false)
   const [ruleMerchant, setRuleMerchant] = useState('')
+  const [ruleDescription, setRuleDescription] = useState('')
   const [ruleCategory, setRuleCategory] = useState('')
   const [savingRule, setSavingRule] = useState(false)
   const [ruleError, setRuleError] = useState<string | null>(null)
@@ -104,6 +106,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const [deletingRuleId, setDeletingRuleId] = useState<number | null>(null)
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
   const [editMerchant, setEditMerchant] = useState('')
+  const [editDescription, setEditDescription] = useState('')
   const [editCategory, setEditCategory] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
@@ -637,9 +640,10 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
   const handleCreateRule = async () => {
     const merchant_pattern = ruleMerchant.trim()
+    const description_pattern = ruleDescription.trim() || undefined
     const category_name = ruleCategory.trim()
     if (!merchant_pattern || !category_name) {
-      setRuleError('Both fields are required')
+      setRuleError('Merchant and category are required')
       return
     }
     setSavingRule(true)
@@ -649,13 +653,14 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       const res = await apiFetch('/api/categorization-rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchant_pattern, category_name }),
+        body: JSON.stringify({ merchant_pattern, description_pattern, category_name }),
       })
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data.detail || 'Failed to create rule')
       }
       setRuleMerchant('')
+      setRuleDescription('')
       setRuleCategory('')
       setShowRuleForm(false)
       setRuleSuccess(
@@ -686,6 +691,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const handleStartEdit = (rule: RuleItem) => {
     setEditingRuleId(rule.id)
     setEditMerchant(rule.merchant_pattern)
+    setEditDescription(rule.description_pattern || '')
     setEditCategory(rule.category_name)
     setEditError(null)
   }
@@ -697,9 +703,10 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
 
   const handleSaveEdit = async (id: number) => {
     const merchant_pattern = editMerchant.trim()
+    const description_pattern = editDescription.trim() || undefined
     const category_name = editCategory.trim()
     if (!merchant_pattern || !category_name) {
-      setEditError('Both fields are required')
+      setEditError('Merchant and category are required')
       return
     }
     setSavingEdit(true)
@@ -708,7 +715,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       const res = await apiFetch(`/api/categorization-rules/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchant_pattern, category_name }),
+        body: JSON.stringify({ merchant_pattern, description_pattern, category_name }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -1226,7 +1233,8 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                           type="text"
                           value={editMerchant}
                           onChange={e => setEditMerchant(e.target.value)}
-                          className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary focus:outline-none focus:border-ledger-accent/60"
+                          placeholder="Merchant name or pattern"
+                          className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
                         />
                         <input
                           type="text"
@@ -1236,6 +1244,13 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                           className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary focus:outline-none focus:border-ledger-accent/60"
                         />
                       </div>
+                      <input
+                        type="text"
+                        value={editDescription}
+                        onChange={e => setEditDescription(e.target.value)}
+                        placeholder="Description also contains (optional)"
+                        className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                      />
                       {editError && <p className="text-[11.5px] text-ledger-negative">{editError}</p>}
                       <div className="flex gap-[8px]">
                         <button
@@ -1261,6 +1276,11 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                           <div className="glass-chip px-[10px] py-[7px] text-[12px] text-ledger-text-primary truncate">
                             {rule.merchant_pattern}
                           </div>
+                          {rule.description_pattern && (
+                            <div className="mt-[6px] text-[11px] text-ledger-text-faint truncate">
+                              + description contains "{rule.description_pattern}"
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-[4px] opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                           <button
@@ -1336,6 +1356,17 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
                   />
                 </div>
+                <input
+                  type="text"
+                  value={ruleDescription}
+                  onChange={e => setRuleDescription(e.target.value)}
+                  placeholder="Description also contains (optional)"
+                  className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                />
+                <p className="text-[11px] text-ledger-text-faint">
+                  Optional: only match transactions whose bank description also contains this text. Useful when the
+                  same merchant name covers two different situations (e.g. a card issuer that's also a broker).
+                </p>
                 {ruleError && <p className="text-[11.5px] text-ledger-negative">{ruleError}</p>}
                 <div className="flex gap-[8px]">
                   <button
@@ -1346,7 +1377,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     {savingRule ? 'Saving…' : 'Save rule'}
                   </button>
                   <button
-                    onClick={() => { setShowRuleForm(false); setRuleError(null); setRuleMerchant(''); setRuleCategory('') }}
+                    onClick={() => { setShowRuleForm(false); setRuleError(null); setRuleMerchant(''); setRuleDescription(''); setRuleCategory('') }}
                     className="px-[14px] rounded-[7px] border border-ledger-border-input text-[12.5px] text-ledger-text-secondary hover:bg-ledger-inset transition-colors"
                   >
                     Cancel
