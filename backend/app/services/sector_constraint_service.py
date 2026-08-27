@@ -59,6 +59,21 @@ def clip_sector_bounds(
         else:
             lower[j] = requested_floor
         upper[j] = requested_cap
+        # Pre-existing inverted rows (floor > cap) skip API validation.
+        # Floor-clipping can also leave lower > upper if the stored cap sits
+        # below the clipped floor. scipy ineq constraints are then infeasible
+        # and the whole solve falls back to equal weights.
+        if upper[j] < lower[j]:
+            clip_log.append({
+                "sector": sector,
+                "requested_cap": requested_cap,
+                "clipped_to": lower[j],
+                "reason": (
+                    f"{sector} cap {requested_cap:.2%} is below the effective floor "
+                    f"{lower[j]:.2%}; raised the cap to the floor"
+                ),
+            })
+            upper[j] = lower[j]
 
     # Sectors with a constraint but no column in the exposure matrix (no
     # held/classified ticker has any exposure to them at all) get no

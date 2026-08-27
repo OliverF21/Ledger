@@ -14,7 +14,7 @@ HTTPException-passthrough-then-log_and_raise convention.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -70,8 +70,8 @@ class OptimizationSettingsResponse(BaseModel):
 
 class OptimizationSettingsUpdate(BaseModel):
     advanced_enabled: bool | None = None
-    position_cap_pct: float | None = None
-    concentration_strength: float | None = None
+    position_cap_pct: float | None = Field(default=None, gt=0, le=100)
+    concentration_strength: float | None = Field(default=None, ge=0, le=1)
 
 
 def _settings_response(user: User) -> OptimizationSettingsResponse:

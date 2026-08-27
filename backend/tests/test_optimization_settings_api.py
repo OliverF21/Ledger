@@ -101,6 +101,22 @@ def test_get_and_put_optimization_settings(client, db_session, auth_headers):
     assert followup_body["concentration_strength"] == 0.7
 
 
+def test_optimization_settings_rejects_out_of_range_cap_and_strength(client, auth_headers):
+    cap = client.put(
+        "/api/investments/optimization-settings",
+        json={"position_cap_pct": 0},
+        headers=auth_headers,
+    )
+    assert cap.status_code == 422
+
+    strength = client.put(
+        "/api/investments/optimization-settings",
+        json={"concentration_strength": 1.5},
+        headers=auth_headers,
+    )
+    assert strength.status_code == 422
+
+
 def test_optimization_settings_null_coalescing_on_get_and_put(client, db_session, auth_headers):
     """Simulates a pre-existing DB row that predates the migration adding
     these columns (models.py:55-58): _ensure_columns()'s ALTER TABLE ADD

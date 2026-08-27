@@ -108,6 +108,32 @@ def price_matrix(db: Session, tickers: list[str], start: date, end: date) -> tup
     return all_dates, matrix
 
 
+def price_returns(prices: np.ndarray) -> np.ndarray:
+    """Per-ticker returns aligned to `prices[1:]` dates.
+
+    `price_matrix` uses the UNION of every ticker's dates, so a crypto
+    weekend row (or any interior gap) is NaN for equities. Naively doing
+    `prices[1:]/prices[:-1]-1` then turns the *next* equity close into NaN
+    too (Monday / SaturdayNaN), wiping out that name's whole weekend-spanning
+    return. Use each ticker's previous *valid* price instead.
+    """
+    values = np.asarray(prices, dtype=float)
+    if values.ndim != 2 or values.shape[0] < 2:
+        return np.empty((0, 0 if values.ndim < 2 else values.shape[1]))
+    rows, cols = values.shape
+    out = np.full((rows - 1, cols), np.nan)
+    for j in range(cols):
+        last_px = np.nan
+        for i in range(rows):
+            px = values[i, j]
+            if not np.isfinite(px) or px == 0:
+                continue
+            if np.isfinite(last_px):
+                out[i - 1, j] = px / last_px - 1.0
+            last_px = px
+    return out
+
+
 def current_dollar_values(db: Session, account_ids: list[int], tickers: list[str]) -> dict[str, float]:
     """Current market value per ticker, in dollars -- the raw figure
     `current_weights` below normalizes into a percentage. Exposed separately

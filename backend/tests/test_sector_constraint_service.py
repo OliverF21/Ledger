@@ -210,3 +210,23 @@ def test_build_ticker_bounds_applies_tighter_ticker_cap_below_position_cap(db_se
 
     assert lower[0] == 0.0
     assert upper[0] == 0.03
+
+
+def test_clip_sector_bounds_raises_cap_to_meet_clipped_floor(db_session):
+    # Pre-existing inverted row: floor 40% / cap 2% on a sector whose clipped
+    # achievable floor is ~9.5%. Without a cap-vs-floor clamp the solver
+    # would get lower=0.095, upper=0.02 and fail.
+    _classify(db_session, "XLV", {"healthcare": 1.0})
+    db_session.add(SectorConstraint(user_id=1, sector="healthcare", floor_pct=40.0, cap_pct=2.0))
+    db_session.commit()
+
+    matrix, sectors = build_sector_exposure_matrix(db_session, ["XLV"])
+    lower, upper, clip_log = clip_sector_bounds(db_session, 1, sectors, matrix, position_cap=0.10)
+
+    idx = sectors.index("healthcare")
+    assert upper[idx] >= lower[idx]
+    cap_entry = next(e for e in clip_log if e.get("sector") == "healthcare" and "requested_cap" in e)
+    # UI discriminates floor-clip copy on requested_floor, so this entry must
+    # carry `reason` and must not look like a floor clip.
+    assert cap_entry["reason"]
+    assert "requested_floor" not in cap_entry

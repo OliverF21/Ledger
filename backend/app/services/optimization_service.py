@@ -49,6 +49,7 @@ from app.services.price_matrix_service import (
     held_tickers,
     portfolio_stats,
     price_matrix,
+    price_returns,
     priceable_tickers,
 )
 from app.services.sector_constraint_service import (
@@ -429,7 +430,7 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_L
     if len(tickers) < 2:
         return _empty_result(data_points=len(dates))
 
-    returns = prices[1:] / prices[:-1] - 1
+    returns = price_returns(prices)
     mean_returns = np.nanmean(returns, axis=0)
     # ledoit_wolf_shrinkage annualizes internally (x TRADING_DAYS_PER_YEAR),
     # but portfolio_stats/neg_sharpe_bl/neg_utility_bl below expect a DAILY
@@ -447,8 +448,6 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_L
         for t in tickers
     }
     current_weight_fractions = np.array([current_weights_pct[t] / 100 for t in tickers])
-    current_return, current_vol, current_sharpe = portfolio_stats(current_weight_fractions, mean_returns, cov, risk_free_rate_pct)
-
     n = len(tickers)
 
     requested_cap_pct = (
@@ -539,6 +538,14 @@ def build_optimization_suggestion(db: Session, *, lookback_days: int = DEFAULT_L
         # No ETF held -> no views to blend; Black-Litterman with zero
         # views collapses to the market-implied prior itself.
         mu_bl, sigma_bl = pi, cov_for_bl
+
+    # Score the current book on the SAME mu/cov the solver uses (BL posterior),
+    # not historical arithmetic means. Otherwise "current expected return" and
+    # "suggested expected return" are different estimators and the Sharpe
+    # comparison on the Investments tab is apples-to-oranges.
+    current_return, current_vol, current_sharpe = portfolio_stats(
+        current_weight_fractions, mu_bl, sigma_bl, risk_free_rate_pct
+    )
 
     exposure_matrix, sector_names = build_sector_exposure_matrix(db, tickers)
     sector_lower, sector_upper, clip_log = clip_sector_bounds(db, 1, sector_names, exposure_matrix, effective_cap)

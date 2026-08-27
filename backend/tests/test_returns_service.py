@@ -144,3 +144,40 @@ def test_xirr_flips_sign_of_intermediate_cash_flow(db_session, account):
 
     rate = build_mwr_xirr(db_session, [account.id], d0, d1)
     assert rate == pytest.approx(0.0, abs=0.5)
+
+
+def test_xirr_includes_cash_flow_on_last_snapshot_date(db_session, account):
+    # $1000 start, a $100 deposit on the final snapshot date, ending balance
+    # $1100 with no organic growth. True XIRR is 0%: the extra $100 is new
+    # capital, not a gain. Dropping the last-day flow (the old `< last_date`
+    # filter) treats the deposit as a 10% annual return.
+    d0 = date(2025, 1, 1)
+    d1 = date(2026, 1, 1)
+    _snapshot(db_session, account, d0, 1000)
+    _snapshot(db_session, account, d1, 1100)
+    db_session.add(InvestmentTransaction(
+        account_id=account.id, plaid_investment_transaction_id="txn-last-deposit",
+        name="deposit", type="cash", subtype="deposit", amount=-100, date=d1,
+    ))
+    db_session.commit()
+
+    rate = build_mwr_xirr(db_session, [account.id], d0, d1)
+    assert rate == pytest.approx(0.0, abs=0.5)
+
+
+def test_xirr_includes_withdrawal_on_last_snapshot_date(db_session, account):
+    # $1000 start, grows to $1100, $100 withdrawn on the last snapshot date
+    # leaving $1000. True XIRR is 10% (investor put in 1000, got back 100 +
+    # 1000). Dropping the last-day withdrawal would report ~0%.
+    d0 = date(2025, 1, 1)
+    d1 = date(2026, 1, 1)
+    _snapshot(db_session, account, d0, 1000)
+    _snapshot(db_session, account, d1, 1000)
+    db_session.add(InvestmentTransaction(
+        account_id=account.id, plaid_investment_transaction_id="txn-last-withdrawal",
+        name="withdrawal", type="cash", subtype="withdrawal", amount=100, date=d1,
+    ))
+    db_session.commit()
+
+    rate = build_mwr_xirr(db_session, [account.id], d0, d1)
+    assert rate == pytest.approx(10.0, abs=0.5)

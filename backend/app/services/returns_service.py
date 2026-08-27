@@ -161,7 +161,16 @@ def build_mwr_xirr(db: Session, account_ids: list[int], start: date, end: date) 
     # money in). XIRR's NPV needs investor-perspective signs (negative = money
     # the investor put in, i.e. an outflow) to match start_value/end_value
     # below, so flip them here.
-    dated_flows += [CashFlow(date=f.date, amount=-f.amount) for f in flows if dates[0] < f.date < dates[-1]]
+    # Include flows on the last snapshot date (`<= dates[-1]`): that day's
+    # ending balance already embeds the deposit/withdrawal, so dropping the
+    # flow would treat new cash as a gain (or a withdrawal as a loss). Flows
+    # on the first snapshot date stay out — start_value is an end-of-day
+    # total and already includes them.
+    dated_flows += [
+        CashFlow(date=f.date, amount=-f.amount)
+        for f in flows
+        if dates[0] < f.date <= dates[-1]
+    ]
     dated_flows.append(CashFlow(date=dates[-1], amount=end_value))
 
     if all(f.amount <= 0 for f in dated_flows) or all(f.amount >= 0 for f in dated_flows):

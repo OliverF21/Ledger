@@ -549,14 +549,14 @@ export default function Investments() {
 
           <div className="grid grid-cols-2 gap-2.5 mb-3">
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return</div>
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return (period)</div>
               <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.twr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance, excludes deposit/withdrawal timing</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance over the observed span — excludes deposit/withdrawal timing. CAGR above is this annualized.</div>
             </div>
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR)</div>
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR, annualized)</div>
               <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.mwr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, includes your deposit/withdrawal timing</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, including deposit/withdrawal timing. Same annualization as CAGR.</div>
             </div>
           </div>
 
@@ -674,19 +674,17 @@ export default function Investments() {
                     {optimization.cap_relaxed.reason ? ` (${optimization.cap_relaxed.reason})` : ''}
                   </li>
                 )}
-                {/* ClipLogEntry is a union-by-optional-fields shape: a
-                    sector-floor clip fills sector/requested_floor/clipped_to,
-                    while the solver-level notes (risk-aversion substitution,
-                    a non-convergent objective solve) carry only a
-                    human-readable `reason`. Branch on which one this is --
-                    rendering a reason-only entry through the floor-clip
-                    template printed "Unknown sector floor clipped from 0.0%
-                    to 0.0% — not achievable within the position cap", which
-                    is simply false. */}
+                {/* ClipLogEntry is a union-by-optional-fields shape. Discriminate
+                    on requested_floor (not merely sector): a cap-raise after an
+                    inverted floor/cap also has `sector` set, and routing it
+                    through the floor template printed "X floor clipped from 0.0%"
+                    because requested_floor was null. Solver-level notes
+                    (risk-aversion substitution, a non-convergent solve) carry
+                    only `reason`. */}
                 {optimization.clip_log.map((entry, i) => (
                   <li key={i} className="text-[11.5px] text-ledger-text-secondary leading-snug">
-                    {entry.sector !== null && entry.sector !== undefined
-                      ? `${entry.sector} floor clipped from ${((entry.requested_floor ?? 0) * 100).toFixed(1)}% to ${((entry.clipped_to ?? 0) * 100).toFixed(1)}% — not achievable within the position cap`
+                    {entry.sector && entry.requested_floor != null
+                      ? `${entry.sector} floor clipped from ${(entry.requested_floor * 100).toFixed(1)}% to ${((entry.clipped_to ?? 0) * 100).toFixed(1)}% — not achievable within the position cap`
                       : entry.reason ?? 'A constraint was auto-adjusted'}
                   </li>
                 ))}
