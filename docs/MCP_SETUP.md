@@ -24,6 +24,16 @@ Run the server from the `backend` directory and Claude can call these tools:
   can, from the app. Requires the backend running and `PROPOSAL_SERVICE_KEY` set
   in `backend/.env`. All other tools stay read-only.
 
+**Financial goals (TVM on the backend — Claude must call these, not invent math):**
+
+- `planning_capacity` — leftover income after spending; `recommended_available`
+  is `min(current-month residual, lookback average)` for complete months
+- `plan_goal` — months-to-goal or required monthly contribution (0% cash, or a
+  user-stated annual return as a decimal like `0.07`)
+- `plan_goal_from_expenses` — same planner after optional spending cuts
+
+See `docs/MCP_FINANCIAL_GOALS_PLAN.md` for the design.
+
 **Chart tools** (inline SVG images — no embed widgets):
 
 - `chart_cash_flow` / `chart_sankey` — ribbon Sankey diagram (like Cash Flow page)
@@ -84,6 +94,9 @@ If you use a specific Python interpreter or virtual environment, replace `"pytho
    - `Show me a chart of my net worth over the last year`
    - `Chart my spending trends for the last 6 months`
    - `Show a Sankey of my June cash flow` (uses `cash_flow_sankey_data`, Claude draws the Mermaid chart)
+   - `Based on my last 3 months, how long to save a $10k emergency fund if I already have $2,400?`
+   - `If I cut restaurants $150, how does that change the timeline?`
+   - `What monthly investment would reach $50k in 5 years at a 5% assumed return?`
 
 If Claude starts but the tools do not appear, verify the `cwd` is the `backend` folder and that `python -m mcp_server.server` runs successfully there.
 

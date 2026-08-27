@@ -110,13 +110,12 @@ Planning tools must expose a transparent **capacity** breakdown so Claude explai
 capacity = {
   residual_this_month,
   residual_lookback_avg,
-  budget_headroom,          # optional
-  recommended_available,    # policy pick: min(lookback_avg, residual) or lookback_avg
+  recommended_available,    # min(current, lookback_avg) — see policy
   notes[]                   # e.g. "March had unusually high income"
 }
 ```
 
-**Policy (v1):** default `recommended_available` = lookback average residual (last 3 complete months). If lookback is empty, fall back to current-month residual. Never invent income.
+**Policy (v1):** `recommended_available = min(residual_this_month, lookback_avg)` over the last 3 complete months before the requested month. Safer than lookback-only when the latest complete month is weaker. If lookback is empty, fall back to current-month residual. If the requested month is the in-progress calendar month, do **not** min against its partial residual (paycheck may not have landed); use lookback average and note that the month is incomplete. Never invent income.
 
 ---
 
@@ -408,14 +407,14 @@ Budgets answer: “Am I overspending a category?”
 
 ## Open questions
 
-1. **Default capacity policy:** lookback average vs min(current, lookback) vs percentile — which feels safest for advice?
+1. **Default capacity policy:** **locked** — `min(current, lookback_avg)` for complete months; lookback-only when the requested month is still in progress.
 2. **Debt payoff:** include interest rate amortization in v1, or treat as simple remaining÷payment until a dedicated debt model exists?
 3. **Linked balances:** should Phase 2 `current_amount` auto-fill from a chosen savings/brokerage account, or stay manual?
 4. **Multiple concurrent goals:** split capacity pro-rata, priority order, or leave allocation entirely to Claude’s narrative?
 5. **UI surface:** is Claude-only enough for v1, or does Ledger need a Goals page that calls the same service?
 6. **Cash-flow dependency:** ship Phase 1 on residual surplus now, or wait for Savings/Investments sinks so “invest plan” uses real investment transfers?
 
-**Recommendation:** ship Phase 1 on residual surplus immediately; treat Savings vs Investments allocation as an enhancement when that cash-flow spec lands. Keep debt simple (0% interest math) until demand appears. Defer Goals page until persisted goals (Phase 2) exist.
+**Recommendation:** ship Phase 1 on residual surplus immediately; treat Savings vs Investments allocation as an enhancement when that cash-flow spec lands. Keep debt simple (0% interest math) until demand appears. Defer Goals page until persisted goals (Phase 2) exist. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback.
 
 ---
 

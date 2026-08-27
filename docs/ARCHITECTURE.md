@@ -148,14 +148,17 @@ UI: `#investments` tab between Budgets and Trends.
 ## AI Advisor (MCP)
 
 ```
-Claude Desktop → MCP tools (read analytics, propose_budget)
+Claude Desktop → MCP tools (read analytics, plan_goal / TVM, propose_budget)
             → POST /api/proposals  (PROPOSAL_SERVICE_KEY)
             → pending row in budgets.db
             → user reviews in Advisor UI → Apply or Dismiss
 ```
 
 MCP reads SQLite directly for analytics; only proposal **creation** goes through
-the API with the scoped service key. See `backend/MCP_SETUP.md`.
+the API with the scoped service key. Goal planning (`planning_capacity`,
+`plan_goal`, `plan_goal_from_expenses`) runs time-value-of-money math in
+`app/services/tvm.py` — Claude calls those tools and does not invent NPER/PMT/FV.
+See `docs/MCP_SETUP.md` and `docs/MCP_FINANCIAL_GOALS_PLAN.md`.
 
 ---
 

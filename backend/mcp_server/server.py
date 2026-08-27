@@ -24,6 +24,12 @@ from app.services.analytics_service import (
     get_spending_by_category as get_spending_by_category_data,
     search_transactions as search_transaction_data,
 )
+from app.services.goals_planning_service import (
+    SpendCut,
+    build_planning_capacity,
+    plan_goal,
+    plan_goal_from_expenses,
+)
 from app.services.investment_service import build_investment_performance
 from mcp_server.proposals import create_budget_proposal
 from mcp_server.sankey import build_cash_flow_sankey_payload, build_cash_flow_sankey_svg
@@ -43,12 +49,18 @@ from mcp_server.schemas import (
     CashFlowTransactionResult,
     CategorySpendResult,
     DatabaseDiagnosticsResult,
+    GoalPlanResult,
+    GoalScheduleRowResult,
+    GoalSpendCutInput,
+    AppliedCutResult,
     InvestmentAllocationResult,
     InvestmentHistoryPointResult,
     InvestmentPerformanceResult,
     InvestmentPositionResult,
     MonthlySpendingResult,
+    PlanningCapacityResult,
     RecentTransactionResult,
+    ResidualMonthResult,
     ProposalResult,
     RecurringSpendItemResult,
     RecurringSpendResult,
@@ -76,6 +88,14 @@ mcp = FastMCP(
         "- transaction_search — evidence rows\n"
         "- net_worth_data — net worth history and account breakdown (JSON)\n"
         "- trends_data — monthly spending vs income series (JSON)\n\n"
+        "Financial goals (time-value-of-money math runs HERE — do not compute NPER/PMT/FV "
+        "yourself; always call these tools and cite their fields):\n"
+        "- planning_capacity — leftover income after spending (capacity) using "
+        "min(current-month residual, lookback average)\n"
+        "- plan_goal — months-to-goal or required monthly contribution (0% cash or "
+        "user-stated annual return)\n"
+        "- plan_goal_from_expenses — same planner after optional spending cuts\n"
+        "Assumed returns are user inputs, not forecasts. Never promise investment results.\n\n"
         "Visual chart tools (return inline SVG images — no embed widgets):\n"
         "- chart_cash_flow / chart_sankey — ALWAYS use for cash-flow Sankey diagrams; "
         "they match the Ledger Cash Flow page. Do not redraw Mermaid from cash_flow_sankey_data.\n\n"
@@ -395,7 +415,9 @@ def get_cash_flow(
 def get_recurring_spend(
     months: Annotated[
         int,
-        Field(description="Trailing months of history to inspect for recurring spend.", ge=3, le=24),
+        Field(
+            description="Trailing months of history to inspect for recurring spend.", ge=3, le=24
+        ),
     ] = 12,
 ) -> RecurringSpendResult:
     """Return likely recurring subscriptions and repeated merchant charges."""
@@ -488,7 +510,9 @@ def get_database_diagnostics(
         latest_transaction_date = ledger_db.query(func.max(Transaction.date)).scalar()
 
     with budgets_session() as budget_db:
-        budgets_in_month = budget_db.query(func.count(Budget.id)).filter(Budget.month == month_key).scalar() or 0
+        budgets_in_month = (
+            budget_db.query(func.count(Budget.id)).filter(Budget.month == month_key).scalar() or 0
+        )
         latest_budget_month = budget_db.query(func.max(Budget.month)).scalar()
 
     return DatabaseDiagnosticsResult(
@@ -498,7 +522,9 @@ def get_database_diagnostics(
         total_transactions=int(total_transactions),
         visible_transactions=int(visible_transactions),
         visible_transactions_in_month=int(visible_transactions_in_month),
-        latest_transaction_date=latest_transaction_date.isoformat() if latest_transaction_date else None,
+        latest_transaction_date=latest_transaction_date.isoformat()
+        if latest_transaction_date
+        else None,
         budgets_in_month=int(budgets_in_month),
         latest_budget_month=latest_budget_month,
     )
@@ -520,7 +546,9 @@ def search_transactions(
     ] = None,
     category: Annotated[
         str | None,
-        Field(description="Optional category substring filter across user, Plaid, and rollup categories."),
+        Field(
+            description="Optional category substring filter across user, Plaid, and rollup categories."
+        ),
     ] = None,
     account: Annotated[
         str | None,
@@ -697,6 +725,278 @@ def _clean_optional_text(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _capacity_result(capacity) -> PlanningCapacityResult:
+    return PlanningCapacityResult(
+        month=capacity.month,
+        lookback_months=capacity.lookback_months,
+        residual_this_month=capacity.residual_this_month,
+        residual_lookback_avg=capacity.residual_lookback_avg,
+        recommended_available=capacity.recommended_available,
+        policy=capacity.policy,
+        series=[
+            ResidualMonthResult(
+                month=row.month,
+                residual=row.residual,
+                income=row.income,
+                spending=row.spending,
+                is_partial=row.is_partial,
+            )
+            for row in capacity.series
+        ],
+        notes=list(capacity.notes),
+    )
+
+
+def _plan_result(plan) -> GoalPlanResult:
+    return GoalPlanResult(
+        mode=plan.mode,
+        target_amount=plan.target_amount,
+        current_amount=plan.current_amount,
+        remaining=plan.remaining,
+        monthly_contribution=plan.monthly_contribution,
+        months=plan.months,
+        months_exact=plan.months_exact,
+        projected_end_month=plan.projected_end_month,
+        annual_return=plan.annual_return,
+        monthly_rate=plan.monthly_rate,
+        affordable=plan.affordable,
+        assumed_monthly_capacity=plan.assumed_monthly_capacity,
+        capacity=_capacity_result(plan.capacity) if plan.capacity else None,
+        schedule_summary=[
+            GoalScheduleRowResult(
+                month_index=row.month_index,
+                month=row.month,
+                contribution=row.contribution,
+                interest=row.interest,
+                balance=row.balance,
+                contribution_cumulative=row.contribution_cumulative,
+                interest_cumulative=row.interest_cumulative,
+            )
+            for row in plan.schedule_summary
+        ],
+        notes=list(plan.notes),
+        assumptions=list(plan.assumptions),
+        cuts=[
+            AppliedCutResult(
+                category_key=cut.category_key,
+                category_name=cut.category_name,
+                monthly_delta=cut.monthly_delta,
+                matched_spend=cut.matched_spend,
+                matched=cut.matched,
+                note=cut.note,
+            )
+            for cut in plan.cuts
+        ],
+        contribution_before_cuts=plan.contribution_before_cuts,
+        months_before_cuts=plan.months_before_cuts,
+        affordable_before_cuts=plan.affordable_before_cuts,
+    )
+
+
+@mcp.tool(
+    name="planning_capacity",
+    tags={"analytics", "planning"},
+    description=(
+        "How much leftover income is available to save or invest each month. Uses cash-flow "
+        "residual (income minus spending). recommended_available is min(current-month residual, "
+        "lookback average) for complete months. Do not invent a surplus — call this tool."
+    ),
+)
+def get_planning_capacity(
+    lookback_months: Annotated[
+        int,
+        Field(description="Complete months before the requested month to average.", ge=1, le=24),
+    ] = 3,
+    month: Annotated[
+        str | None,
+        Field(description="Calendar month YYYY-MM. Defaults to the current month."),
+    ] = None,
+) -> PlanningCapacityResult:
+    """Return leftover income (capacity) for goal planning."""
+    with ledger_session() as db:
+        capacity = build_planning_capacity(
+            db,
+            lookback_months=lookback_months,
+            month=month,
+        )
+    return _capacity_result(capacity)
+
+
+@mcp.tool(
+    name="plan_goal",
+    tags={"analytics", "planning"},
+    description=(
+        "Deterministic time-value-of-money plan: how long at a monthly contribution, or how "
+        "much per month by a date. Math runs on the Ledger backend — do NOT compute NPER/PMT/FV "
+        "yourself. If assumed_monthly_capacity is omitted, capacity is loaded from the ledger. "
+        "annual_return is a user assumption in decimal form (0.07 = 7%), default 0."
+    ),
+)
+def get_plan_goal(
+    target_amount: Annotated[float, Field(description="Goal amount in dollars.", gt=0)],
+    mode: Annotated[
+        str,
+        Field(description="time_to_goal (solve months) or required_contribution (solve PMT)."),
+    ],
+    current_amount: Annotated[
+        float,
+        Field(description="Already saved/invested toward the goal.", ge=0),
+    ] = 0.0,
+    monthly_contribution: Annotated[
+        float | None,
+        Field(description="Monthly amount for time_to_goal. Defaults to recommended capacity."),
+    ] = None,
+    months: Annotated[
+        int | None,
+        Field(
+            description="Horizon in months for required_contribution. Mutually exclusive with target_date.",
+            ge=1,
+            le=600,
+        ),
+    ] = None,
+    target_date: Annotated[
+        str | None,
+        Field(
+            description="Target date YYYY-MM-DD for required_contribution. Mutually exclusive with months."
+        ),
+    ] = None,
+    annual_return: Annotated[
+        float | None,
+        Field(
+            description="Assumed annual return as a decimal in [0, 0.12]. Default 0 (cash). Not a forecast.",
+            ge=0,
+            le=0.12,
+        ),
+    ] = None,
+    assumed_monthly_capacity: Annotated[
+        float | None,
+        Field(
+            description="Override surplus used for affordability. Omit to load from the ledger.",
+            ge=0,
+        ),
+    ] = None,
+    lookback_months: Annotated[
+        int,
+        Field(description="Lookback window when loading capacity.", ge=1, le=24),
+    ] = 3,
+    month: Annotated[
+        str | None,
+        Field(description="Capacity month YYYY-MM. Defaults to the current month."),
+    ] = None,
+) -> GoalPlanResult:
+    """Solve months or required contribution via backend TVM."""
+    parsed_date = _parse_iso_date(target_date, field_name="target_date") if target_date else None
+    if assumed_monthly_capacity is None:
+        with ledger_session() as db:
+            plan = plan_goal(
+                db,
+                target_amount=target_amount,
+                mode=mode,  # type: ignore[arg-type]
+                current_amount=current_amount,
+                monthly_contribution=monthly_contribution,
+                months=months,
+                target_date=parsed_date,
+                annual_return=annual_return,
+                assumed_monthly_capacity=None,
+                lookback_months=lookback_months,
+                month=month,
+            )
+    else:
+        plan = plan_goal(
+            None,
+            target_amount=target_amount,
+            mode=mode,  # type: ignore[arg-type]
+            current_amount=current_amount,
+            monthly_contribution=monthly_contribution,
+            months=months,
+            target_date=parsed_date,
+            annual_return=annual_return,
+            assumed_monthly_capacity=assumed_monthly_capacity,
+            lookback_months=lookback_months,
+            month=month,
+        )
+    return _plan_result(plan)
+
+
+@mcp.tool(
+    name="plan_goal_from_expenses",
+    tags={"analytics", "planning", "spending"},
+    description=(
+        "Same as plan_goal, but always loads capacity from expenses and applies optional "
+        "category spending cuts (negative monthly_delta frees surplus). Returns before/after "
+        "contribution and months. Do not compute the amortization yourself."
+    ),
+)
+def get_plan_goal_from_expenses(
+    target_amount: Annotated[float, Field(description="Goal amount in dollars.", gt=0)],
+    mode: Annotated[
+        str,
+        Field(description="time_to_goal (solve months) or required_contribution (solve PMT)."),
+    ],
+    current_amount: Annotated[
+        float,
+        Field(description="Already saved/invested toward the goal.", ge=0),
+    ] = 0.0,
+    monthly_contribution: Annotated[
+        float | None,
+        Field(description="Monthly amount for time_to_goal. Defaults to (cut-adjusted) capacity."),
+    ] = None,
+    months: Annotated[
+        int | None,
+        Field(description="Horizon in months for required_contribution.", ge=1, le=600),
+    ] = None,
+    target_date: Annotated[
+        str | None,
+        Field(description="Target date YYYY-MM-DD for required_contribution."),
+    ] = None,
+    annual_return: Annotated[
+        float | None,
+        Field(
+            description="Assumed annual return as a decimal in [0, 0.12]. Default 0.",
+            ge=0,
+            le=0.12,
+        ),
+    ] = None,
+    cuts: Annotated[
+        list[GoalSpendCutInput] | None,
+        Field(description="Optional spending changes. Negative monthly_delta reduces spend."),
+    ] = None,
+    lookback_months: Annotated[
+        int,
+        Field(description="Lookback window when loading capacity.", ge=1, le=24),
+    ] = 3,
+    month: Annotated[
+        str | None,
+        Field(description="Capacity month YYYY-MM. Defaults to the current month."),
+    ] = None,
+) -> GoalPlanResult:
+    """Plan a goal after optional expense cuts, using backend TVM."""
+    parsed_date = _parse_iso_date(target_date, field_name="target_date") if target_date else None
+    spend_cuts = [
+        SpendCut(
+            monthly_delta=item.monthly_delta,
+            category_key=item.category_key,
+            category_name=item.category_name,
+        )
+        for item in (cuts or [])
+    ]
+    with ledger_session() as db:
+        plan = plan_goal_from_expenses(
+            db,
+            target_amount=target_amount,
+            mode=mode,  # type: ignore[arg-type]
+            current_amount=current_amount,
+            monthly_contribution=monthly_contribution,
+            months=months,
+            target_date=parsed_date,
+            annual_return=annual_return,
+            cuts=spend_cuts,
+            lookback_months=lookback_months,
+            month=month,
+        )
+    return _plan_result(plan)
 
 
 @mcp.tool(
