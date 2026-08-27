@@ -139,13 +139,19 @@ export function useInvestmentTransactions(months: number) {
   return { transactions, loading }
 }
 
+export interface VarHorizon {
+  days: number
+  var_95_pct: number | null
+  var_95_dollar: number | null
+  var_99_pct: number | null
+  var_99_dollar: number | null
+}
+
 export interface RiskMetrics {
   lookback_days: number
   as_of: string
   volatility_pct: number | null
   sharpe_ratio: number | null
-  var_95_pct: number | null
-  var_99_pct: number | null
   max_drawdown_pct: number | null
   drawdown_duration_days: number | null
   beta_vs_spy: number | null
@@ -154,6 +160,13 @@ export interface RiskMetrics {
   mwr_pct: number | null
   risk_free_rate_pct: number
   data_points: number
+  // VaR — independent backtest of current holdings vs. real price history,
+  // see backend/app/services/risk_service.py's VaR section.
+  var_horizons: VarHorizon[]
+  var_data_points: number
+  var_excluded_tickers: string[]
+  var_coverage_pct: number | null
+  portfolio_value_used: number | null
 }
 
 export function useInvestmentsRisk(lookbackDays: number = 365) {

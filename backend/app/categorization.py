@@ -62,18 +62,35 @@ def get_active_rules(db: Session, user_id: int = 1) -> list[tuple[CategoryRule, 
     return [(rule, name) for rule, name in rows]
 
 
-def pattern_matches(merchant: str, merchant_pattern: str) -> bool:
+def pattern_matches(value: str, pattern: str) -> bool:
     """Case-insensitive regex match with substring fallback for invalid regexes."""
     try:
-        return bool(re.search(merchant_pattern, merchant, re.IGNORECASE))
+        return bool(re.search(pattern, value, re.IGNORECASE))
     except re.error:
-        return merchant_pattern.lower() in merchant.lower()
+        return pattern.lower() in value.lower()
 
 
-def match_rule(merchant: str, rules: list[tuple[CategoryRule, str]]) -> Optional[str]:
-    """Return the category name of the first rule whose pattern matches merchant, else None."""
+def rule_matches(merchant: str, description: str, rule: CategoryRule) -> bool:
+    """
+    A rule matches on merchant_pattern alone unless it also has a
+    description_pattern, in which case both must match (AND). This lets a
+    rule narrow a merchant that covers two different real-world situations
+    (e.g. "Robinhood" appears both on genuine brokerage transfers and on
+    Robinhood Gold Card bill-pay transfers, distinguishable only by the
+    "CCB"/"Coastal Community Bank" text Plaid puts in original_description
+    for the latter).
+    """
+    if not pattern_matches(merchant, rule.merchant_pattern):
+        return False
+    if rule.description_pattern:
+        return pattern_matches(description, rule.description_pattern)
+    return True
+
+
+def match_rule(merchant: str, description: str, rules: list[tuple[CategoryRule, str]]) -> Optional[str]:
+    """Return the category name of the first rule whose pattern(s) match, else None."""
     for rule, category_name in rules:
-        if pattern_matches(merchant, rule.merchant_pattern):
+        if rule_matches(merchant, description, rule):
             return category_name
     return None
 
@@ -82,12 +99,17 @@ def apply_rules_to_transaction(txn: Transaction, rules: list[tuple[CategoryRule,
     """Auto-categorize a transaction in place if a rule matches and it hasn't been manually set."""
     if txn.manual_override:
         return
-    category_name = match_rule(txn.merchant or "", rules)
+    category_name = match_rule(txn.merchant or "", txn.original_description or "", rules)
     if category_name:
         txn.category_user = category_name
 
 
-def apply_rule_to_existing_transactions(db: Session, merchant_pattern: str, category_name: str) -> int:
+def apply_rule_to_existing_transactions(
+    db: Session,
+    merchant_pattern: str,
+    category_name: str,
+    description_pattern: Optional[str] = None,
+) -> int:
     """
     Backfill a freshly-created rule onto existing non-manually-categorized
     transactions so the effect is visible immediately, not just on next sync.
@@ -99,8 +121,11 @@ def apply_rule_to_existing_transactions(db: Session, merchant_pattern: str, cate
     )
     matched_ids = []
     for txn in candidates:
-        if pattern_matches(txn.merchant or "", merchant_pattern):
-            matched_ids.append(txn.id)
+        if not pattern_matches(txn.merchant or "", merchant_pattern):
+            continue
+        if description_pattern and not pattern_matches(txn.original_description or "", description_pattern):
+            continue
+        matched_ids.append(txn.id)
 
     if not matched_ids:
         return 0
@@ -115,6 +140,7 @@ def revert_deleted_rule_from_existing_transactions(
     db: Session,
     merchant_pattern: str,
     remaining_rules: list[tuple[CategoryRule, str]],
+    description_pattern: Optional[str] = None,
 ) -> int:
     """
     Recalculate auto-categorized transactions that matched a deleted rule.
@@ -131,10 +157,13 @@ def revert_deleted_rule_from_existing_transactions(
     updated = 0
     for txn in candidates:
         merchant = txn.merchant or ""
+        description = txn.original_description or ""
         if not pattern_matches(merchant, merchant_pattern):
             continue
+        if description_pattern and not pattern_matches(description, description_pattern):
+            continue
 
-        next_category = match_rule(merchant, remaining_rules)
+        next_category = match_rule(merchant, description, remaining_rules)
         next_value = next_category or None
         if txn.category_user != next_value:
             txn.category_user = next_value

@@ -208,6 +208,7 @@ class CategoryRule(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     merchant_pattern = Column(String(255), nullable=False)  # Regex pattern, e.g., "Amazon.*"
+    description_pattern = Column(String(255), nullable=True)  # Optional regex vs. original_description; AND'd with merchant_pattern when set
     priority = Column(Integer, nullable=True)  # Explicit match order (lower first); NULL falls back to id order
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

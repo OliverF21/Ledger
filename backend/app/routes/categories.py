@@ -26,6 +26,7 @@ router = APIRouter(tags=["categories"])
 class RuleItem(BaseModel):
     id: int
     merchant_pattern: str
+    description_pattern: Optional[str] = None
     category_name: str
     category_color: Optional[str]
 
@@ -50,6 +51,7 @@ async def get_categorization_rules(db: Session = Depends(get_db)):
             RuleItem(
                 id=rule.id,
                 merchant_pattern=rule.merchant_pattern,
+                description_pattern=rule.description_pattern,
                 category_name=category.name,
                 category_color=category.color,
             )
@@ -64,6 +66,7 @@ async def get_categorization_rules(db: Session = Depends(get_db)):
 
 class CreateRuleRequest(BaseModel):
     merchant_pattern: str
+    description_pattern: Optional[str] = None
     category_name: str
     color: Optional[str] = None
 
@@ -96,17 +99,20 @@ async def create_categorization_rule(req: CreateRuleRequest, db: Session = Depen
     """
     try:
         pattern = req.merchant_pattern.strip()
+        description_pattern = req.description_pattern.strip() if req.description_pattern else None
         category_name = req.category_name.strip()
         if not pattern or not category_name:
             raise HTTPException(status_code=400, detail="merchant_pattern and category_name are required")
 
         category = _find_or_create_category(db, category_name, req.color)
 
-        rule = CategoryRule(user_id=1, category_id=category.id, merchant_pattern=pattern)
+        rule = CategoryRule(
+            user_id=1, category_id=category.id, merchant_pattern=pattern, description_pattern=description_pattern
+        )
         db.add(rule)
         db.flush()
 
-        applied = apply_rule_to_existing_transactions(db, pattern, category_name)
+        applied = apply_rule_to_existing_transactions(db, pattern, category_name, description_pattern=description_pattern)
         db.commit()
 
         return CreateRuleResponse(success=True, id=rule.id, applied_to_existing=applied)
@@ -152,6 +158,7 @@ async def reorder_categorization_rules(req: ReorderRulesRequest, db: Session = D
 
 class UpdateRuleRequest(BaseModel):
     merchant_pattern: str
+    description_pattern: Optional[str] = None
     category_name: str
     color: Optional[str] = None
 
@@ -167,6 +174,7 @@ async def update_categorization_rule(rule_id: int, req: UpdateRuleRequest, db: S
     """
     try:
         pattern = req.merchant_pattern.strip()
+        description_pattern = req.description_pattern.strip() if req.description_pattern else None
         category_name = req.category_name.strip()
         if not pattern or not category_name:
             raise HTTPException(status_code=400, detail="merchant_pattern and category_name are required")
@@ -178,10 +186,11 @@ async def update_categorization_rule(rule_id: int, req: UpdateRuleRequest, db: S
         category = _find_or_create_category(db, category_name, req.color)
 
         rule.merchant_pattern = pattern
+        rule.description_pattern = description_pattern
         rule.category_id = category.id
         db.flush()
 
-        applied = apply_rule_to_existing_transactions(db, pattern, category_name)
+        applied = apply_rule_to_existing_transactions(db, pattern, category_name, description_pattern=description_pattern)
         db.commit()
 
         return CreateRuleResponse(success=True, id=rule.id, applied_to_existing=applied)
@@ -208,6 +217,7 @@ async def delete_categorization_rule(rule_id: int, db: Session = Depends(get_db)
             db,
             merchant_pattern=rule.merchant_pattern,
             remaining_rules=remaining_rules,
+            description_pattern=rule.description_pattern,
         )
         db.delete(rule)
         db.commit()
