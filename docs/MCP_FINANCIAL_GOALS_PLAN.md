@@ -1,6 +1,6 @@
 # Spec: MCP Financial Goals Planning (with Claude)
 
-Status: draft  
+Status: draft (revised — TVM-on-backend confirmed)  
 Related: `docs/MCP_SETUP.md`, `docs/CASH_FLOW_SAVINGS_INVESTMENTS.md`, Advisor proposals (`propose_budget`), Cash Flow / Budgets / Investments analytics
 
 ## Problem
@@ -13,10 +13,35 @@ Today that answer requires Claude to improvise from several tools (`cash_flow_su
 
 There is also no first-class **financial goal** entity in Ledger (no emergency fund / sinking fund / debt payoff / invest-by-date target). Budgets cap *spending*; they are not savings or investment targets. The cash-flow draft already flags “savings/investing targets as non-spend goals” as future work.
 
+## Design principle: TVM on the backend, Claude as caller
+
+**Time value of money (TVM) is the core engine.** Ledger owns the math in backend Python (shared service / scripts). Claude Desktop **never** invents NPER / PMT / FV arithmetic — it gathers context (expenses, surplus, goal inputs), **calls MCP tools that run those scripts**, then narrates the returned schedule and affordability.
+
+```text
+User intent  →  Claude (orchestrate + explain)
+                    │  MCP tool call
+                    ↓
+              Backend TVM service
+              (solve for n, PMT, or FV;
+               0% cash and r>0 invest paths)
+                    │
+                    ↓
+              Structured plan JSON (+ optional chart)
+                    │
+                    ↓
+              Claude narrates assumptions & next steps
+```
+
+Why this split:
+
+- Deterministic, unit-tested amortization — same answer every time for the same inputs
+- Claude stays good at expense analysis and conversation, not floating-point annuity edge cases
+- One code path for MCP today and a future Goals REST/UI later
+
 ## Goals
 
 1. Let Claude help users **analyze current expenses and surplus** and produce a clear plan: **how much per month × for how long** to reach a goal.
-2. Keep planning math in Ledger (deterministic, testable), not improvised in the model.
+2. Keep **all TVM / planning math in Ledger backend scripts** (deterministic, testable); Claude only calls those tools and explains results.
 3. Stay consistent with existing MCP conventions: **read-only analytics by default**; mutations only via **write-intent proposals** the user Applies in Advisor.
 4. Reuse Cash Flow / budget / investment builders so REST and MCP share one source of truth.
 5. Support both **ephemeral what-if** planning and (later) **persisted goals** with progress.
@@ -95,42 +120,78 @@ capacity = {
 
 ---
 
-## Planning math (deterministic)
+## Planning math: TVM primitives (backend-only)
 
-All formulas live in a shared service (e.g. `app/services/goals_planning_service.py`) so MCP and any future REST endpoint stay aligned.
+All formulas live in a shared backend module (e.g. `app/services/goals_planning_service.py`, with pure helpers that could also live under `app/services/tvm.py`). MCP tools are thin wrappers; Claude must not re-derive these.
 
-### Modes
+### TVM variables (monthly period)
 
-| Mode | Inputs | Outputs |
+| Symbol | Meaning | Typical source |
 | --- | --- | --- |
-| `time_to_goal` | target, current, monthly contribution, optional annual return | months, end date, schedule summary |
-| `required_contribution` | target, current, months (or target date), optional annual return | monthly contribution, affordability vs capacity |
-| `what_if_cut` | target + spending cuts (category → Δ$/mo) | new capacity, new horizon or new required contribution |
+| `PV` | Present value / current amount toward goal | User or linked balance |
+| `FV` | Future value / target amount | User goal |
+| `PMT` | Periodic contribution (payment into the goal) | User, or solved; often capped by capacity |
+| `n` | Number of months | User horizon, or solved |
+| `r` | Monthly rate = `annual_return / 12` | User assumption (0 for cash/emergency) |
 
-### Cash / 0% return (emergency, sinking, debt)
-
-```text
-remaining = max(target − current, 0)
-months   = ceil(remaining / contribution)           # contribution > 0
-required = remaining / months                       # months > 0
-```
-
-### Invest path with assumed return
-
-Use standard future-value of an ordinary annuity (monthly compounding):
+Ordinary annuity (end-of-month contributions), monthly compounding:
 
 ```text
-r = annual_return / 12
-FV = current*(1+r)^n + contribution * ((1+r)^n − 1) / r     # r > 0
-# solve for n or contribution as needed; r = 0 falls back to cash formulas
+FV = PV*(1+r)^n + PMT * ((1+r)^n − 1) / r     # r > 0
+FV = PV + PMT * n                               # r = 0
 ```
+
+Solve the missing variable (classic spreadsheet analogs):
+
+| Solve for | Mode name | When Claude asks… |
+| --- | --- | --- |
+| `n` (NPER) | `time_to_goal` | “…how long at $X/mo?” |
+| `PMT` | `required_contribution` | “…how much per month by date Y?” |
+| `FV` | `projected_balance` | “…what do I have in N months at $X/mo?” (optional helper) |
+
+Closed forms for `r > 0`:
+
+```text
+# PMT given PV, FV, n, r
+PMT = (FV − PV*(1+r)^n) * r / ((1+r)^n − 1)
+
+# n given PV, FV, PMT, r  (PMT > 0, growth toward FV)
+n = log( (FV*r + PMT) / (PV*r + PMT) ) / log(1+r)
+```
+
+For `r = 0` (emergency / sinking / simple debt remaining):
+
+```text
+remaining = max(FV − PV, 0)
+n    = ceil(remaining / PMT)     # PMT > 0
+PMT  = remaining / n             # n > 0
+```
+
+### Modes (product-facing)
+
+| Mode | TVM solve | Also returns |
+| --- | --- | --- |
+| `time_to_goal` | `n` from PV, FV, PMT, r | end month, schedule summary, affordable vs capacity |
+| `required_contribution` | `PMT` from PV, FV, n, r | affordability vs capacity |
+| `what_if_cut` | re-run above after capacity += cut savings | before/after `n` or `PMT` |
+
+### Module layout
+
+```text
+app/services/tvm.py                    # pure: nper, pmt, fv, schedule — no DB
+app/services/goals_planning_service.py # capacity from analytics + calls tvm + affordability
+mcp_server/server.py                   # @mcp.tool → planning service only
+```
+
+Claude’s job stops at choosing inputs (`FV`, `PV`, `PMT` or `n`, `r`, cuts). Every numeric plan line in the reply should come from a tool result.
 
 **Guardrails:**
 
 - Cap assumed annual return (e.g. 0–12%) and label it clearly as **user assumption**, not a Ledger forecast.
-- Return schedules as tables Claude can narrate (month index, balance, contribution cumulative).
-- Round money to cents; months up with `ceil` for “how long.”
-- If `contribution > recommended_available`, mark `affordable=false` and suggest cut size or longer horizon.
+- Return month-by-month schedules Claude can narrate (index, balance, cumulative contributions, interest component when `r > 0`).
+- Round money to cents; use `ceil` on fractional months for “how long.”
+- If `PMT > recommended_available`, mark `affordable=false` and suggest cut size or longer horizon.
+- MCP tool `instructions`: *Do not compute NPER/PMT/FV yourself; always call `plan_goal` / `plan_goal_from_expenses`.*
 
 ---
 
@@ -138,7 +199,7 @@ FV = current*(1+r)^n + contribution * ((1+r)^n − 1) / r     # r > 0
 
 ### Phase 1 — Read-only planning tools (ship first)
 
-No new DB tables. Claude calls tools; Ledger does the math.
+No new DB tables. Claude gathers expense context and goal inputs; Ledger backend runs TVM; Claude narrates the tool output.
 
 **New MCP tools**
 
@@ -255,12 +316,15 @@ Also allow Claude to continue using `propose_budget` for category cuts that free
 ```text
 Claude Desktop
     │  MCP tools (stdio / Tailscale HTTP)
+    │  — orchestrates expense context + goal inputs
+    │  — does NOT compute TVM locally
     ↓
-mcp_server/server.py          # thin @mcp.tool wrappers
+mcp_server/server.py                 # thin @mcp.tool wrappers
     ↓
-app/services/goals_planning_service.py   # capacity + amortization (NEW)
+app/services/goals_planning_service.py
     ├── analytics_service (cash flow, monthly summary, trends)
     ├── budget status builders
+    ├── app/services/tvm.py          # pure NPER / PMT / FV / schedule
     └── (phase 2) FinancialGoal CRUD in budgets.db
 
 Write path (phase 3 only):
@@ -269,6 +333,7 @@ propose_* → POST /api/proposals → Advisor Apply → budgets.db
 
 **Principles (unchanged):**
 
+- **TVM math runs only in backend Python**; MCP exposes it; Claude calls it.
 - MCP SQLite sessions stay read-only (`mode=ro`, `query_only`).
 - No Anthropic SDK in-repo; Claude hosts the model.
 - Shared builders for API and MCP.
@@ -278,21 +343,23 @@ propose_* → POST /api/proposals → Advisor Apply → budgets.db
 
 ## Implementation sketch (guidance)
 
-1. Add `goals_planning_service.py` with pure functions + dataclass results; unit-test extensively (0% and r>0, affordability, ceil months, clamps).
-2. Add Pydantic result models in `mcp_server/schemas.py`.
-3. Register Phase 1 tools in `mcp_server/server.py` with rich descriptions/instructions so Claude prefers Ledger math over inventing schedules.
-4. Extend FastMCP server `instructions` string with a short “Financial goals” section: when to call which tool, never promise returns, always surface assumptions.
-5. Tests: `backend/tests/test_goals_planning.py` + MCP call coverage patterned on `test_mcp_spending.py`.
-6. Docs: update `docs/MCP_SETUP.md` tool list and example prompts; link this spec from `ARCHITECTURE.md` MCP section.
-7. Phase 2/3 only after Phase 1 feels useful in Claude Desktop.
+1. Add pure `app/services/tvm.py` (`nper`, `pmt`, `fv`, `build_schedule`) with no DB imports; unit-test against known spreadsheet cases (0% and r>0, already-funded, impossible growth).
+2. Add `goals_planning_service.py` that loads capacity from analytics, applies optional cuts, calls `tvm`, and attaches affordability + assumption labels.
+3. Add Pydantic result models in `mcp_server/schemas.py`.
+4. Register Phase 1 tools in `mcp_server/server.py` with rich descriptions/`instructions`: *always call Ledger TVM tools; never invent amortization.*
+5. Extend FastMCP server `instructions` with a short “Financial goals” section: when to call which tool, never promise returns, always surface `r` assumptions from tool output.
+6. Tests: `backend/tests/test_tvm.py`, `test_goals_planning.py` + MCP call coverage patterned on `test_mcp_spending.py`.
+7. Docs: update `docs/MCP_SETUP.md` tool list and example prompts; link this spec from `ARCHITECTURE.md` MCP section.
+8. Phase 2/3 only after Phase 1 feels useful in Claude Desktop.
 
 Likely touch points (Phase 1):
 
+- `backend/app/services/tvm.py` (new)
 - `backend/app/services/goals_planning_service.py` (new)
 - `backend/mcp_server/schemas.py`
 - `backend/mcp_server/server.py`
 - `backend/mcp_server/visuals.py` (if charting)
-- `backend/tests/test_goals_planning.py` (new)
+- `backend/tests/test_tvm.py` / `test_goals_planning.py` (new)
 - `docs/MCP_SETUP.md`
 
 ---
@@ -357,10 +424,11 @@ Budgets answer: “Am I overspending a category?”
 ### Phase 1
 
 - Claude can obtain a capacity breakdown grounded in Ledger cash-flow/spending data (not invented).
-- `plan_goal` returns months and/or required monthly contribution for save and invest (with explicit return assumption).
+- `plan_goal` returns months and/or required monthly contribution via backend TVM (`nper` / `pmt`), for save (`r=0`) and invest (user-stated `r`).
+- Tool instructions tell Claude not to compute TVM itself; answers cite tool fields.
 - `plan_goal_from_expenses` shows before/after when spending cuts are supplied.
 - Plans mark `affordable` against recommended capacity.
-- Unit tests cover 0% and positive return, edge cases (already funded, zero contribution, clamp return).
+- Unit tests cover `tvm.py` against known cases (0% and positive return, edge cases: already funded, zero contribution, clamp return).
 - `MCP_SETUP.md` documents the new tools and example prompts.
 - MCP remains unable to mutate DBs.
 
@@ -382,7 +450,8 @@ Budgets answer: “Am I overspending a category?”
 | Concept | Today | Target |
 | --- | --- | --- |
 | Goal entity | Absent | Ephemeral plans (P1) → persisted goals (P2) |
-| “How long / how much?” | Claude improvises from spend tools | Deterministic `plan_goal*` MCP tools |
+| “How long / how much?” | Claude improvises from spend tools | Backend TVM (`nper`/`pmt`/`fv`) via `plan_goal*` MCP tools |
+| Math ownership | Model arithmetic | `tvm.py` + planning service; Claude calls only |
 | Capacity | Residual buried in cash flow / savings rate | Explicit `planning_capacity` |
 | Expense → plan | Manual multi-tool reasoning | `plan_goal_from_expenses` with optional cuts |
 | Mutations | `propose_budget` only | + `set_goal` / contribution proposals (P3) |
