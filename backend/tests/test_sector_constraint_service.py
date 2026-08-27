@@ -230,3 +230,27 @@ def test_clip_sector_bounds_raises_cap_to_meet_clipped_floor(db_session):
     # carry `reason` and must not look like a floor clip.
     assert cap_entry["reason"]
     assert "requested_floor" not in cap_entry
+
+
+def test_clip_sector_bounds_uses_simplex_not_all_at_cap(db_session):
+    # Five identical 20%-healthcare names, 40% position cap. Summing
+    # exposure*cap says 40% is reachable; every sum-to-1 book actually has
+    # exactly 20% healthcare. A 30% floor must clip, or the solve is infeasible.
+    for ticker in ("AAA", "BBB", "CCC", "DDD", "EEE"):
+        _classify(db_session, ticker, {"healthcare": 0.20, "technology": 0.80})
+    db_session.add(SectorConstraint(user_id=1, sector="healthcare", floor_pct=30.0, cap_pct=100.0))
+    db_session.commit()
+
+    matrix, sectors = build_sector_exposure_matrix(
+        db_session, ["AAA", "BBB", "CCC", "DDD", "EEE"],
+    )
+    lower, upper, clip_log = clip_sector_bounds(
+        db_session, 1, sectors, matrix, position_cap=0.40,
+    )
+
+    idx = sectors.index("healthcare")
+    naive_max = 5 * 0.20 * 0.40
+    assert naive_max == pytest.approx(0.40)
+    assert lower[idx] == pytest.approx(0.20 * 0.95, rel=1e-6)
+    assert lower[idx] < 0.30
+    assert any(e.get("sector") == "healthcare" and "requested_floor" in e for e in clip_log)

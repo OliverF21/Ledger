@@ -17,6 +17,35 @@ from app.models import SectorConstraint, TickerClassification, TickerConstraint
 SAFETY_MARGIN = 0.95
 
 
+def _max_achievable_sector_weights(exposure_matrix: np.ndarray, position_cap: float) -> np.ndarray:
+    """Max sector exposure under 0 <= w_i <= position_cap and sum(w) = 1.
+
+    `sum(exposure * position_cap)` overstates this whenever n * cap > 1,
+    because it assumes every ticker can sit at the cap at once. Example:
+    five holdings each 20% in sector X, 40% position cap → that formula
+    says 40% is reachable, but every feasible book has exactly 20% in X.
+    An overstated max lets an unreachable floor through; scipy's ineq
+    constraints then fail and the whole solve falls back to equal weights.
+    """
+    n, n_sectors = exposure_matrix.shape
+    if n == 0:
+        return np.zeros(n_sectors)
+    cap = min(max(float(position_cap), 0.0), 1.0)
+    out = np.zeros(n_sectors)
+    for j in range(n_sectors):
+        col = exposure_matrix[:, j]
+        remaining = 1.0
+        total = 0.0
+        for i in np.argsort(-col):
+            w = min(cap, remaining)
+            total += col[i] * w
+            remaining -= w
+            if remaining <= 1e-15:
+                break
+        out[j] = total
+    return out
+
+
 def build_sector_exposure_matrix(db: Session, tickers: list[str]) -> tuple[np.ndarray, list[str]]:
     rows = db.query(TickerClassification).filter(TickerClassification.ticker.in_(tickers)).all()
     weights_by_ticker = {
@@ -44,7 +73,7 @@ def clip_sector_bounds(
         c.sector: c
         for c in db.query(SectorConstraint).filter(SectorConstraint.user_id == user_id).all()
     }
-    max_achievable = (exposure_matrix * position_cap).sum(axis=0)
+    max_achievable = _max_achievable_sector_weights(exposure_matrix, position_cap)
 
     for j, sector in enumerate(sector_names):
         constraint = constraints.get(sector)
