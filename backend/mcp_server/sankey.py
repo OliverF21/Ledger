@@ -30,8 +30,24 @@ MIN_FLOW_W = 360
 MIN_CHART_W = 720
 SAVINGS_COLOR = "#4ec38a"
 SAVINGS_ID = "__savings__"
+UNALLOCATED_ID = "__unallocated__"
+INVESTMENTS_ID = "Investments"
 INCOME_HUB = "Income pool"
 DEFICIT_NODE = "Deficit"
+
+
+def _right_items(flow: CashFlowData) -> list[CashFlowNodeItem]:
+    """Consumptive spend first, then named sinks / unlabeled savings / Unallocated."""
+    return list(flow.spending_categories) + list(flow.allocation_nodes or [])
+
+
+def _is_allocation_id(node_id: str) -> bool:
+    return (
+        node_id == SAVINGS_ID
+        or node_id == UNALLOCATED_ID
+        or node_id == INVESTMENTS_ID
+        or node_id.startswith("goal:")
+    )
 
 
 @dataclass(frozen=True)
@@ -70,17 +86,7 @@ def _sankey_row(source: str, target: str, amount: float) -> str:
 
 def build_cash_flow_sankey_payload(flow: CashFlowData) -> CashFlowSankeyPayload:
     """Build Sankey link rows and a Mermaid chart string from ledger cash-flow data."""
-    uses: list[CashFlowNodeItem] = list(flow.spending_categories)
-    if flow.savings > 0.01:
-        uses.append(
-            CashFlowNodeItem(
-                id=SAVINGS_ID,
-                label="Savings",
-                amount=flow.savings,
-                color=SAVINGS_COLOR,
-                top_transactions=[],
-            )
-        )
+    uses: list[CashFlowNodeItem] = _right_items(flow)
 
     links: list[SankeyLink] = []
     mermaid_rows: list[str] = ["sankey-beta", ""]
@@ -245,6 +251,10 @@ def _escape(text: str) -> str:
 def _display_label(node_id: str, raw_label: str) -> str:
     if node_id == SAVINGS_ID:
         return "Savings"
+    if node_id == UNALLOCATED_ID:
+        return "Unallocated"
+    if node_id.startswith("goal:"):
+        return raw_label
     return format_category(raw_label)
 
 
@@ -275,7 +285,7 @@ def _compute_chart_width(
 
     left_w = max((_label_width(label) for label in left_labels), default=72.0)
     right_w = max((_label_width(label, font_size=13.0) for label in right_labels), default=96.0)
-    if any(item.id == SAVINGS_ID for item in right_items):
+    if any(item.id in {SAVINGS_ID, UNALLOCATED_ID} for item in right_items):
         right_w = max(right_w, 108.0)
 
     left_node_x = float(LEFT_COL_X)
@@ -385,21 +395,11 @@ def _ribbon_straight_top(
 
 
 def _build_layout(flow: CashFlowData, width: int | None = None) -> _Layout | None:
-    if not flow.income_sources and not flow.spending_categories:
+    right_items = _right_items(flow)
+    if not flow.income_sources and not right_items:
         return None
 
     total_income = flow.total_income or 1.0
-    right_items: list[CashFlowNodeItem] = list(flow.spending_categories)
-    if flow.savings > 0.01:
-        right_items.append(
-            CashFlowNodeItem(
-                id=SAVINGS_ID,
-                label="Savings",
-                amount=flow.savings,
-                color=SAVINGS_COLOR,
-                top_transactions=[],
-            )
-        )
     total_outflow = sum(item.amount for item in right_items) or 1.0
 
     chart_w, left_label_x, right_label_x, left_node_x, right_node_x = _compute_chart_width(
@@ -464,7 +464,7 @@ def _build_layout(flow: CashFlowData, width: int | None = None) -> _Layout | Non
         right_links.append(
             _LayoutLink(
                 id=tgt.id,
-                color=SAVINGS_COLOR if tgt.id == SAVINGS_ID else tgt.color,
+                color=SAVINGS_COLOR if tgt.id in {SAVINGS_ID, UNALLOCATED_ID} else tgt.color,
                 sx=tunnel_x + TUNNEL_W,
                 sy0=tunnel_y + offset,
                 sy1=tunnel_y + offset + ribbon_h,
@@ -561,14 +561,18 @@ def _render_node(
     label_x = left_label_x if node.side == "left" else right_label_x
     text_anchor = "end" if node.side == "left" else "start"
     amount_prefix = "+" if node.side == "left" else ""
-    amount_color = SAVINGS_COLOR if node.id == SAVINGS_ID else ("#4ec38a" if node.side == "left" else "#9aa2b2")
+    amount_color = (
+        SAVINGS_COLOR
+        if node.id in {SAVINGS_ID, UNALLOCATED_ID}
+        else ("#4ec38a" if node.side == "left" else "#9aa2b2")
+    )
 
     parts = [
         f'<rect x="{node.x:.1f}" y="{node.y:.1f}" width="{NODE_W}" height="{node.h:.1f}" '
         f'fill="{_escape(node.color)}" rx="3" />',
     ]
 
-    if node.id == SAVINGS_ID and total_income > 0:
+    if node.id in {SAVINGS_ID, UNALLOCATED_ID} and total_income > 0:
         share = round(node.amount / total_income * 100)
         parts.append(
             f'<text x="{label_x:.1f}" y="{node.label_cy - 8:.1f}" text-anchor="{text_anchor}" '

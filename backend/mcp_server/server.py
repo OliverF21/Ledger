@@ -30,8 +30,19 @@ from app.services.goals_planning_service import (
     plan_goal,
     plan_goal_from_expenses,
 )
+from app.services.goals_service import (
+    GOAL_KIND_LABELS,
+    build_goal_progress,
+    get_goal,
+    list_goal_progress,
+)
 from app.services.investment_service import build_investment_performance
-from mcp_server.proposals import create_budget_proposal
+from mcp_server.proposals import (
+    create_budget_proposal,
+    create_goal_contribution_proposal,
+    create_goal_proposal,
+    create_transfer_label_proposal,
+)
 from mcp_server.sankey import build_cash_flow_sankey_payload, build_cash_flow_sankey_svg
 from mcp_server.visuals import cash_flow_chart_result
 from mcp_server.db import (
@@ -49,7 +60,9 @@ from mcp_server.schemas import (
     CashFlowTransactionResult,
     CategorySpendResult,
     DatabaseDiagnosticsResult,
+    GoalListResult,
     GoalPlanResult,
+    GoalProgressResult,
     GoalScheduleRowResult,
     GoalSpendCutInput,
     AppliedCutResult,
@@ -95,16 +108,24 @@ mcp = FastMCP(
         "- plan_goal — months-to-goal or required monthly contribution (0% cash or "
         "user-stated annual return)\n"
         "- plan_goal_from_expenses — same planner after optional spending cuts\n"
+        "- list_financial_goals / goal_progress — persisted buckets; progress is opening "
+        "amount plus labeled transfers, never leftover income or a whole-account balance\n"
         "Assumed returns are user inputs, not forecasts. Never promise investment results.\n\n"
         "Visual chart tools (return inline SVG images — no embed widgets):\n"
         "- chart_cash_flow / chart_sankey — ALWAYS use for cash-flow Sankey diagrams; "
-        "they match the Ledger Cash Flow page. Do not redraw Mermaid from cash_flow_sankey_data.\n\n"
-        "Advisor / write-intent tool (you CANNOT change the user's data):\n"
-        "- propose_budget — stage a budget suggestion for the user to review and apply "
-        "inside Ledger. You do not apply it; you cannot. After analyzing spending, if you "
-        "recommend a budget change, call propose_budget, then tell the user to open the "
-        "returned apply_url (Ledger's Advisor page) to apply it. Requires the Ledger "
-        "backend to be running."
+        "they match the Ledger Cash Flow page. Do not redraw Mermaid from cash_flow_sankey_data. "
+        "Labeled transfers appear as named sinks (e.g. Vacation); unlabeled savings/investments "
+        "stay generic; leftover is Unallocated — never a goal.\n\n"
+        "Advisor / write-intent tools (you CANNOT change the user's data):\n"
+        "- propose_budget — stage a spend-budget suggestion (never a Savings spend budget)\n"
+        "- propose_goal — stage a financial goal (emergency fund, sinking fund, invest, …)\n"
+        "- propose_goal_contribution — stage a monthly contribution change for an existing goal\n"
+        "- propose_transfer_label — stage a savings label on a transfer; do NOT set "
+        "category_user to the goal name\n"
+        "After a plan the user wants to keep, call propose_goal (and propose_budget if cuts "
+        "are part of the plan). You do not apply proposals; tell the user to open apply_url. "
+        "Never claim a goal or label is live until they Apply. Requires the Ledger backend "
+        "to be running."
     ),
 )
 
@@ -126,9 +147,17 @@ def _cash_flow_node_result(node) -> CashFlowNodeResult:
     )
 
 
-def _build_cash_flow_sankey_result(month: str | None) -> CashFlowSankeyResult:
+def _load_cash_flow(month: str | None):
     with ledger_session() as db:
-        flow = build_cash_flow(db, month=month)
+        try:
+            with budgets_session() as bdb:
+                return build_cash_flow(db, month=month, goals_db=bdb)
+        except FileNotFoundError:
+            return build_cash_flow(db, month=month)
+
+
+def _build_cash_flow_sankey_result(month: str | None) -> CashFlowSankeyResult:
+    flow = _load_cash_flow(month)
 
     payload = build_cash_flow_sankey_payload(flow)
     svg = build_cash_flow_sankey_svg(flow)
@@ -170,8 +199,7 @@ def get_cash_flow_sankey_data(
 
 
 def _build_cash_flow_chart(month: str | None) -> ToolResult:
-    with ledger_session() as db:
-        flow = build_cash_flow(db, month=month)
+    flow = _load_cash_flow(month)
     svg = build_cash_flow_sankey_svg(flow)
     return cash_flow_chart_result(flow, svg)
 
@@ -365,49 +393,17 @@ def get_cash_flow(
         Field(description="Calendar month in YYYY-MM format. Defaults to the current month."),
     ] = None,
 ) -> CashFlowResult:
-    """Return income sources, spending buckets, and savings for a month (JSON only). For Sankey diagrams use cash_flow_sankey_data instead."""
-    with ledger_session() as db:
-        result = build_cash_flow(db, month=month)
+    """Return income sources, spending, named allocation sinks, and unallocated leftover (JSON). For Sankey diagrams use cash_flow_sankey_data instead."""
+    result = _load_cash_flow(month)
 
     return CashFlowResult(
         month=result.month,
         total_income=result.total_income,
         total_spending=result.total_spending,
         savings=result.savings,
-        income_sources=[
-            CashFlowNodeResult(
-                id=node.id,
-                label=node.label,
-                amount=node.amount,
-                color=node.color,
-                top_transactions=[
-                    CashFlowTransactionResult(
-                        merchant=txn.merchant,
-                        amount=txn.amount,
-                        date=txn.date,
-                    )
-                    for txn in node.top_transactions
-                ],
-            )
-            for node in result.income_sources
-        ],
-        spending_categories=[
-            CashFlowNodeResult(
-                id=node.id,
-                label=node.label,
-                amount=node.amount,
-                color=node.color,
-                top_transactions=[
-                    CashFlowTransactionResult(
-                        merchant=txn.merchant,
-                        amount=txn.amount,
-                        date=txn.date,
-                    )
-                    for txn in node.top_transactions
-                ],
-            )
-            for node in result.spending_categories
-        ],
+        income_sources=[_cash_flow_node_result(node) for node in result.income_sources],
+        spending_categories=[_cash_flow_node_result(node) for node in result.spending_categories],
+        allocation_nodes=[_cash_flow_node_result(node) for node in result.allocation_nodes],
     )
 
 
@@ -999,6 +995,64 @@ def get_plan_goal_from_expenses(
     return _plan_result(plan)
 
 
+def _goal_progress_result(item) -> GoalProgressResult:
+    return GoalProgressResult(
+        id=item.id,
+        name=item.name,
+        kind=item.kind,
+        kind_label=GOAL_KIND_LABELS.get(item.kind, item.kind),
+        target_amount=item.target_amount,
+        opening_amount=item.opening_amount,
+        labeled_in=item.labeled_in,
+        labeled_out=item.labeled_out,
+        progress=item.progress,
+        remaining=item.remaining,
+        monthly_contribution=item.monthly_contribution,
+        annual_return=item.annual_return,
+        target_date=item.target_date,
+        status=item.status,
+        color=item.color,
+        months_remaining=item.months_remaining,
+        months_exact=item.months_exact,
+        projected_end_month=item.projected_end_month,
+        percent_funded=item.percent_funded,
+    )
+
+
+@mcp.tool(
+    name="list_financial_goals",
+    tags={"analytics", "goals"},
+    description=(
+        "List persisted financial goals and labeled-transfer progress. Progress is opening "
+        "current_amount plus labeled inflows minus labeled withdrawals — not leftover income "
+        "and not a whole-account balance. Savings labels are not spend categories."
+    ),
+)
+def list_financial_goals() -> GoalListResult:
+    """Return active/paused/completed financial goals with progress from labeled transfers."""
+    with ledger_session() as ldb, budgets_session() as bdb:
+        items = list_goal_progress(bdb, ldb)
+    return GoalListResult(goals=[_goal_progress_result(g) for g in items])
+
+
+@mcp.tool(
+    name="goal_progress",
+    tags={"analytics", "goals"},
+    description=(
+        "Progress for one persisted goal: percent funded from labeled transfers, remaining "
+        "amount, and TVM months remaining at the stored monthly contribution. Do not invent "
+        "amortization — cite these fields."
+    ),
+)
+def get_goal_progress(
+    goal_id: Annotated[int, Field(description="FinancialGoal id from list_financial_goals.")],
+) -> GoalProgressResult:
+    """Return labeled-transfer progress and TVM remaining for one goal."""
+    with ledger_session() as ldb, budgets_session() as bdb:
+        goal = get_goal(bdb, goal_id)
+        return _goal_progress_result(build_goal_progress(goal, ldb))
+
+
 @mcp.tool(
     name="propose_budget",
     tags={"advisor", "budgets", "write-intent"},
@@ -1043,6 +1097,112 @@ def propose_budget(
         limit=limit,
         month=month,
         category_key=category_key,
+        rationale=rationale,
+    )
+
+
+@mcp.tool(
+    name="propose_goal",
+    tags={"advisor", "goals", "write-intent"},
+    description=(
+        "Stage a financial goal for the user to Apply in Ledger's Advisor. Does NOT create "
+        "the goal until they Apply. After plan_goal / plan_goal_from_expenses, call this if "
+        "the user wants to keep the plan. Dining cuts are a separate propose_budget card — "
+        "never a Savings spend budget. Cite TVM fields from plan_goal* in rationale."
+    ),
+)
+def propose_goal(
+    name: Annotated[str, Field(description="Goal name; becomes the Cash Flow / Goals label.")],
+    target_amount: Annotated[float, Field(description="Target amount in dollars.", gt=0)],
+    kind: Annotated[
+        str,
+        Field(
+            description="emergency_fund | sinking_fund | debt_payoff | invest | custom.",
+        ),
+    ] = "custom",
+    goal_id: Annotated[
+        int | None,
+        Field(description="Existing goal id to update. Omit to create."),
+    ] = None,
+    current_amount: Annotated[
+        float,
+        Field(description="Opening balance already saved toward the goal.", ge=0),
+    ] = 0.0,
+    target_date: Annotated[
+        str | None,
+        Field(description="Optional target date YYYY-MM-DD."),
+    ] = None,
+    monthly_contribution: Annotated[
+        float | None,
+        Field(description="Planned monthly contribution from plan_goal.", ge=0),
+    ] = None,
+    annual_return_assumption: Annotated[
+        float | None,
+        Field(description="User-stated annual return 0–0.12. Default 0 for cash goals.", ge=0, le=0.12),
+    ] = None,
+    rationale: Annotated[
+        str | None,
+        Field(description="Short explanation citing plan_goal* fields. Shown on the Advisor card."),
+    ] = None,
+) -> ProposalResult:
+    """Stage a set_goal proposal. The user Applies it in Advisor — you cannot."""
+    return create_goal_proposal(
+        name=name,
+        target_amount=target_amount,
+        kind=kind,
+        goal_id=goal_id,
+        current_amount=current_amount,
+        target_date=target_date,
+        monthly_contribution=monthly_contribution,
+        annual_return_assumption=annual_return_assumption,
+        rationale=rationale,
+    )
+
+
+@mcp.tool(
+    name="propose_goal_contribution",
+    tags={"advisor", "goals", "write-intent"},
+    description=(
+        "Stage a monthly contribution change for an existing goal. Use when the goal already "
+        "exists and only the $/mo should change. Does not apply until the user clicks Apply."
+    ),
+)
+def propose_goal_contribution(
+    goal_id: Annotated[int, Field(description="Existing FinancialGoal id.")],
+    monthly_contribution: Annotated[float, Field(description="New monthly contribution.", gt=0)],
+    rationale: Annotated[str | None, Field(description="Why the contribution should change.")] = None,
+) -> ProposalResult:
+    """Stage an update_goal_contribution proposal."""
+    return create_goal_contribution_proposal(
+        goal_id=goal_id,
+        monthly_contribution=monthly_contribution,
+        rationale=rationale,
+    )
+
+
+@mcp.tool(
+    name="propose_transfer_label",
+    tags={"advisor", "goals", "write-intent"},
+    description=(
+        "Stage a savings label on a transfer so it counts toward a goal and appears as a "
+        "named Cash Flow sink. Find the row with transaction_search first. Do NOT set "
+        "category_user to the goal name — labels are a separate tag. Replaces that "
+        "transaction's current labels with the proposed set."
+    ),
+)
+def propose_transfer_label(
+    transaction_id: Annotated[int, Field(description="Ledger transaction id from transaction_search.")],
+    goal_id: Annotated[int, Field(description="FinancialGoal id to attribute this transfer to.")],
+    amount: Annotated[
+        float,
+        Field(description="Amount of the transfer to label. Must be > 0 and ≤ the transaction amount.", gt=0),
+    ],
+    rationale: Annotated[str | None, Field(description="Why this transfer belongs to that goal.")] = None,
+) -> ProposalResult:
+    """Stage an attribute_transfer proposal. The user Applies it in Advisor — you cannot."""
+    return create_transfer_label_proposal(
+        transaction_id=transaction_id,
+        attributions=[{"goal_id": goal_id, "amount": amount}],
         rationale=rationale,
     )
 

@@ -161,6 +161,11 @@ class Transaction(Base):
 
     # Relationships
     account = relationship("Account", back_populates="transactions")
+    goal_attributions = relationship(
+        "GoalAttribution",
+        back_populates="transaction",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def display_category(self):
@@ -177,6 +182,24 @@ class Transaction(Base):
             self.category_plaid_detailed,
             "Uncategorized",
         )
+
+
+class GoalAttribution(Base):
+    """User-flagged portion of a transaction that counts toward a financial goal.
+
+    goal_id points at FinancialGoal in budgets.db (no cross-DB FK).
+    """
+
+    __tablename__ = "goal_attributions"
+    __table_args__ = (UniqueConstraint("transaction_id", "goal_id", name="uq_goal_attr_txn_goal"),)
+
+    id = Column(Integer, primary_key=True)
+    transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False, index=True)
+    goal_id = Column(Integer, nullable=False, index=True)
+    amount = Column(Numeric(19, 4), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    transaction = relationship("Transaction", back_populates="goal_attributions")
 
 
 class Category(Base):

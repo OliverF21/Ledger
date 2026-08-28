@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 
+from app.budgets_db import get_budgets_db
 from app.database import get_db
 from app.errors import log_and_raise
 from app.services.analytics_service import build_cash_flow, build_monthly_summary, build_net_worth, build_trends
@@ -222,55 +223,39 @@ class CashFlowResponse(BaseModel):
     savings: float
     income_sources: list[CashFlowNode]
     spending_categories: list[CashFlowNode]
+    allocation_nodes: list[CashFlowNode] = []
+
+
+def _cash_flow_node(node) -> CashFlowNode:
+    return CashFlowNode(
+        id=node.id,
+        label=node.label,
+        amount=node.amount,
+        color=node.color,
+        top_transactions=[
+            CashFlowTxn(merchant=txn.merchant, amount=txn.amount, date=txn.date)
+            for txn in node.top_transactions
+        ],
+    )
 
 
 @router.get("/cash-flow", response_model=CashFlowResponse)
 async def get_cash_flow(
     month: Optional[str] = Query(None, description="YYYY-MM, defaults to current month"),
     db: Session = Depends(get_db),
+    bdb: Session = Depends(get_budgets_db),
 ):
-    """Income sources and spending breakdown for a Sankey cash-flow diagram."""
+    """Income sources, consumptive spending, and named allocation sinks for the Sankey."""
     try:
-        cash_flow = build_cash_flow(db, month=month)
+        cash_flow = build_cash_flow(db, month=month, goals_db=bdb)
         return CashFlowResponse(
             month=cash_flow.month,
             total_income=cash_flow.total_income,
             total_spending=cash_flow.total_spending,
             savings=cash_flow.savings,
-            income_sources=[
-                CashFlowNode(
-                    id=node.id,
-                    label=node.label,
-                    amount=node.amount,
-                    color=node.color,
-                    top_transactions=[
-                        CashFlowTxn(
-                            merchant=txn.merchant,
-                            amount=txn.amount,
-                            date=txn.date,
-                        )
-                        for txn in node.top_transactions
-                    ],
-                )
-                for node in cash_flow.income_sources
-            ],
-            spending_categories=[
-                CashFlowNode(
-                    id=node.id,
-                    label=node.label,
-                    amount=node.amount,
-                    color=node.color,
-                    top_transactions=[
-                        CashFlowTxn(
-                            merchant=txn.merchant,
-                            amount=txn.amount,
-                            date=txn.date,
-                        )
-                        for txn in node.top_transactions
-                    ],
-                )
-                for node in cash_flow.spending_categories
-            ],
+            income_sources=[_cash_flow_node(node) for node in cash_flow.income_sources],
+            spending_categories=[_cash_flow_node(node) for node in cash_flow.spending_categories],
+            allocation_nodes=[_cash_flow_node(node) for node in cash_flow.allocation_nodes],
         )
 
     except Exception as e:

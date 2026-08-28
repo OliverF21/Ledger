@@ -22,7 +22,7 @@ from app.analytics_shared import (
     is_excluded_from_spending,
 )
 
-CashFlowRole = Literal["income", "spending", "investments", "transfer", "exclude"]
+CashFlowRole = Literal["income", "spending", "investments", "savings", "transfer", "exclude"]
 
 # Generic funding / retirement cues in bank memos and payment_meta.
 _INVESTMENT_TEXT = re.compile(
@@ -34,7 +34,10 @@ _INVESTMENT_TEXT = re.compile(
     r")\b",
     re.IGNORECASE,
 )
-_ACH_TEXT = re.compile(r"\bach\b", re.IGNORECASE)
+_SAVINGS_TEXT = re.compile(
+    r"\b(savings|hysa|high[\s\-]?yield|money[\s\-]?market|emergency[\s\-]?fund)\b",
+    re.IGNORECASE,
+)
 _PAYMENT_TEXT = re.compile(
     r"\b(payment|autopay|auto[\s\-]?pay|thank\s+you|credit\s+card)\b",
     re.IGNORECASE,
@@ -102,6 +105,26 @@ def _looks_like_investment_funding(
     return False
 
 
+def _looks_like_savings_funding(
+    *,
+    merchant: str | None,
+    original_description: str | None,
+    description_raw: str | None,
+    category_key: str,
+    account_subtype: str | None,
+    transaction_code: str | None,
+) -> bool:
+    if category_key == "TRANSFER_OUT_SAVINGS" or category_key.startswith("TRANSFER_OUT_SAVINGS"):
+        return True
+    blob = _text_blob(merchant, original_description, description_raw)
+    transferish = category_key.startswith("TRANSFER_OUT") or (transaction_code or "").lower() == "transfer"
+    if transferish and _SAVINGS_TEXT.search(blob):
+        return True
+    if (account_subtype or "").lower() == "savings" and category_key.startswith("TRANSFER_OUT"):
+        return True
+    return False
+
+
 def _looks_like_card_payment(
     *,
     account_type: str | None,
@@ -143,7 +166,6 @@ def classify_cash_flow_txn(
     Returns:
       income / spending / investments / transfer / exclude
     """
-    del account_subtype  # reserved for finer heuristics later
     amount = float(amount)
     category_key = _exclusion_key(
         category_key_for_spending_rules(category_user, category_plaid, category_plaid_detailed)
@@ -184,6 +206,16 @@ def classify_cash_flow_txn(
         category_key=category_key,
     ):
         return "investments"
+
+    if _looks_like_savings_funding(
+        merchant=merchant,
+        original_description=original_description,
+        description_raw=description_raw,
+        category_key=category_key,
+        account_subtype=account_subtype,
+        transaction_code=transaction_code,
+    ):
+        return "savings"
 
     if is_excluded_from_spending(category_key):
         return "transfer"

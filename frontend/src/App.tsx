@@ -11,6 +11,7 @@ import Trends from './pages/Trends'
 import Subscriptions from './pages/Subscriptions'
 import Settings from './pages/Settings'
 import Advisor from './pages/Advisor'
+import Goals from './pages/Goals'
 import Setup from './pages/Setup'
 import { useProposals } from './hooks/useAdvisor'
 import { useAccounts } from './hooks/useAccounts'
@@ -39,7 +40,7 @@ function BootLoader() {
   )
 }
 
-type ScreenType = 'overview' | 'transactions' | 'spending' | 'budgets' | 'investments' | 'trends' | 'subscriptions' | 'advisor' | 'settings'
+type ScreenType = 'overview' | 'transactions' | 'spending' | 'budgets' | 'goals' | 'investments' | 'trends' | 'subscriptions' | 'advisor' | 'settings'
 
 interface HeaderInfo {
   title: string
@@ -58,6 +59,7 @@ const screenHeaders: Record<ScreenType, HeaderInfo> = {
   transactions: { title: 'Transactions',    subtitle: '' },
   spending:     { title: 'Cash Flow',       subtitle: '' },
   budgets:      { title: 'Budgets',         subtitle: '' },
+  goals:        { title: 'Goals',           subtitle: 'Labeled savings buckets' },
   investments:  { title: 'Investments',     subtitle: 'Portfolio holdings & activity' },
   trends:       { title: 'Trends',          subtitle: 'Spending patterns over time' },
   subscriptions:{ title: 'Subscriptions',   subtitle: 'Detected recurring charges' },
@@ -65,7 +67,7 @@ const screenHeaders: Record<ScreenType, HeaderInfo> = {
   settings:     { title: 'Settings',        subtitle: 'Manage categories, rules & alerts' },
 }
 
-const VALID_SCREENS: ScreenType[] = ['overview', 'transactions', 'spending', 'budgets', 'investments', 'trends', 'subscriptions', 'advisor', 'settings']
+const VALID_SCREENS: ScreenType[] = ['overview', 'transactions', 'spending', 'budgets', 'goals', 'investments', 'trends', 'subscriptions', 'advisor', 'settings']
 
 function getScreenFromHash(): ScreenType {
   const hash = window.location.hash.replace('#', '') as ScreenType
@@ -186,6 +188,8 @@ function App() {
         return <Spending />
       case 'budgets':
         return <Budgets />
+      case 'goals':
+        return <Goals />
       case 'investments':
         return <Investments />
       case 'trends':

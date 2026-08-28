@@ -382,9 +382,11 @@ def test_build_cash_flow_shows_investment_transfer_out(db_session: Session):
     result = build_cash_flow(db_session, month="2026-06")
     by_id = {node.id: node for node in result.spending_categories}
     assert "TRANSFER_OUT" not in by_id
-    assert by_id["Investments"].amount == 500.0
-    assert result.total_spending == 1219.0 + 500.0
-    assert result.savings == 3000.0 - (1219.0 + 500.0)
+    assert "Investments" not in by_id
+    alloc = {node.id: node for node in result.allocation_nodes}
+    assert alloc["Investments"].amount == 500.0
+    assert result.total_spending == 1219.0
+    assert result.savings == 3000.0 - 1219.0 - 500.0
 
 
 def test_build_cash_flow_classifies_brokerage_ach_memo_as_investments(db_session: Session):
@@ -410,8 +412,8 @@ def test_build_cash_flow_classifies_brokerage_ach_memo_as_investments(db_session
     db_session.commit()
 
     result = build_cash_flow(db_session, month="2026-06")
-    by_id = {node.id: node for node in result.spending_categories}
-    assert by_id["Investments"].amount == 250.0
+    alloc = {node.id: node for node in result.allocation_nodes}
+    assert alloc["Investments"].amount == 250.0
 
 
 def test_build_cash_flow_excludes_internal_transfer_in(db_session: Session):
@@ -464,12 +466,19 @@ def test_build_cash_flow_excludes_internal_transfer_in(db_session: Session):
     assert income_by_label.get("TRANSFER_IN") == 50.0
 
 
-def test_cash_flow_sankey_data_returns_mermaid_links(db_session: Session, monkeypatch: pytest.MonkeyPatch):
+def test_cash_flow_sankey_data_returns_mermaid_links(
+    db_session: Session, budgets_session: Session, monkeypatch: pytest.MonkeyPatch
+):
     @contextmanager
     def fake_ledger_session():
         yield db_session
 
+    @contextmanager
+    def fake_budgets_session():
+        yield budgets_session
+
     monkeypatch.setattr(mcp_server_module, "ledger_session", fake_ledger_session)
+    monkeypatch.setattr(mcp_server_module, "budgets_session", fake_budgets_session)
 
     result = mcp_server_module.get_cash_flow_sankey_data("2026-06")
 
@@ -477,7 +486,7 @@ def test_cash_flow_sankey_data_returns_mermaid_links(db_session: Session, monkey
     assert result.total_income == 3000.0
     assert result.mermaid.startswith("sankey-beta")
     assert "Paycheck,Income pool,3000" in result.mermaid
-    assert any(link.target == "Savings" for link in result.sankey_links)
+    assert any(link.target == "Unallocated" for link in result.sankey_links)
     assert "<svg" in result.svg
     assert "INCOME" in result.svg
 
@@ -538,7 +547,7 @@ def test_build_cash_flow_sankey_svg_renders_income_tunnel_and_savings(db_session
 
     assert "<svg" in svg
     assert "Paycheck" in svg
-    assert "Savings" in svg
+    assert "Unallocated" in svg
     assert 'fill="url(#tg)"' in svg
     assert "Flow width represents relative amount" not in svg
     assert 'width="100%"' in svg
@@ -688,12 +697,19 @@ def test_build_net_worth_uses_live_balances_and_snapshots(db_session: Session):
     assert any(item.name == "Checking" for item in result.accounts)
 
 
-def test_chart_cash_flow_returns_inline_svg_image(db_session: Session, monkeypatch: pytest.MonkeyPatch):
+def test_chart_cash_flow_returns_inline_svg_image(
+    db_session: Session, budgets_session: Session, monkeypatch: pytest.MonkeyPatch
+):
     @contextmanager
     def fake_ledger_session():
         yield db_session
 
+    @contextmanager
+    def fake_budgets_session():
+        yield budgets_session
+
     monkeypatch.setattr(mcp_server_module, "ledger_session", fake_ledger_session)
+    monkeypatch.setattr(mcp_server_module, "budgets_session", fake_budgets_session)
 
     async def _check() -> None:
         tool = await mcp_server_module.mcp.get_tool("chart_cash_flow")

@@ -96,6 +96,7 @@ class CashFlowResult(BaseModel):
     savings: float
     income_sources: list[CashFlowNodeResult]
     spending_categories: list[CashFlowNodeResult]
+    allocation_nodes: list[CashFlowNodeResult] = Field(default_factory=list)
 
 
 class SankeyLinkResult(BaseModel):
@@ -209,17 +210,21 @@ class InvestmentPerformanceResult(BaseModel):
 
 
 class ProposalResult(BaseModel):
-    """Result of staging a budget proposal for the user to apply in Ledger."""
+    """Result of staging a proposal for the user to apply in Ledger."""
 
     ok: bool
     proposal_id: int | None = None
     status: str | None = None
     summary: str | None = None
+    kind: str | None = None
     month: str | None = None
     category_name: str | None = None
     category_key: str | None = None
     basis_limit: float | None = None
     proposed_limit: float | None = None
+    goal_id: int | None = None
+    goal_name: str | None = None
+    transaction_id: int | None = None
     apply_url: str | None = None
     message: str = ""
 
@@ -300,3 +305,29 @@ class GoalPlanResult(BaseModel):
     contribution_before_cuts: float | None = None
     months_before_cuts: int | None = None
     affordable_before_cuts: bool | None = None
+
+
+class GoalProgressResult(BaseModel):
+    id: int
+    name: str
+    kind: str
+    kind_label: str
+    target_amount: float
+    opening_amount: float
+    labeled_in: float
+    labeled_out: float
+    progress: float
+    remaining: float
+    monthly_contribution: float | None = None
+    annual_return: float
+    target_date: str | None = None
+    status: str
+    color: str
+    months_remaining: int | None = None
+    months_exact: float | None = None
+    projected_end_month: str | None = None
+    percent_funded: float
+
+
+class GoalListResult(BaseModel):
+    goals: list[GoalProgressResult]

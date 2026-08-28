@@ -26,9 +26,9 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import auth, database  # noqa: E402
-from app.budgets_db import Budget, BudgetsBase, Proposal, get_budgets_db  # noqa: E402
+from app.budgets_db import Budget, BudgetsBase, FinancialGoal, Proposal, get_budgets_db  # noqa: E402
 from app.database import get_db  # noqa: E402
-from app.models import Base  # noqa: E402
+from app.models import Account, Base, GoalAttribution, Item, Transaction, User  # noqa: E402
 
 PROPOSAL_KEY = "test-proposal-key"
 
@@ -90,6 +90,7 @@ def ctx(tmp_path, monkeypatch):
     c.client = client
     c.token = token
     c.session = BudgetsSession
+    c.ledger = LedgerSession
     try:
         yield c
     finally:
@@ -310,3 +311,189 @@ def test_raw_key_name_is_normalized(ctx):
         assert b.category_name == "Food & Drink"  # budget saved with the nice label
     finally:
         s.close()
+
+
+def _seed_transfer(ctx):
+    from datetime import date
+    from decimal import Decimal
+
+    s = ctx.ledger()
+    try:
+        user = User(id=1, username="default_user")
+        item = Item(user=user, item_id="item_1", institution_name="Bank", access_token_encrypted="x")
+        acct = Account(
+            item=item,
+            plaid_account_id="chk",
+            name="Checking",
+            type="depository",
+            subtype="checking",
+            current_balance=Decimal("2000"),
+        )
+        s.add_all([user, item, acct])
+        s.flush()
+        txn = Transaction(
+            account=acct,
+            merchant="Ally Transfer",
+            amount=Decimal("500.00"),
+            date=date(2026, 6, 15),
+            category_plaid="TRANSFER_OUT",
+            category_plaid_detailed="TRANSFER_OUT_SAVINGS",
+            pending=False,
+            removed=False,
+            hidden=False,
+        )
+        s.add(txn)
+        s.commit()
+        return txn.id
+    finally:
+        s.close()
+
+
+def _goal_payload(**over):
+    payload = {
+        "payload_version": 1,
+        "goal_id": None,
+        "name": "Emergency fund",
+        "kind": "emergency_fund",
+        "target_amount": 10000.0,
+        "current_amount": 2000.0,
+        "target_date": None,
+        "monthly_contribution": 500.0,
+        "annual_return_assumption": 0.0,
+    }
+    payload.update(over)
+    return {"kind": "set_goal", "rationale": "From plan_goal remaining 8000 at 500/mo.", "payload": payload}
+
+
+def test_goal_round_trip_creates_goal(ctx):
+    r = ctx.client.post("/api/proposals", json=_goal_payload(), headers=_svc_headers())
+    assert r.status_code == 200, r.text
+    assert r.json()["kind"] == "set_goal"
+    pid = r.json()["id"]
+    ap = ctx.client.post(f"/api/proposals/{pid}/apply", headers=_auth_headers(ctx))
+    assert ap.status_code == 200, ap.text
+    body = ap.json()
+    assert body["created"] is True
+    assert body["kind"] == "set_goal"
+    gid = body["entity_id"]
+    s = ctx.session()
+    try:
+        g = s.query(FinancialGoal).get(gid)
+        assert g.name == "Emergency fund"
+        assert float(g.target_amount) == 10000.0
+        assert float(g.monthly_contribution) == 500.0
+    finally:
+        s.close()
+
+
+def test_goal_contribution_supersedes_set_goal_for_same_id(ctx):
+    create = ctx.client.post("/api/proposals", json=_goal_payload(), headers=_svc_headers())
+    pid = create.json()["id"]
+    ap = ctx.client.post(f"/api/proposals/{pid}/apply", headers=_auth_headers(ctx))
+    assert ap.status_code == 200, ap.text
+    gid = ap.json()["entity_id"]
+
+    p1 = ctx.client.post(
+        "/api/proposals",
+        json={
+            "kind": "update_goal_contribution",
+            "payload": {"payload_version": 1, "goal_id": gid, "monthly_contribution": 400, "goal_name": "Emergency fund"},
+        },
+        headers=_svc_headers(),
+    )
+    assert p1.status_code == 200, p1.text
+    p2 = ctx.client.post(
+        "/api/proposals",
+        json={
+            "kind": "set_goal",
+            "payload": _goal_payload(goal_id=gid, monthly_contribution=600)["payload"],
+        },
+        headers=_svc_headers(),
+    )
+    assert p2.status_code == 200, p2.text
+    lst = ctx.client.get("/api/proposals", headers=_auth_headers(ctx)).json()
+    pending = [p for p in lst["proposals"] if p["status"] == "pending"]
+    assert len(pending) == 1
+    assert pending[0]["kind"] == "set_goal"
+
+
+def test_undo_goal_create_deletes_it(ctx):
+    pid = ctx.client.post("/api/proposals", json=_goal_payload(), headers=_svc_headers()).json()["id"]
+    ctx.client.post(f"/api/proposals/{pid}/apply", headers=_auth_headers(ctx))
+    assert ctx.client.post(f"/api/proposals/{pid}/undo", headers=_auth_headers(ctx)).status_code == 200
+    s = ctx.session()
+    try:
+        assert s.query(FinancialGoal).count() == 0
+    finally:
+        s.close()
+
+
+def test_undo_goal_refused_after_manual_edit(ctx):
+    pid = ctx.client.post("/api/proposals", json=_goal_payload(), headers=_svc_headers()).json()["id"]
+    ctx.client.post(f"/api/proposals/{pid}/apply", headers=_auth_headers(ctx))
+    s = ctx.session()
+    try:
+        g = s.query(FinancialGoal).one()
+        g.monthly_contribution = 999
+        s.commit()
+    finally:
+        s.close()
+    r = ctx.client.post(f"/api/proposals/{pid}/undo", headers=_auth_headers(ctx))
+    assert r.status_code == 409
+
+
+def test_attribute_transfer_apply_and_undo(ctx):
+    txn_id = _seed_transfer(ctx)
+    # Need a goal first
+    pid_g = ctx.client.post("/api/proposals", json=_goal_payload(name="Vacation", kind="sinking_fund"), headers=_svc_headers()).json()["id"]
+    ap = ctx.client.post(f"/api/proposals/{pid_g}/apply", headers=_auth_headers(ctx)).json()
+    gid = ap["entity_id"]
+
+    r = ctx.client.post(
+        "/api/proposals",
+        json={
+            "kind": "attribute_transfer",
+            "rationale": "Ally transfer is vacation funding.",
+            "payload": {
+                "payload_version": 1,
+                "transaction_id": txn_id,
+                "attributions": [{"goal_id": gid, "amount": 500.0, "goal_name": "Vacation"}],
+                "merchant": "Ally Transfer",
+            },
+        },
+        headers=_svc_headers(),
+    )
+    assert r.status_code == 200, r.text
+    pid = r.json()["id"]
+    ap2 = ctx.client.post(f"/api/proposals/{pid}/apply", headers=_auth_headers(ctx))
+    assert ap2.status_code == 200, ap2.text
+
+    ls = ctx.ledger()
+    try:
+        rows = ls.query(GoalAttribution).filter(GoalAttribution.transaction_id == txn_id).all()
+        assert len(rows) == 1
+        assert rows[0].goal_id == gid
+        assert float(rows[0].amount) == 500.0
+    finally:
+        ls.close()
+
+    assert ctx.client.post(f"/api/proposals/{pid}/undo", headers=_auth_headers(ctx)).status_code == 200
+    ls = ctx.ledger()
+    try:
+        assert ls.query(GoalAttribution).filter(GoalAttribution.transaction_id == txn_id).count() == 0
+    finally:
+        ls.close()
+
+
+def test_mcp_cannot_apply_goal(ctx):
+    pid = ctx.client.post("/api/proposals", json=_goal_payload(), headers=_svc_headers()).json()["id"]
+    assert ctx.client.post(f"/api/proposals/{pid}/apply", headers=_svc_headers()).status_code == 401
+
+
+def test_set_savings_budget_kind_rejected(ctx):
+    r = ctx.client.post(
+        "/api/proposals",
+        json={"kind": "set_savings_budget", "payload": {"limit": 400}},
+        headers=_svc_headers(),
+    )
+    assert r.status_code == 422

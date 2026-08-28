@@ -7,9 +7,74 @@ interface AdvisorProps {
   advisor: ReturnType<typeof useProposals>
 }
 
-function money(n: number | null | undefined): string {
-  if (n === null || n === undefined) return '—'
-  return `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+function chipFor(p: { kind: string; month: string | null }): string {
+  if (p.kind === 'set_budget') return `Budget · ${p.month ?? ''}`
+  if (p.kind === 'set_goal' || p.kind === 'update_goal_contribution') return 'Goal'
+  if (p.kind === 'attribute_transfer') return 'Label'
+  return p.kind
+}
+
+function payloadStr(payload: Record<string, unknown>, key: string): string | null {
+  const v = payload[key]
+  return typeof v === 'string' && v ? v : null
+}
+
+function payloadNum(payload: Record<string, unknown>, key: string): number | null {
+  const v = payload[key]
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
+
+function GoalCardBody({ p }: { p: { kind: string; payload: Record<string, unknown>; category_name: string | null } }) {
+  const payload = p.payload
+  if (p.kind === 'update_goal_contribution') {
+    const name = payloadStr(payload, 'goal_name') ?? 'Goal'
+    const next = payloadNum(payload, 'monthly_contribution')
+    const basis = payloadNum(payload, 'basis_contribution')
+    return (
+      <div className="flex items-baseline gap-[10px] mb-[10px] flex-wrap">
+        <span className="text-[15px] font-semibold">{name}</span>
+        {basis !== null && (
+          <>
+            <span className="text-[14px] text-ledger-text-faint line-through tabular-nums">{money(basis)}/mo</span>
+            <span className="text-ledger-text-faint">→</span>
+          </>
+        )}
+        <span className="text-[16px] font-bold text-ledger-accent tabular-nums">{money(next)}/mo</span>
+      </div>
+    )
+  }
+  if (p.kind === 'attribute_transfer') {
+    const merchant = payloadStr(payload, 'merchant') ?? 'Transfer'
+    const date = payloadStr(payload, 'date')
+    const attrs = Array.isArray(payload.attributions) ? payload.attributions as Array<Record<string, unknown>> : []
+    const first = attrs[0] ?? {}
+    const goalName = typeof first.goal_name === 'string' ? first.goal_name : 'Goal'
+    const amount = typeof first.amount === 'number' ? first.amount : null
+    return (
+      <div className="mb-[10px]">
+        <div className="flex items-baseline gap-[10px] flex-wrap">
+          <span className="text-[15px] font-semibold">{merchant}</span>
+          {date && <span className="text-[12px] text-ledger-text-faint">{date}</span>}
+        </div>
+        <div className="text-[16px] font-bold text-ledger-accent tabular-nums mt-[4px]">
+          {money(amount)} → {goalName}
+        </div>
+      </div>
+    )
+  }
+  const name = payloadStr(payload, 'name') ?? 'Goal'
+  const target = payloadNum(payload, 'target_amount')
+  const current = payloadNum(payload, 'current_amount') ?? 0
+  const pmt = payloadNum(payload, 'monthly_contribution')
+  return (
+    <div className="mb-[10px]">
+      <div className="text-[15px] font-semibold mb-[6px]">{name}</div>
+      <div className="flex flex-wrap gap-x-[14px] gap-y-[4px] text-[13px] text-ledger-text-faint">
+        <span className="tabular-nums">{money(current)} → {money(target)}</span>
+        {pmt !== null && <span className="tabular-nums">{money(pmt)}/mo</span>}
+      </div>
+    </div>
+  )
 }
 
 /** Read the ?proposal=<id> deep-link param (set by Claude's apply_url). */
@@ -108,8 +173,8 @@ export default function Advisor({ advisor }: AdvisorProps) {
             <div className="text-[12.5px] text-ledger-text-faint leading-[1.5]">
               Suggestions you asked Claude for show up here as proposals. Nothing changes
               until you apply one — review the before → after and click Apply. Applied
-              budgets land in the <span className="text-ledger-text-secondary">current month</span> on
-              the Budgets page, and you can undo one from the history below.
+              budgets land on Budgets, applied goals on the Goals tab, and applied labels
+              show as named sinks on Cash Flow. You can undo from the history below.
             </div>
           </div>
         </div>
@@ -227,14 +292,16 @@ export default function Advisor({ advisor }: AdvisorProps) {
             <Sparkles className="w-[24px] h-[24px] text-ledger-text-faint mx-auto mb-[10px]" strokeWidth={1.8} />
             <div className="text-[14px] font-semibold mb-[8px]">No pending suggestions</div>
             <div className="text-[13px] text-ledger-text-faint leading-[1.5]">
-              Ask Claude about your budget (e.g. “Am I overspending on dining? Propose a budget.”).
-              Its suggestions land here for you to review and apply.
+              Ask Claude about a budget, a savings goal, or labeling a transfer
+              (e.g. “Propose a $10k emergency fund at $500/mo”). Suggestions land here
+              for you to review and apply.
             </div>
           </div>
         ) : (
           pending.map(p => {
             const isHighlighted = highlightId.current === p.id
             const hasBasis = p.basis_limit !== null && p.basis_limit !== undefined
+            const isBudget = p.kind === 'set_budget'
             return (
               <div
                 key={p.id}
@@ -245,23 +312,27 @@ export default function Advisor({ advisor }: AdvisorProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-[8px] mb-[8px]">
                       <span className="text-[10px] uppercase tracking-widest glass-chip px-[8px] py-[2px] rounded-[6px] text-ledger-text-muted">
-                        Budget · {p.month}
+                        {chipFor(p)}
                       </span>
                     </div>
-                    <div className="flex items-baseline gap-[10px] mb-[10px] flex-wrap">
-                      <span className="text-[15px] font-semibold">{p.category_name}</span>
-                      {hasBasis && (
-                        <>
-                          <span className="text-[14px] text-ledger-text-faint line-through tabular-nums">
-                            {money(p.basis_limit)}
-                          </span>
-                          <span className="text-ledger-text-faint">→</span>
-                        </>
-                      )}
-                      <span className="text-[16px] font-bold text-ledger-accent tabular-nums">
-                        {money(p.proposed_limit)}
-                      </span>
-                    </div>
+                    {isBudget ? (
+                      <div className="flex items-baseline gap-[10px] mb-[10px] flex-wrap">
+                        <span className="text-[15px] font-semibold">{p.category_name}</span>
+                        {hasBasis && (
+                          <>
+                            <span className="text-[14px] text-ledger-text-faint line-through tabular-nums">
+                              {money(p.basis_limit)}
+                            </span>
+                            <span className="text-ledger-text-faint">→</span>
+                          </>
+                        )}
+                        <span className="text-[16px] font-bold text-ledger-accent tabular-nums">
+                          {money(p.proposed_limit)}
+                        </span>
+                      </div>
+                    ) : (
+                      <GoalCardBody p={p} />
+                    )}
                     {p.rationale && (
                       <div className="text-[12.5px] text-ledger-text-faint leading-[1.5]">{p.rationale}</div>
                     )}
@@ -307,8 +378,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12.5px] text-ledger-text-secondary truncate">
-                    {p.category_name} · {money(p.proposed_limit)}
-                    <span className="text-ledger-text-faint"> · {p.month}</span>
+                    {p.summary}
                   </div>
                 </div>
                 <span className="text-[11px] text-ledger-text-faint whitespace-nowrap">

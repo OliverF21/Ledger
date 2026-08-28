@@ -15,14 +15,18 @@ Run the server from the `backend` directory and Claude can call these tools:
 - `get_investment_performance`
 - `search_transactions`
 
-**Advisor (write-intent) tool:**
+**Advisor (write-intent) tools:**
 
-- `propose_budget` — stages a budget suggestion for you to review and **apply**
+- `propose_budget` — stages a spend-budget suggestion for you to review and **apply**
   in Ledger's Advisor page. It does **not** change data; it POSTs a pending
   proposal to the running backend (`POST /api/proposals`) using a scoped,
   create-only `PROPOSAL_SERVICE_KEY`. Claude cannot apply proposals — only you
   can, from the app. Requires the backend running and `PROPOSAL_SERVICE_KEY` set
   in `backend/.env`. All other tools stay read-only.
+- `propose_goal` — stages a financial goal (emergency fund, sinking fund, invest target)
+- `propose_goal_contribution` — stages a monthly contribution change for an existing goal
+- `propose_transfer_label` — stages a savings label on a transfer (does **not** set
+  `category_user` to the goal name)
 
 **Financial goals (TVM on the backend — Claude must call these, not invent math):**
 
@@ -31,6 +35,8 @@ Run the server from the `backend` directory and Claude can call these tools:
 - `plan_goal` — months-to-goal or required monthly contribution (0% cash, or a
   user-stated annual return as a decimal like `0.07`)
 - `plan_goal_from_expenses` — same planner after optional spending cuts
+- `list_financial_goals` / `goal_progress` — persisted buckets; progress is opening
+  amount plus labeled transfers
 
 See `docs/MCP_FINANCIAL_GOALS_PLAN.md` for the design.
 
@@ -176,6 +182,9 @@ Once Claude Desktop picks up the server, prompts like these should work well:
 - `Chart my net worth over the last 6 months.`
 - `Show a Sankey of my June 2026 cash flow`
 - `Where did my money go last month? Show the flow diagram.`
+- `Based on my last 3 months, how long to save a $10k emergency fund if I already have $2,400?`
+- `Propose a $10k emergency fund at $500/mo and a dining budget cut that frees that capacity.`
+- `Propose labeling that $500 Ally transfer as Vacation.`
 
 ## Chart Tools
 
@@ -183,10 +192,12 @@ Once Claude Desktop picks up the server, prompts like these should work well:
 
 ## Notes
 
-- `budgets.db` is queried by `get_budget_vs_actual` (read-only) and is also where
-  `propose_budget` stages proposals (via the backend API, not a direct write) in
-  the `proposals` table.
-- The server is `stdio`-based and does not open an HTTP port. `propose_budget` is
-  the one tool that makes an outbound HTTP call — to the Ledger backend on
+- `budgets.db` is queried by `get_budget_vs_actual`, `list_financial_goals`, and
+  `goal_progress` (read-only).
+- `propose_budget` stages proposals (via the backend API, not a direct write) in
+  the `proposals` table. `propose_goal`, `propose_goal_contribution`, and
+  `propose_transfer_label` use the same create-only path.
+- The server is `stdio`-based and does not open an HTTP port. `propose_*` tools
+  make an outbound HTTP call — to the Ledger backend on
   `LEDGER_API_URL` (default `http://127.0.0.1:8000`), so that backend must be
   running. The read tools work directly against the SQLite files regardless.
