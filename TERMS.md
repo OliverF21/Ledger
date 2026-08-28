@@ -21,7 +21,7 @@ not agree, do not use the software.
 ## 2. License
 
 The software is licensed to you under the [MIT License](LICENSE). These terms
-supplement, and do not replace or limit, the rights and disclaimers in that
+supplement — and do not replace or limit — the rights and disclaimers in that
 license. If these terms and the MIT License conflict, the MIT License controls for
 matters of copyright licensing.
 
@@ -29,8 +29,8 @@ matters of copyright licensing.
 
 The software is provided **"as is", without warranty of any kind**, and your use is
 at your own risk. To the maximum extent permitted by law, Ledger and its contributors
-are **not liable** for any claim, loss, or damage, including loss of data, financial
-loss, or unauthorized access to your self-hosted instance, arising from your use of,
+are **not liable** for any claim, loss, or damage — including loss of data, financial
+loss, or unauthorized access to your self-hosted instance — arising from your use of,
 or inability to use, the software. See the [Disclaimer](DISCLAIMER.md).
 
 ## 4. Not financial or professional advice

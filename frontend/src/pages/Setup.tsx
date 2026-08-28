@@ -237,7 +237,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
           <div className="relative w-full flex flex-col items-center">
             <div className="text-[22px] font-bold tracking-tight">Set up account recovery</div>
             <div className="text-[13px] text-ledger-text-faint mb-[22px] text-center">
-              You're about to import years of financial history. Worth setting up email-based
+              You're about to import years of financial history — worth setting up email-based
               password recovery first, in case you ever lose your recovery code afterward.
             </div>
 
@@ -264,7 +264,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 />
                 <div className="mt-[4px] text-[11px] text-ledger-text-faintest">
                   Free at <span className="underline">resend.com/api-keys</span>. Used only for
-                  password-reset emails, never for anything else.
+                  password-reset emails — never for anything else.
                 </div>
               </div>
 
@@ -299,7 +299,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
           <div className="relative w-full flex flex-col items-center">
             <div className="text-[22px] font-bold tracking-tight">Connect Plaid</div>
             <div className="text-[13px] text-ledger-text-faint mb-[22px] text-center">
-              Optional. Add your Plaid keys now, or skip and add them later in Settings.
+              Optional — add your Plaid keys now, or skip and add them later in Settings.
             </div>
 
             <div className="w-full space-y-[12px]">

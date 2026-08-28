@@ -115,7 +115,7 @@ Then open **[http://127.0.0.1:8000](http://127.0.0.1:8000)** and follow the firs
 cd frontend && npm run dev          # Vite → http://localhost:5173
 ```
 
-That points source mode at `~/Library/Application Support/Ledger/` (macOS) without turning on packaged-desktop behavior. Do not run the desktop app and this server at the same time. SQLite is one writer at a time.
+That points source mode at `~/Library/Application Support/Ledger/` (macOS) without turning on packaged-desktop behavior. Do not run the desktop app and this server at the same time — SQLite is one writer at a time.
 
 **UI-only preview (no backend, no Plaid):** to look at the interface without standing up a server or linking accounts:
 

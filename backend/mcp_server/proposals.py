@@ -144,7 +144,7 @@ def create_budget_proposal(
         apply_url=apply_url,
         message=(
             f"Staged proposal #{pid}: {data.get('summary')}. "
-            f"The user reviews and applies it in Ledger. Open {apply_url}. "
+            f"The user reviews and applies it in Ledger — open {apply_url}. "
             "You cannot apply it yourself."
         ),
     )

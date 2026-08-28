@@ -109,7 +109,7 @@ Thank you for your interest in contributing! Ledger is currently a personal proj
    cd frontend && npm run lint
    ```
 
-4. **Test locally**: single-port: `npm run build` (frontend) + `uvicorn` (backend)
+4. **Test locally** — single-port: `npm run build` (frontend) + `uvicorn` (backend)
 
 ### Release Checklist (Maintainers)
 
@@ -123,9 +123,9 @@ Thank you for your interest in contributing! Ledger is currently a personal proj
 ## Architecture & Design
 
 Before making significant changes, review:
-- **CLAUDE.md**: development setup, key decisions, code patterns
-- **docs/ARCHITECTURE.md**: data flow and component overview
-- **Interactive API docs**: `http://localhost:8000/docs` when the backend is running
+- **CLAUDE.md** — development setup, key decisions, code patterns
+- **docs/ARCHITECTURE.md** — data flow and component overview
+- **Interactive API docs** — `http://localhost:8000/docs` when the backend is running
 
 ### If You Want to Add a Major Feature
 

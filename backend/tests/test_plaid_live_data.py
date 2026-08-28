@@ -32,7 +32,7 @@ def test_extract_plaid_error_from_response():
 
 def test_extract_plaid_error_from_value_error_string():
     code, msg = extract_plaid_error(
-        ValueError("Failed to sync transactions: ITEM_LOGIN_REQUIRED. please update")
+        ValueError("Failed to sync transactions: ITEM_LOGIN_REQUIRED — please update")
     )
     assert code == "ITEM_LOGIN_REQUIRED"
 
@@ -166,7 +166,7 @@ def test_sync_reports_per_item_failures(mock_sync_item, client):
     db.commit()
     db.close()
 
-    mock_sync_item.side_effect = ValueError("Failed to sync: ITEM_LOGIN_REQUIRED. update credentials")
+    mock_sync_item.side_effect = ValueError("Failed to sync: ITEM_LOGIN_REQUIRED — update credentials")
 
     r = client.post("/api/plaid/sync", headers=headers)
     assert r.status_code == 200

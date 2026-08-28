@@ -9,7 +9,7 @@ OS app-data directory, not inside the app bundle:
 - **Windows**: `%APPDATA%\Ledger\`
 
 The backend is bundled with PyInstaller (no Python install needed) and serves the
-built frontend. The window is a thin native shell around the local app.
+built frontend — the window is a thin native shell around the local app.
 
 ## Lost your password and recovery code
 
@@ -24,11 +24,11 @@ to wipe local data and start fresh:
 2. Delete the app-data directory:
    - **macOS**: `rm -rf ~/"Library/Application Support/Ledger"`
    - **Windows**: delete the `Ledger` folder inside `%APPDATA%`
-3. Relaunch. You'll land on the first-run setup screen and need to re-link
+3. Relaunch — you'll land on the first-run setup screen and need to re-link
    your accounts
 
-This permanently deletes all local transactions, budgets, and settings.
-There is no backup to fall back on unless you made one yourself.
+This permanently deletes all local transactions, budgets, and settings —
+there is no backup to fall back on unless you made one yourself.
 
 ## First launch (unsigned builds)
 
@@ -39,7 +39,7 @@ Ledger ships **unsigned** (open-source freeware). The OS will warn on first open
   right-click → Open shortcut no longer works for unsigned apps.)
 - **macOS, downloaded via browser**: instead of the prompt above, you may see
   **“Ledger” is damaged and can’t be opened. You should move it to the Trash.**
-  This is misleading. The app isn’t actually corrupted. Browsers quarantine
+  This is misleading — the app isn’t actually corrupted. Browsers quarantine
   downloaded files, and Gatekeeper refuses to run an unsigned, quarantined app
   with this message instead of the usual “unidentified developer” prompt. Fix
   it by stripping the quarantine flag, then open normally:
@@ -53,14 +53,14 @@ After the first launch it opens normally.
 
 > ⚠️ **At your own risk.** Bypassing these OS warnings is your decision. Only download
 > Ledger from the official
-> [releases page](https://github.com/OliverF21/Ledger/releases). Never run a build
+> [releases page](https://github.com/OliverF21/Ledger/releases) — never run a build
 > from anywhere else. See the [Disclaimer](../DISCLAIMER.md).
 
 **First launch is slow (~30s).** Because the build is unsigned, macOS validates
 every bundled Python library the first time the backend starts, so the window can
 take ~30 seconds to appear on the very first run. Subsequent launches are fast
 (validation is cached). Developer ID signing + notarization eliminates this delay
-(deferred; see the plan). The shell waits up to 120s for the backend before
+(deferred — see the plan). The shell waits up to 120s for the backend before
 giving up.
 
 ## Build from source
@@ -104,7 +104,7 @@ Ledger.app / Ledger installer
 Updates are driven from Rust on launch (`tauri-plugin-updater`; the webview loads
 an external URL, so there's no JS bridge). On start the app fetches the update
 manifest, and if a newer signed version exists it downloads, verifies it against
-the embedded public key, installs, and restarts. **User data is never touched**;
+the embedded public key, installs, and restarts. **User data is never touched** —
 it lives in the OS app-data dir, not the app bundle.
 
 - The updater public key + endpoint live in `src-tauri/tauri.conf.json`

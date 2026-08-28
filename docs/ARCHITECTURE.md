@@ -54,7 +54,7 @@ budget proposals.
 
 Ledger is single-user (hardcoded `user_id=1`).
 
-1. **First run**: `GET /api/setup/status`. If no password is set, the UI shows
+1. **First run**: `GET /api/setup/status` — if no password is set, the UI shows
    registration (`POST /api/auth/register`).
 2. **Login**: `POST /api/auth/login` returns a Fernet-signed session token.
 3. **API calls**: `src/api/client.ts` attaches `Authorization: Bearer <token>`.
@@ -130,7 +130,7 @@ substring match.
 
 ## Investments
 
-Separate from bank `transactions`. Not included in spending analytics.
+Separate from bank `transactions` — not included in spending analytics.
 
 | Model | Purpose |
 |-------|---------|
@@ -186,7 +186,7 @@ Persisted goals live in `budgets.db`; labeled transfers live in
 
 | Table | Notes |
 |-------|-------|
-| `budgets` | Monthly limits per category (no FK to ledger; joined in Python) |
+| `budgets` | Monthly limits per category (no FK to ledger — joined in Python) |
 | `proposals` | Pending/applied/dismissed AI advisor suggestions |
 | `financial_goals` | Savings/invest targets; progress from labeled transfers + opening amount |
 
@@ -231,7 +231,7 @@ All routes below are under `/api` unless noted. Interactive OpenAPI docs:
 Public (no auth): `GET /`, `GET /health`.
 
 When `frontend/dist` exists, FastAPI also serves the SPA on port 8000 (same-origin
-deployment. No CORS or frontend secrets needed).
+deployment — no CORS or frontend secrets needed).
 
 ---
 
@@ -249,13 +249,13 @@ Balance snapshots are taken during sync, not by a separate nightly job.
 
 ## Key Design Decisions
 
-1. **Single-user**: `user_id=1` everywhere; schema ready for future multi-user.
-2. **Encrypted Plaid tokens**: Fernet at rest; decrypt only in `plaid_service.py`.
-3. **Cursor-based sync**: Plaid `/transactions/sync` with per-page commits.
-4. **Separate budgets DB**: avoids SQLite write-lock contention with transaction sync.
-5. **No money movement**: read-only Plaid permissions; monitoring only.
-6. **Raw Plaid HTTP**: no `plaid-python` SDK dependency.
-7. **Dark-first UI**: liquid-glass theme; no light-mode toggle planned.
+1. **Single-user** — `user_id=1` everywhere; schema ready for future multi-user.
+2. **Encrypted Plaid tokens** — Fernet at rest; decrypt only in `plaid_service.py`.
+3. **Cursor-based sync** — Plaid `/transactions/sync` with per-page commits.
+4. **Separate budgets DB** — avoids SQLite write-lock contention with transaction sync.
+5. **No money movement** — read-only Plaid permissions; monitoring only.
+6. **Raw Plaid HTTP** — no `plaid-python` SDK dependency.
+7. **Dark-first UI** — liquid-glass theme; no light-mode toggle planned.
 
 ---
 
@@ -284,7 +284,7 @@ Frontend Vitest is configured but has no test files yet.
 
 ## Further Reading
 
-- **README.md**: setup and user-facing features
-- **CLAUDE.md**: developer conventions and current status
-- **SECURITY.md**: threat model and hardening
-- **CHANGES.md**: recent feature changelog
+- **README.md** — setup and user-facing features
+- **CLAUDE.md** — developer conventions and current status
+- **SECURITY.md** — threat model and hardening
+- **CHANGES.md** — recent feature changelog

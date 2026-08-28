@@ -10,8 +10,8 @@ function WaitingHint({ onReopen, onCancel }: { onReopen: () => void; onCancel: (
   return (
     <div className="text-[11px] text-ledger-text-faint leading-snug space-y-1">
       <p>
-        A secure Plaid window opened in your browser. Finish connecting there.
-        This updates automatically when you’re done.
+        A secure Plaid window opened in your browser. Finish connecting there —
+        this updates automatically when you’re done.
       </p>
       <div className="flex gap-3">
         <button type="button" onClick={onReopen} className="text-white hover:opacity-70 transition-opacity">

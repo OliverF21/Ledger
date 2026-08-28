@@ -20,9 +20,9 @@ At the same time, real money movement between accounts is mostly invisible on th
 
 So three different ideas get blurred:
 
-1. **Internal transfers**: money already inside the Ledger universe, just changing pockets
-2. **Savings allocation**: deliberately parking cash in a savings/emergency/cash reserve
-3. **Investing allocation**: deliberately putting money into brokerage / retirement / markets
+1. **Internal transfers** — money already inside the Ledger universe, just changing pockets
+2. **Savings allocation** — deliberately parking cash in a savings/emergency/cash reserve
+3. **Investing allocation** — deliberately putting money into brokerage / retirement / markets
 
 Users (and the chart) need those to mean different things.
 
