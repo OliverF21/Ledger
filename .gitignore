@@ -52,6 +52,9 @@ dist/
 frontend/dist/
 frontend/build/
 
+# Marketing site — kept locally; Vercel cannot see gitignored files
+/website/
+
 # Database (including SQLite WAL/journal sidecars — they contain live data pages)
 *.db
 *.sqlite
