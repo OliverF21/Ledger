@@ -127,7 +127,7 @@ All formulas live in a shared backend module (e.g. `app/services/goals_planning_
 
 | Symbol | Meaning | Typical source |
 | --- | --- | --- |
-| `PV` | Present value / current amount toward goal | User or linked balance |
+| `PV` | Present value / current amount toward goal | Opening amount + user-flagged transfers |
 | `FV` | Future value / target amount | User goal |
 | `PMT` | Periodic contribution (payment into the goal) | User, or solved; often capped by capacity |
 | `n` | Number of months | User horizon, or solved |
@@ -233,7 +233,7 @@ Add `FinancialGoal` in `budgets.db` (user intent, not Plaid truth), beside `Budg
 | `name` | str | “Emergency fund” |
 | `kind` | enum | see taxonomy |
 | `target_amount` | float | |
-| `current_amount` | float | manual or linked later |
+| `current_amount` | float | Opening balance (manual). Ongoing progress = this + flagged transfers |
 | `target_date` | date \| null | |
 | `monthly_contribution` | float \| null | planned |
 | `annual_return_assumption` | float \| null | invest only |
@@ -247,7 +247,13 @@ Add `FinancialGoal` in `budgets.db` (user intent, not Plaid truth), beside `Budg
 | `list_financial_goals` | Read |
 | `goal_progress` | Read — % funded, months ahead/behind vs plan |
 
-Progress can start with user-supplied `current_amount`; later optionally link to a savings account balance or net-worth slice.
+Progress is **not** inferred from leftover income, and **not** a spend-style budget on a fake “Savings” category.
+
+Plaid (and Cash Flow) can tell you a row is a savings transfer (`TRANSFER_OUT_SAVINGS`, savings-account subtype, or a user category like “Savings”). They cannot tell you *which goal* that transfer serves. One HYSA often funds an emergency fund, a vacation sinking fund, and unallocated cash at once. Linking the whole account balance to a single goal would mis-count.
+
+**Attribution is manual:** the user flags a transfer (or a split of one) as applying to a specific goal/bucket. Progress = sum of flagged inflows − flagged withdrawals for that goal (plus an optional opening `current_amount`). Unflagged savings transfers stay generic Cash Flow “Savings,” not goal progress.
+
+That is the only honest “savings budget”: a planned monthly contribution on the goal, compared to tagged transfers this month — not a `Budget` ceiling on a Savings category.
 
 ### Phase 3 — Write-intent proposals + Advisor UI
 
@@ -259,9 +265,9 @@ Mirror `propose_budget`: MCP never mutates; it POSTs proposals; user Applies in 
 | --- | --- |
 | `set_goal` | Create/update a `FinancialGoal` |
 | `update_goal_contribution` | Change planned monthly contribution |
-| `set_savings_budget` | Optional: non-spend target treated as allocation goal (ties to cash-flow spec open question #6) |
+| `attribute_transfer` (later) | Flag a ledger transaction (or split) as counting toward a goal |
 
-Also allow Claude to continue using `propose_budget` for category cuts that free capacity.
+Do **not** implement `set_savings_budget` as a `Budget` row. Spend budgets stay spend caps. Claude can still `propose_budget` on dining/etc. to free contribution capacity.
 
 **Touch points**
 
@@ -409,12 +415,12 @@ Budgets answer: “Am I overspending a category?”
 
 1. **Default capacity policy:** **locked** — `min(current, lookback_avg)` for complete months; lookback-only when the requested month is still in progress.
 2. **Debt payoff:** include interest rate amortization in v1, or treat as simple remaining÷payment until a dedicated debt model exists?
-3. **Linked balances:** should Phase 2 `current_amount` auto-fill from a chosen savings/brokerage account, or stay manual?
+3. **Linked balances:** **locked** — do not auto-fill a goal from a whole account. One savings account can back several buckets. Progress comes from **user-flagged transfers** (plus optional opening `current_amount`). Account subtype / `TRANSFER_OUT_SAVINGS` only classifies the row as savings, not as a specific goal.
 4. **Multiple concurrent goals:** split capacity pro-rata, priority order, or leave allocation entirely to Claude’s narrative?
 5. **UI surface:** is Claude-only enough for v1, or does Ledger need a Goals page that calls the same service?
 6. **Cash-flow dependency:** ship Phase 1 on residual surplus now, or wait for Savings/Investments sinks so “invest plan” uses real investment transfers?
 
-**Recommendation:** ship Phase 1 on residual surplus immediately; treat Savings vs Investments allocation as an enhancement when that cash-flow spec lands. Keep debt simple (0% interest math) until demand appears. Defer Goals page until persisted goals (Phase 2) exist. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback.
+**Recommendation:** ship Phase 1 on residual surplus immediately; treat Savings vs Investments allocation as an enhancement when that cash-flow spec lands. Keep debt simple (0% interest math) until demand appears. Defer Goals page until persisted goals (Phase 2) exist. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback. Goal progress (Phase 2+) is tagged transfers per bucket, not a Savings spend budget and not a whole-account link.
 
 ---
 
