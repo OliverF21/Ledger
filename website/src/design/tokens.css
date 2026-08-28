@@ -1,0 +1,190 @@
+/* Ledger marketing tokens.
+   Edit this file to restyle the whole site. Values are taken from
+   Ledger_Overview.dc.html (Schibsted Grotesk, glass charcoal, mint chart).
+   Components should reference var(--*) only, never raw hex. */
+
+:root {
+  --canvas: #07080a;
+  --canvas-mid: #0a0c11;
+  --canvas-hi: #101319;
+  --ink: #f2f4f8;
+  --ink-soft: rgba(255, 255, 255, 0.74);
+  --ink-muted: rgba(255, 255, 255, 0.46);
+  --ink-faint: rgba(255, 255, 255, 0.34);
+  --link: #b9cdf2;
+  --link-hover: #dce7fb;
+
+  /* Signature from the Overview net-worth chart. Category hues stay in product shots. */
+  --positive: #74d8a8;
+  --positive-text: #b6ebcd;
+  --negative: #f5b3a4;
+  --negative-hot: #f4907f;
+
+  --cta-ink: #0a0c10;
+  --cta-top: #ffffff;
+  --cta-bottom: #dbe4f2;
+  --cta-glow: rgba(210, 226, 255, 0.7);
+  --logo-top: #ffffff;
+  --logo-bottom: rgba(203, 218, 244, 0.62);
+  --logo-shadow: rgba(196, 214, 248, 0.6);
+
+  --hairline: rgba(255, 255, 255, 0.24);
+  --hairline-soft: rgba(255, 255, 255, 0.12);
+  --glass-a: rgba(255, 255, 255, 0.2);
+  --glass-b: rgba(255, 255, 255, 0.085);
+  --glass-c: rgba(255, 255, 255, 0.05);
+  --glass-d: rgba(255, 255, 255, 0.115);
+  --glass-inset: rgba(255, 255, 255, 0.72);
+  --glass-inset-lo: rgba(255, 255, 255, 0.24);
+
+  --glow-cool: rgba(178, 200, 236, 0.22);
+  --glow-blue: rgba(84, 132, 218, 0.34);
+  --glow-teal: rgba(116, 206, 206, 0.22);
+  --glow-warm: rgba(216, 148, 116, 0.16);
+
+  --radius-logo: 9px;
+  --radius-btn: 11px;
+  --radius-frame: 24px;
+  --radius-chip: 8px;
+
+  --nav-h: 64px;
+  --z-glow: 0;
+  --z-content: 1;
+  --z-nav: 40;
+  --z-overlay: 50;
+
+  --ease-out: cubic-bezier(0.22, 0.8, 0.2, 1);
+  --shadow-cta: 0 12px 30px -12px var(--cta-glow), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --shadow-frame:
+    inset 0 1px 0 var(--glass-inset),
+    inset 0 -1px 0 var(--glass-inset-lo),
+    inset 0 0 50px rgba(255, 255, 255, 0.06),
+    0 36px 74px -32px rgba(0, 0, 0, 0.92),
+    0 0 60px -10px rgba(196, 216, 252, 0.2);
+}
+
+@theme inline {
+  --font-sans: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-ink: var(--ink);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+}
+
+html {
+  color-scheme: dark;
+  background: var(--canvas);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(116, 216, 168, 0.28);
+  color: var(--ink);
+}
+
+.glass-frame {
+  background: linear-gradient(
+    146deg,
+    var(--glass-a) 0%,
+    var(--glass-b) 30%,
+    var(--glass-c) 66%,
+    var(--glass-d) 100%
+  );
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-frame);
+  box-shadow: var(--shadow-frame);
+  backdrop-filter: blur(34px) saturate(150%);
+  -webkit-backdrop-filter: blur(34px) saturate(150%);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  min-width: 12.5rem;
+  padding: 0 18px;
+  border-radius: var(--radius-btn);
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: var(--cta-ink);
+  background: linear-gradient(150deg, var(--cta-top), var(--cta-bottom));
+  box-shadow: var(--shadow-cta);
+  transition: transform 0.2s var(--ease-out), filter 0.2s var(--ease-out);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-btn);
+  font-size: 13.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  color: var(--ink);
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--hairline);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px);
+  transition: border-color 0.2s var(--ease-out), background 0.2s var(--ease-out);
+}
+
+.btn-ghost:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.btn-ghost:active {
+  transform: scale(0.98);
+}
+
+.btn-skeleton {
+  height: 44px;
+  min-width: 12.5rem;
+  border-radius: var(--radius-btn);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08));
+  background-size: 200% 100%;
+  animation: ledger-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes ledger-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary,
+  .btn-ghost {
+    transition: none;
+  }
+
+  .btn-skeleton {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-frame {
+    background: #12151c;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

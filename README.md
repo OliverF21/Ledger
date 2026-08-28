@@ -8,7 +8,7 @@ A personal finance app that runs on your computer. It links your bank accounts t
 
 ### 1. Download the app
 
-Installers are on the **[Releases](https://github.com/OliverF21/Ledger/releases/latest)** page. You don't need Python or Node for the desktop build.
+Installers are on the **[Releases](https://github.com/OliverF21/Ledger/releases/latest)** page. You don't need Python or Node for the desktop build. The marketing site lives in [`website/`](website/) (Vercel: set Root Directory to `website`).
 
 - **macOS:** download the `.dmg` and drag Ledger into Applications
 - **Windows:** download the `.exe` or `.msi` and run it
