@@ -29,3 +29,58 @@ def test_load_migrates_and_strips_config_json(tmp_path, monkeypatch):
     cfg = json.loads((tmp_path / "config.json").read_text())
     assert "ENCRYPTION_KEY" not in cfg
     assert cfg["other"] == "keep"
+
+
+def test_persist_keeps_file_when_strip_disabled(tmp_path, monkeypatch):
+    """Unsigned macOS: keychain write succeeds but the file copy is retained."""
+    monkeypatch.setenv("LEDGER_APPDATA", str(tmp_path))
+    from importlib import reload
+    from app import paths, key_store
+
+    reload(paths)
+    key_store.use_memory_backend()
+    monkeypatch.setattr(key_store, "_should_strip_file", lambda: False)
+    key_store.persist("secret-key")
+    assert key_store.get_os_key() == "secret-key"
+    cfg = json.loads((tmp_path / "config.json").read_text())
+    assert cfg["ENCRYPTION_KEY"] == "secret-key"
+
+
+def test_load_prefers_file_when_keychain_differs(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEDGER_APPDATA", str(tmp_path))
+    from importlib import reload
+    from app import paths, key_store
+
+    reload(paths)
+    key_store.use_memory_backend()
+    key_store.set_os_key("from-keychain")
+    key_store.write_file_key("from-file")
+    assert key_store.load() == "from-file"
+    assert key_store.get_os_key() == "from-file"
+
+
+def test_set_os_key_requires_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEDGER_APPDATA", str(tmp_path))
+    from importlib import reload
+    from app import paths, key_store
+
+    reload(paths)
+    key_store._use_memory = False
+    key_store._backend_ready = True
+    monkeypatch.setattr(key_store, "_os_set", lambda service, account, password: None)
+    monkeypatch.setattr(key_store, "_os_get", lambda service, account: None)
+    assert key_store.set_os_key("k") is False
+    monkeypatch.setattr(key_store, "_os_get", lambda service, account: "k")
+    assert key_store.set_os_key("k") is True
+
+
+def test_get_os_key_falls_back_to_legacy_account(tmp_path, monkeypatch):
+    monkeypatch.delenv("LEDGER_APPDATA", raising=False)
+    from app import paths, key_store
+
+    key_store.use_memory_backend()
+    monkeypatch.setattr(paths, "app_data_dir", lambda: tmp_path)
+    legacy = f"encryption-key:{tmp_path.resolve()}"
+    key_store._memory[(key_store.SERVICE, legacy)] = "legacy-key"
+    assert key_store._primary_account() == "encryption-key"
+    assert key_store.get_os_key() == "legacy-key"

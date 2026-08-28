@@ -65,7 +65,10 @@ def bootstrap_desktop() -> None:
             raise RuntimeError(
                 "Existing ledger.db found but no ENCRYPTION_KEY in the OS keychain "
                 "or config.json. Refusing to generate a new key (it would make stored "
-                "Plaid tokens undecryptable). Restore the original key or re-import."
+                "Plaid tokens undecryptable). Restore the original key from Time Machine "
+                "/ an old config.json, or look in Keychain Access (macOS, service "
+                "com.ledger.desktop) / Credential Manager (Windows) / Secret Service "
+                "(Linux), then re-import if needed."
             )
         if use_appdata and not desktop:
             # Dev mode must attach to an existing desktop install — never

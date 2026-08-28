@@ -25,6 +25,10 @@ hiddenimports += collect_submodules("numpy")
 hiddenimports += collect_submodules("keyring")
 hiddenimports += collect_submodules("keyring.backends")
 hiddenimports += collect_submodules("jaraco")
+try:
+    hiddenimports += collect_submodules("win32ctypes")  # keyring WinVault on Windows
+except Exception:
+    pass
 hiddenimports += [
     "uvicorn.logging",
     "uvicorn.loops.auto",
