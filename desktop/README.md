@@ -8,6 +8,12 @@ OS app-data directory, not inside the app bundle:
 - **macOS**: `~/Library/Application Support/Ledger/`
 - **Windows**: `%APPDATA%\Ledger\`
 
+The Fernet key that encrypts Plaid tokens is stored in the **OS keychain**
+(macOS Keychain / Windows Credential Manager), not in that folder. Copying
+`ledger.db` alone cannot decrypt bank tokens. First launch after this change
+migrates a leftover `config.json` `ENCRYPTION_KEY` into the keychain and
+removes it from the file. macOS may prompt once to allow Keychain access.
+
 The backend is bundled with PyInstaller (no Python install needed) and serves the
 built frontend — the window is a thin native shell around the local app.
 

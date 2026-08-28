@@ -22,6 +22,9 @@ hiddenimports += collect_submodules("yfinance")
 hiddenimports += collect_submodules("curl_cffi")
 hiddenimports += collect_submodules("scipy")
 hiddenimports += collect_submodules("numpy")
+hiddenimports += collect_submodules("keyring")
+hiddenimports += collect_submodules("keyring.backends")
+hiddenimports += collect_submodules("jaraco")
 hiddenimports += [
     "uvicorn.logging",
     "uvicorn.loops.auto",

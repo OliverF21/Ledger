@@ -36,7 +36,9 @@ This document describes the threat model, security practices, and hardening guid
 
 **Implementation**:
 - Tokens are encrypted at rest using **Fernet** (AES-128-CBC + HMAC) from the `cryptography` library
-- The encryption key (`ENCRYPTION_KEY`) is loaded from environment variables, never committed to git
+- The encryption key (`ENCRYPTION_KEY`) is generated per install with `Fernet.generate_key()`
+- **Desktop:** stored in the OS credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service) via `app/key_store.py`. On first launch after this change, a plaintext `config.json` key is migrated into the keychain and deleted from the file. If the keychain is unavailable, the app falls back to `config.json` (0600) and logs a warning.
+- **Source installs:** still read `ENCRYPTION_KEY` from `backend/.env` (keep that file out of backups that also contain `ledger.db`)
 - Tokens are decrypted only when making API calls to Plaid (in `plaid_service.py`)
 - Decrypted tokens are never passed to the frontend or logged
 
@@ -52,7 +54,7 @@ This document describes the threat model, security practices, and hardening guid
        item.access_token_encrypted = new_cipher.encrypt(decrypted)
    db.commit()
    ```
-3. Update `ENCRYPTION_KEY` in production env vars
+3. Update `ENCRYPTION_KEY` in the OS keychain (desktop) or production env vars (source)
 4. Delete old backups that contain tokens encrypted with the old key
 
 ### 2. Environment Variables & Secrets

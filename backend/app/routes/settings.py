@@ -523,22 +523,9 @@ def _do_import(source_dir: str, *, confirm_overwrite: bool) -> dict:
     if budgets_src.exists():
         shutil.copy2(budgets_src, paths.budgets_db_path())
 
-    # Write imported key to config.json (0600).
-    import json
-    cfg_path = paths.config_path()
-    cfg = {}
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text())
-        except Exception:
-            cfg = {}
-    cfg["ENCRYPTION_KEY"] = src_key
-    cfg_path.write_text(json.dumps(cfg, indent=2))
-    if os.name == "posix":
-        try:
-            cfg_path.chmod(0o600)
-        except OSError:
-            pass
+    # Store the imported key in the OS keychain (not plaintext config.json).
+    from app import key_store
+    key_store.persist(src_key)
 
     # Migrate .env Plaid creds into the imported ledger.db's app_config table,
     # encrypting the secret with the imported key.

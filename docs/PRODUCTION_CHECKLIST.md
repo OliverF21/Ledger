@@ -27,10 +27,11 @@ In `backend/.env` (or via the in-app setup wizard / Settings → Plaid):
 
 ## 3. Secrets
 
-- [ ] `ENCRYPTION_KEY` is generated with `Fernet.generate_key()` and stored securely.
+- [ ] `ENCRYPTION_KEY` is generated with `Fernet.generate_key()` (desktop: OS keychain; source: `.env`).
       **Never change it after linking an account** — it decrypts your stored Plaid
       tokens.
-- [ ] Keep `ENCRYPTION_KEY` **separate from your database backups**; together they
+- [ ] Desktop: do not copy `config.json` `ENCRYPTION_KEY` back next to `ledger.db` backups.
+      Source: keep `.env` **separate from database backups**; together they
       unlock your bank connection.
 - [ ] `.env` is in `.gitignore` and never committed.
 - [ ] (Optional) Set `AUTH_TOKEN_KEY` so you can rotate `ENCRYPTION_KEY` without

@@ -10,6 +10,7 @@ psycopg2-binary==2.9.9  # PostgreSQL driver; unused (but harmless) while DATABAS
 
 # Security & Encryption
 cryptography==41.0.7
+keyring>=25.0.0  # OS keychain for ENCRYPTION_KEY (see app/key_store.py)
 python-multipart==0.0.26  # fastmcp 3.4.2 requires >=0.0.26
 
 # Scheduling
