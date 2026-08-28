@@ -205,6 +205,15 @@ export default function Investments() {
   )
   const allocationData = allocationView === 'type' ? typeAllocationData : securityAllocationData
   const activeAllocation = activeSlice !== null ? allocationData[activeSlice] ?? null : null
+  const heldTickers = useMemo(() => {
+    const tickers = new Set<string>()
+    for (const account of accounts) {
+      for (const position of account.positions) {
+        if (position.ticker) tickers.add(position.ticker)
+      }
+    }
+    return [...tickers].sort()
+  }, [accounts])
 
   useEffect(() => {
     setActiveSlice(null)
@@ -656,7 +665,7 @@ export default function Investments() {
               updatePrefs={updateOptimizationPrefs}
               onRun={handleRunOptimization}
               running={runningOptimization}
-              heldTickers={optimization.tickers.map(t => t.ticker)}
+              heldTickers={heldTickers}
             />
             <div className="glass-card flex-1 min-w-0 flex flex-col px-6 py-5 max-h-[760px]">
               <div className="shrink-0">
@@ -728,7 +737,7 @@ export default function Investments() {
             updatePrefs={updateOptimizationPrefs}
             onRun={handleRunOptimization}
             running={runningOptimization}
-            heldTickers={optimization.tickers.map(t => t.ticker)}
+            heldTickers={heldTickers}
           />
         )
       )}

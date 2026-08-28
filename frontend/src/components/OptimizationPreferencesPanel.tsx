@@ -132,21 +132,22 @@ function ConstraintRow({ name, floorPct, capPct, removing, onFloorChange, onCapC
 // Small add-row form, collapsed to a "+ Add ... constraint" glass-chip button
 // until clicked -- mirrors Settings.tsx's "+ New rule" / rule-form pattern
 // exactly (same border/spacing/Save-Cancel button styling). Ticker-only now.
-function AddTickerConstraintForm({ onCreate, availableTickers }: {
+function AddTickerConstraintForm({ onCreate, availableTickers, defaultCapPct }: {
   onCreate: (ticker: string, floorPct: number, capPct: number) => Promise<unknown>
   availableTickers: string[]
+  defaultCapPct: number
 }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [floor, setFloor] = useState(0)
-  const [cap, setCap] = useState(100)
+  const [cap, setCap] = useState(defaultCapPct)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const resetForm = () => {
     setName('')
     setFloor(0)
-    setCap(100)
+    setCap(defaultCapPct)
     setError(null)
   }
 
@@ -184,7 +185,11 @@ function AddTickerConstraintForm({ onCreate, availableTickers }: {
             aria-label="Add ticker constraint"
             onChange={e => {
               if (!e.target.value) return
-              onCreate(e.target.value, 0, 100).catch(() => undefined)
+              setName(e.target.value)
+              setFloor(0)
+              setCap(defaultCapPct)
+              setError(null)
+              setOpen(true)
             }}
             className="bg-transparent border-none outline-none text-white/70 cursor-pointer"
           >
@@ -439,6 +444,7 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
             ))}
             <AddTickerConstraintForm
               availableTickers={availableTickers}
+              defaultCapPct={prefs.position_cap_pct}
               onCreate={async (ticker, floor_pct, cap_pct) => {
                 const created = await runMutation(
                   createTicker({ ticker, floor_pct, cap_pct }),
