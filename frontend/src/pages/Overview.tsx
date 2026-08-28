@@ -8,9 +8,7 @@ import {
 } from '../components/ui/primitives'
 import { AreaLineChart, Donut, DonutLegend, type DonutSlice } from '../components/ui/charts'
 import { formatCategory, formatTransactionCategory, transactionDisplayIcon } from '../utils/categories'
-import {
-  getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl, getMonthFromUrl, formatMonthLabel,
-} from '../utils/months'
+import { formatMonthLabel } from '../utils/months'
 import { groupAssetAccounts } from '../utils/accountGroups'
 
 function fmt(n: number) {
@@ -67,10 +65,11 @@ function useNetWorth(months: number, refresh = 0) {
   return { data, loading }
 }
 
-const OVERVIEW_MONTH_KEY = 'ledger:overview-month-v2'
-
 interface OverviewProps {
   onNavigate: (screen: 'transactions' | 'budgets') => void
+  /** Selected month (YYYY-MM). Owned by App so the picker can live in the
+   *  header cluster; see App.tsx. */
+  month: string
 }
 
 interface BudgetItem {
@@ -199,29 +198,15 @@ function Divider() {
 
 /* ── Screen ─────────────────────────────────────────────────────────────── */
 
-export default function Overview({ onNavigate }: OverviewProps) {
+export default function Overview({ onNavigate, month: selectedMonth }: OverviewProps) {
   const [timeRange, setTimeRange] = useState<'6M' | '1Y'>('6M')
-  const monthOptions = getMonthOptions(6)
-  const [selectedMonth, setSelectedMonth] = useState<string>(() =>
-    resolveSelectedMonth(OVERVIEW_MONTH_KEY, getMonthOptions(6)),
-  )
   const [activeSlice, setActiveSlice] = useState<number | null>(null)
   const [syncRefresh, setSyncRefresh] = useState(0)
   useOnSyncComplete(useCallback(() => setSyncRefresh(n => n + 1), []))
 
-  const selectMonth = (month: string) => {
-    setSelectedMonth(month)
-    storeMonth(OVERVIEW_MONTH_KEY, month)
-    setMonthInUrl(month)
-    setActiveSlice(null)
-  }
-
-  useEffect(() => {
-    if (getMonthFromUrl() !== selectedMonth) {
-      setMonthInUrl(selectedMonth)
-      storeMonth(OVERVIEW_MONTH_KEY, selectedMonth)
-    }
-  }, [selectedMonth])
+  // Clear any pinned donut slice when the month changes — the categories
+  // behind it are different data.
+  useEffect(() => { setActiveSlice(null) }, [selectedMonth])
 
   const { data } = useAnalytics(selectedMonth)
   const { transactions: recentTxns, loading: recentLoading } = useRecentTransactions(selectedMonth, 6, syncRefresh)
@@ -291,7 +276,9 @@ export default function Overview({ onNavigate }: OverviewProps) {
         <div className="absolute left-[2px] top-0 z-20 ledger-rise-fast">
           <Eyebrow className="!tracking-[0.2em] !text-white/40">Net worth</Eyebrow>
           <div
-            className="mt-2 text-[68px] leading-[0.92] font-bold tracking-[-0.05em] tabular-nums"
+            /* No tabular-nums: it pads the comma to a full digit cell and
+               visibly breaks "$248,910" into three chunks. */
+            className="mt-2 text-[68px] leading-[0.92] font-bold tracking-[-0.05em]"
             style={{ textShadow: '0 0 46px rgba(200,220,255,0.3)' }}
           >
             {nwLoading ? '—' : dollars}
@@ -306,7 +293,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
                 <ChangeBadge positive={growthUp}>
                   {Math.abs(nwData!.change_pct).toFixed(1)}%
                 </ChangeBadge>
-                <span className="text-[12.5px] font-semibold tabular-nums" style={{ color: chartColor }}>
+                <span className="text-[12.5px] font-semibold" style={{ color: chartColor }}>
                   {growthUp ? '+' : '−'}${fmt(Math.abs(nwData!.change_amount))}
                 </span>
               </>
@@ -389,20 +376,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
         {/* Spending list + donut, right-aligned against the faded chart. */}
         <div className="absolute right-0 top-5 z-20 flex items-center gap-5 ledger-rise">
           <div className="flex flex-col items-end gap-px">
-            <div className="flex items-center gap-2 mb-1.5">
-              <Eyebrow size="sm">{monthLabel} spending</Eyebrow>
-              <label className="sr-only" htmlFor="overview-month">Month</label>
-              <select
-                id="overview-month"
-                value={selectedMonth}
-                onChange={e => selectMonth(e.target.value)}
-                className="glass-chip text-[10px] font-semibold px-1.5 py-[1px] text-ledger-text-secondary cursor-pointer outline-none"
-              >
-                {monthOptions.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
+            <Eyebrow size="sm" className="mb-1.5">{monthLabel} spending</Eyebrow>
             {spendSlices.length === 0 ? (
               <span className="text-[11.5px] text-ledger-text-faint">No expenses this month</span>
             ) : (

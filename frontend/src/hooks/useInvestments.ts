@@ -191,6 +191,18 @@ export interface AllocationWeight {
   suggested_weight_pct: number
 }
 
+export interface RiskReturnPoint {
+  volatility_pct: number
+  return_pct: number
+  sharpe: number | null
+}
+
+export interface SectorRef {
+  name: string
+  current_weight_pct: number
+  sp_reference_pct: number | null
+}
+
 export interface OptimizationSuggestion {
   tickers: AllocationWeight[]
   current_expected_return_pct: number | null
@@ -201,6 +213,61 @@ export interface OptimizationSuggestion {
   suggested_sharpe: number | null
   data_points: number
   insufficient_data: boolean
+  // Advanced-optimization payload — empty on the unconstrained GET.
+  frontier: RiskReturnPoint[]
+  scatter: RiskReturnPoint[]
+  current_point: RiskReturnPoint | null
+  max_sharpe_point: RiskReturnPoint | null
+  max_utility_point: RiskReturnPoint | null
+  sectors: SectorRef[]
+  ticker_sectors: Record<string, string>
+  infeasible: boolean
+}
+
+/** A floor/cap pair in percent, as the sliders express them. */
+export interface Bound {
+  floor_pct: number
+  cap_pct: number
+}
+
+export interface OptimizerRequest {
+  lookback_days?: number
+  position_cap_pct: number
+  diversification_pct: number
+  sector_bounds: Record<string, Bound>
+  ticker_bounds: Record<string, Bound>
+}
+
+/**
+ * Constrained optimizer run. Unlike the other hooks here this one is manual —
+ * it fires on "Run optimization", not on mount, because the frontier sweep is
+ * ~40 solves and re-running it on every slider drag would be both slow and
+ * pointless (the user is still choosing).
+ */
+export function useOptimizerRun() {
+  const [data, setData] = useState<OptimizationSuggestion | null>(null)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = useCallback(async (request: OptimizerRequest) => {
+    setRunning(true)
+    setError(null)
+    try {
+      const res = await apiFetch('/api/investments/risk/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lookback_days: 365, include_frontier: true, ...request }),
+      })
+      if (!res.ok) throw new Error(`Optimizer failed (${res.status})`)
+      setData(await res.json())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Optimizer failed')
+    } finally {
+      setRunning(false)
+    }
+  }, [])
+
+  return { data, running, error, run }
 }
 
 export function useInvestmentsOptimization(lookbackDays: number = 365) {

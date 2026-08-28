@@ -4,8 +4,9 @@ import { useSync } from '../hooks/useSync'
 import { Eyebrow } from './ui/primitives'
 
 interface HeaderProps {
-  /** Uppercase micro-label above the title — today's date, or the section. */
-  eyebrow: string
+  /** Uppercase micro-label above the title — today's date, or the section.
+   *  Empty on screens whose title already says everything. */
+  eyebrow?: string
   title: string
   name?: string
   /** Screen-specific controls (a month picker, a filter) rendered to the left
@@ -56,8 +57,8 @@ export default function Header({ eyebrow, title, name, controls, onOpenSettings 
   return (
     <header className="flex items-start justify-between gap-4 pt-[2px] pl-[2px] pr-1 shrink-0">
       <div className="min-w-0">
-        <Eyebrow>{eyebrow}</Eyebrow>
-        <h1 className="mt-[5px] text-[24px] font-bold tracking-[-0.035em] leading-none truncate">
+        {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+        <h1 className={`text-[24px] font-bold tracking-[-0.035em] leading-none truncate ${eyebrow ? 'mt-[5px]' : 'mt-[7px]'}`}>
           {title}
         </h1>
       </div>

@@ -4,6 +4,12 @@ import {
 } from 'lucide-react'
 import { type AccountItem } from '../hooks/useAccounts'
 import { type ScreenType } from '../utils/screens'
+
+/** Rail width / main-margin easing. Kept here and imported by App so the two
+ *  never drift — if they disagree the content visibly lags the rail. The
+ *  original 0.28s read as a snap at this travel distance (148px); 0.44s on a
+ *  gentler curve lets the eye follow it. */
+export const RAIL_TRANSITION = '.44s cubic-bezier(.32,.72,.24,1)'
 import InstitutionAvatar from './InstitutionAvatar'
 
 interface SidebarProps {
@@ -69,7 +75,9 @@ export default function Sidebar({
   // way in so text doesn't appear before the rail has room for it.
   const labelStyle = {
     opacity: open ? 1 : 0,
-    transition: open ? 'opacity .18s ease .08s' : 'opacity .08s ease',
+    // Fading in waits for the rail to have room; fading out leads it, so text
+    // never gets clipped by the closing edge.
+    transition: open ? 'opacity .26s ease .14s' : 'opacity .12s ease',
   } as const
 
   return (
@@ -84,7 +92,7 @@ export default function Sidebar({
       className="glass-rail absolute left-[14px] top-[14px] bottom-[14px] z-20 flex flex-col overflow-hidden px-3 pt-[18px] pb-4"
       style={{
         width: open ? 214 : 66,
-        transition: 'width .28s cubic-bezier(.22,.8,.2,1)',
+        transition: `width ${RAIL_TRANSITION}`,
       }}
     >
       {/* Logo */}

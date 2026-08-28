@@ -45,3 +45,23 @@ def fetch_daily_closes(tickers: list[str], start: date, end: date) -> dict[str, 
             if value == value  # drop NaN (no print that day for this ticker)
         ]
     return result
+
+
+def fetch_sectors(tickers: list[str]) -> dict[str, str | None]:
+    """
+    Best-effort sector lookup, one `Ticker.info` call per symbol (yfinance has
+    no batch endpoint for this). Callers persist the result, so this runs once
+    per holding rather than per request. A symbol yfinance can't classify —
+    crypto, money-market funds, odd tickers — maps to None; that's expected,
+    not an error, so failures are swallowed per ticker rather than aborting
+    the batch.
+    """
+    sectors: dict[str, str | None] = {}
+    for ticker in tickers:
+        try:
+            info = yf.Ticker(ticker).info or {}
+            sector = info.get("sector")
+            sectors[ticker] = str(sector) if sector else None
+        except Exception:
+            sectors[ticker] = None
+    return sectors

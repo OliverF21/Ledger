@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import Sidebar from './components/Sidebar'
+import Sidebar, { RAIL_TRANSITION } from './components/Sidebar'
 import Header from './components/Header'
 import Login from './pages/Login'
 import Overview from './pages/Overview'
@@ -18,6 +18,9 @@ import { useStartupSync } from './hooks/useSync'
 import { apiFetch, getToken, clearToken } from './api/client'
 import { getPlaidConfig } from './api/plaidConfig'
 import { VALID_SCREENS, type ScreenType } from './utils/screens'
+import {
+  getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl,
+} from './utils/months'
 
 type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
 
@@ -65,25 +68,30 @@ function greeting(): string {
   return 'Good Evening'
 }
 
-/** Eyebrow names the section, the title says what you're looking at — so the
- *  two never repeat the same word. */
+/** Most screens are just their own name — no eyebrow, no tagline. Only
+ *  Overview and Investments take the eyebrow/title pair, because the design
+ *  specifies one for each (a date over a greeting; the section over "Your
+ *  portfolio"). Inventing one for every other page only added noise. */
 const screenHeaders: Record<ScreenType, HeaderInfo> = {
-  overview:     { eyebrow: 'Overview',      title: greeting() },
-  transactions: { eyebrow: 'Transactions',  title: 'Every movement' },
-  spending:     { eyebrow: 'Cash flow',     title: 'Money in, money out' },
-  budgets:      { eyebrow: 'Budgets',       title: 'This month’s limits' },
-  investments:  { eyebrow: 'Investments',   title: 'Your portfolio' },
-  trends:       { eyebrow: 'Trends',        title: 'Patterns over time' },
-  subscriptions:{ eyebrow: 'Subscriptions', title: 'Recurring charges' },
-  advisor:      { eyebrow: 'AI advisor',    title: 'Suggestions to review' },
-  settings:     { eyebrow: 'Settings',      title: 'Categories, rules & alerts' },
+  overview:     { eyebrow: '',            title: greeting() },
+  transactions: { eyebrow: '',            title: 'Transactions' },
+  spending:     { eyebrow: '',            title: 'Cash Flow' },
+  budgets:      { eyebrow: '',            title: 'Budgets' },
+  investments:  { eyebrow: 'Investments', title: 'Your portfolio' },
+  trends:       { eyebrow: '',            title: 'Trends' },
+  subscriptions:{ eyebrow: '',            title: 'Subscriptions' },
+  advisor:      { eyebrow: '',            title: 'AI Advisor' },
+  settings:     { eyebrow: '',            title: 'Settings' },
 }
 
-/** "Thursday, 27 August" — the Overview eyebrow is the date, not the section
- *  name, since the title beside it is already a greeting. */
+/** "Thursday, 27 August" — the Overview eyebrow is the date, since the title
+ *  beside it is already a greeting. */
 function todayLabel(): string {
   return new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 }
+
+/** Shared with Overview's month picker; kept in sync with the URL. */
+const OVERVIEW_MONTH_KEY = 'ledger:overview-month-v2'
 
 function getScreenFromHash(): ScreenType {
   const hash = window.location.hash.replace('#', '') as ScreenType
@@ -93,6 +101,12 @@ function getScreenFromHash(): ScreenType {
 function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenType>(getScreenFromHash)
   const [railOpen, setRailOpen] = useState(false)
+  // Month lives here rather than in Overview so the picker can sit in the
+  // header cluster with Sync and the avatar, where the design puts it.
+  const monthOptions = getMonthOptions(6)
+  const [selectedMonth, setSelectedMonth] = useState<string>(() =>
+    resolveSelectedMonth(OVERVIEW_MONTH_KEY, getMonthOptions(6)),
+  )
   const [auth, setAuth] = useState<AuthState>('loading')
   const [userName, setUserName] = useState('')
   const [setupNeeded, setSetupNeeded] = useState<boolean | null>(null)
@@ -149,6 +163,12 @@ function App() {
     window.location.hash = screen
   }
 
+  const selectMonth = (month: string) => {
+    setSelectedMonth(month)
+    storeMonth(OVERVIEW_MONTH_KEY, month)
+    setMonthInUrl(month)
+  }
+
   const signOut = () => {
     clearToken()
     setAuth('unauthenticated')
@@ -198,7 +218,7 @@ function App() {
   const renderScreen = () => {
     switch (activeScreen) {
       case 'overview':
-        return <Overview onNavigate={navigate} />
+        return <Overview onNavigate={navigate} month={selectedMonth} />
       case 'transactions':
         return <Transactions />
       case 'spending':
@@ -246,10 +266,28 @@ function App() {
           className="relative z-10 h-full flex flex-col min-w-0"
           style={{
             marginLeft: railOpen ? 234 : 86,
-            transition: 'margin-left .28s cubic-bezier(.22,.8,.2,1)',
+            transition: `margin-left ${RAIL_TRANSITION}`,
           }}
         >
-          <Header eyebrow={header.eyebrow} title={header.title} name={userName} />
+          <Header
+            eyebrow={header.eyebrow}
+            title={header.title}
+            name={userName}
+            controls={activeScreen === 'overview' ? (
+              <label className="glass-control flex items-center gap-2 h-[34px] pl-[13px] pr-[9px] text-[12.5px] font-medium cursor-pointer">
+                <span className="sr-only">Month</span>
+                <select
+                  value={selectedMonth}
+                  onChange={e => selectMonth(e.target.value)}
+                  className="bg-transparent border-none outline-none cursor-pointer text-white"
+                >
+                  {monthOptions.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : undefined}
+          />
 
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden soft-scrollbar mt-[14px] pl-[2px] pr-1 pb-5">
             {renderScreen()}

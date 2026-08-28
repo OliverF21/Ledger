@@ -315,6 +315,45 @@ code {
 .row-hover:hover { background: rgba(255,255,255,0.09); }
 .row-hover-soft:hover { background: rgba(255,255,255,0.06); }
 
+/* ── Range sliders ────────────────────────────────────────────────────────
+   The filled portion of the track is painted by an inline linear-gradient on
+   the input itself (see rangeTrackStyle), so the fill follows the value
+   without a second stacked element to keep in sync. */
+
+.ledger-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+}
+
+.ledger-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.15);
+  cursor: pointer;
+}
+
+.ledger-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  cursor: pointer;
+}
+
+.ledger-range::-moz-range-track { background: transparent; }
+
+.ledger-range:focus-visible { box-shadow: 0 0 0 2px rgba(130,169,242,0.55); }
+
 /* ── Form controls on glass ───────────────────────────────────────────── */
 
 select.glass-chip,

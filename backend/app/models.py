@@ -293,6 +293,11 @@ class Security(Base):
     close_price_as_of = Column(Date, nullable=True)
     iso_currency_code = Column(String(3), nullable=True)
     is_cash_equivalent = Column(Boolean, default=False)
+    # GICS-style sector ("Technology", "Financial Services", ...) backfilled
+    # from the market-data provider — Plaid doesn't supply one. Nullable and
+    # lazily populated; the optimizer groups anything still NULL under
+    # "Unclassified" rather than blocking on it.
+    sector = Column(String(64), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships

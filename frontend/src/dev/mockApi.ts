@@ -143,6 +143,50 @@ const TOTAL_ASSETS = 250330.87
 const TOTAL_LIABILITIES = 1420.45
 const NET_WORTH = TOTAL_ASSETS - TOTAL_LIABILITIES
 
+const SP500_SECTORS: Record<string, number> = {
+  Technology: 32, 'Financial Services': 14, Healthcare: 10, 'Consumer Cyclical': 10,
+  'Communication Services': 9, Industrials: 8, 'Consumer Defensive': 6, Energy: 4,
+}
+
+/**
+ * Frontier + reference cloud for the optimizer panel. Shapes a plausible
+ * concave frontier and a Dirichlet-ish cloud beneath it so the panel can be
+ * reviewed without scipy — the real numbers come from
+ * backend/app/services/optimization_service.py.
+ */
+function optimizerExtras() {
+  const frontier = Array.from({ length: 40 }, (_, i) => {
+    const t = i / 39
+    const vol = 6 + t * 16
+    return { volatility_pct: Math.round(vol * 100) / 100, return_pct: Math.round((5 + 17 * Math.sqrt(t) + t * 2) * 100) / 100, sharpe: null }
+  })
+  const scatter = Array.from({ length: 600 }, (_, i) => {
+    const t = noise(i * 1.7)
+    const vol = 5 + t * 20
+    const ceiling = 5 + 17 * Math.sqrt((vol - 6) / 16 > 0 ? (vol - 6) / 16 : 0) + 2
+    return {
+      volatility_pct: Math.round(vol * 100) / 100,
+      return_pct: Math.round((ceiling - noise(i * 3.1) * 12) * 100) / 100,
+      sharpe: null,
+    }
+  })
+  return {
+    frontier,
+    scatter,
+    current_point: { volatility_pct: 14.24, return_pct: 12.4, sharpe: 0.94 },
+    max_sharpe_point: { volatility_pct: 12.86, return_pct: 15.1, sharpe: 1.21 },
+    max_utility_point: { volatility_pct: 17.4, return_pct: 18.2, sharpe: 1.08 },
+    sectors: [
+      { name: 'Technology', current_weight_pct: 17.1, sp_reference_pct: 32 },
+      { name: 'Financial Services', current_weight_pct: 9.4, sp_reference_pct: 14 },
+      { name: 'Healthcare', current_weight_pct: 6.2, sp_reference_pct: 10 },
+      { name: 'Unclassified', current_weight_pct: 67.3, sp_reference_pct: null },
+    ],
+    ticker_sectors: { AAPL: 'Technology', NVDA: 'Technology', VTI: 'Unclassified', VOO: 'Unclassified', BND: 'Unclassified', SCHD: 'Unclassified' },
+    infeasible: false,
+  }
+}
+
 /** path (without query) → JSON body. Matched longest-prefix-first. */
 function routes(url: URL): unknown | undefined {
   const path = url.pathname
@@ -365,6 +409,7 @@ function routes(url: URL): unknown | undefined {
 
     case '/api/investments/risk/optimize':
       return {
+        ...optimizerExtras(),
         tickers: [
           { ticker: 'VTI', current_weight_pct: 46.7, suggested_weight_pct: 38.2 },
           { ticker: 'VOO', current_weight_pct: 21.6, suggested_weight_pct: 26.4 },
@@ -382,6 +427,9 @@ function routes(url: URL): unknown | undefined {
         data_points: 248,
         insufficient_data: false,
       }
+
+    case '/api/investments/risk/sector-reference':
+      return { weights: SP500_SECTORS }
 
     case '/api/crypto/wallets':
       return { wallets: [] }

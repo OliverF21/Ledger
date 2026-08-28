@@ -11,6 +11,7 @@
  * their weight.
  */
 import { useId, type CSSProperties } from 'react'
+import { mixHex } from '../../utils/color'
 
 /* ── Area line chart ──────────────────────────────────────────────────── */
 
@@ -138,25 +139,30 @@ export function Donut({
   children,
 }: {
   slices: DonutSlice[]
-  size?: number
   /** In the fixed 200×200 viewBox, not in px. */
   radius?: number
+  size?: number
   strokeWidth?: number
   activeIndex?: number | null
   onHover?: (index: number | null) => void
   /** Centre label. */
   children?: React.ReactNode
 }) {
+  const gradientId = useId()
   const circumference = 2 * Math.PI * radius
   const total = slices.reduce((sum, slice) => sum + Math.max(0, slice.value), 0)
 
   let cursor = 0
+  const boundaries: number[] = []
   const arcs = slices.map(slice => {
     const fraction = total > 0 ? Math.max(0, slice.value) / total : 0
-    // A hairline gap between arcs keeps adjacent same-family colours apart.
-    const dash = Math.max(0, fraction * circumference - 2)
+    // Arcs butt directly against each other and are separated by the hairline
+    // light stroke below — cutting a gap into the dash instead punches hard
+    // dark wedges through the ring.
+    const dash = fraction * circumference
     const offset = -cursor
     cursor += fraction * circumference
+    boundaries.push(cursor)
     return { slice, dash, offset }
   })
 
@@ -166,46 +172,88 @@ export function Donut({
 
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+      {/* Ambient glow. The falloff runs all the way to transparent well inside
+          each layer's box — stopping it short leaves a visible disc edge under
+          the ring, which is what a flat colour stop reads as. */}
       <div
         className="absolute rounded-full pointer-events-none transition-[background] duration-300"
         style={{
-          inset: size * 0.047,
-          filter: `blur(${Math.round(size * 0.1)}px)`,
-          background: `radial-gradient(circle, ${glowColor}57 0%, ${glowColor}33 30%, rgba(99,207,204,0.10) 56%, transparent 78%)`,
+          inset: -size * 0.06,
+          filter: `blur(${Math.round(size * 0.14)}px)`,
+          background:
+            `radial-gradient(circle, ${glowColor}3d 0%, ${glowColor}26 34%, rgba(99,207,204,0.07) 58%, transparent 82%)`,
         }}
       />
       <div
         className="absolute rounded-full pointer-events-none"
         style={{
-          inset: size * 0.225,
-          filter: `blur(${Math.round(size * 0.054)}px)`,
-          background: 'radial-gradient(circle, rgba(190,212,255,0.42) 0%, rgba(130,169,242,0.18) 44%, transparent 76%)',
+          inset: size * 0.24,
+          filter: `blur(${Math.round(size * 0.09)}px)`,
+          background:
+            'radial-gradient(circle, rgba(190,212,255,0.30) 0%, rgba(130,169,242,0.13) 46%, transparent 80%)',
         }}
       />
       <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full" style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx="100" cy="100" r={radius} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={strokeWidth} />
-        {arcs.map(({ slice, dash, offset }, i) => (
-          <circle
-            key={slice.key}
-            cx="100"
-            cy="100"
-            r={radius}
-            fill="none"
-            stroke={slice.color}
-            strokeWidth={activeIndex === i ? strokeWidth + 6 : strokeWidth}
-            strokeDasharray={`${dash.toFixed(2)} ${circumference.toFixed(2)}`}
-            strokeDashoffset={offset.toFixed(2)}
-            style={{
-              cursor: onHover ? 'pointer' : 'default',
-              transition: 'stroke-width .18s ease, filter .18s ease',
-              filter: activeIndex === i ? `drop-shadow(0 0 12px ${slice.color}b3)` : undefined,
-            }}
-            onMouseEnter={() => onHover?.(i)}
-            onMouseLeave={() => onHover?.(null)}
-          >
-            <title>{`${slice.label}: ${slice.value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}`}</title>
-          </circle>
-        ))}
+        <defs>
+          {/* Per-arc gradient with an off-centre focal point, so the ring reads
+              as one lit surface rather than a set of flat cut-out blocks. Same
+              recipe the Recharts pie used before the redesign. */}
+          {slices.map((slice, i) => (
+            <radialGradient
+              key={slice.key}
+              id={`${gradientId}-${i}`}
+              cx="42%" cy="42%" r="78%" fx="36%" fy="36%"
+            >
+              <stop offset="0%" stopColor={mixHex(slice.color, '#ffffff', 0.22)} stopOpacity={0.98} />
+              <stop offset="48%" stopColor={slice.color} stopOpacity={0.94} />
+              <stop offset="100%" stopColor={mixHex(slice.color, '#0a0c11', 0.12)} stopOpacity={0.88} />
+            </radialGradient>
+          ))}
+        </defs>
+        <circle cx="100" cy="100" r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={strokeWidth} />
+        <g style={{ filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.45))' }}>
+          {arcs.map(({ slice, dash, offset }, i) => (
+            <circle
+              key={slice.key}
+              cx="100"
+              cy="100"
+              r={radius}
+              fill="none"
+              stroke={`url(#${gradientId}-${i})`}
+              strokeWidth={activeIndex === i ? strokeWidth + 5 : strokeWidth}
+              strokeDasharray={`${dash.toFixed(2)} ${circumference.toFixed(2)}`}
+              strokeDashoffset={offset.toFixed(2)}
+              style={{
+                cursor: onHover ? 'pointer' : 'default',
+                transition: 'stroke-width .18s ease, filter .18s ease, opacity .18s ease',
+                opacity: activeIndex === null || activeIndex === i ? 1 : 0.55,
+                filter: activeIndex === i ? `drop-shadow(0 0 12px ${slice.color}b3)` : undefined,
+              }}
+              onMouseEnter={() => onHover?.(i)}
+              onMouseLeave={() => onHover?.(null)}
+            />
+          ))}
+          {/* Hairline seams at each boundary. The old pie got these free from
+              the Cell stroke; with stroke-arcs the ends aren't strokeable, so
+              they're drawn as radial ticks — enough to read the boundary,
+              nowhere near enough to cut the ring the way a gap does. */}
+          {slices.length > 1 && boundaries.map((angle, i) => {
+            const rad = (angle / circumference) * 2 * Math.PI
+            const inner = radius - strokeWidth / 2
+            const outer = radius + strokeWidth / 2
+            return (
+              <line
+                key={`seam-${i}`}
+                x1={100 + Math.cos(rad) * inner}
+                y1={100 + Math.sin(rad) * inner}
+                x2={100 + Math.cos(rad) * outer}
+                y2={100 + Math.sin(rad) * outer}
+                stroke="rgba(255,255,255,0.10)"
+                strokeWidth="0.8"
+              />
+            )
+          })}
+        </g>
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-6">
         {children}

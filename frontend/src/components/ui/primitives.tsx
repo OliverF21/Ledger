@@ -199,6 +199,55 @@ export function Switch({
   )
 }
 
+/** A labelled range input with the design's gradient-filled track. The fill is
+ *  painted onto the input itself rather than stacked behind it, so there's one
+ *  element and no chance of the two drifting apart mid-drag. */
+export function Slider({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  suffix = '%',
+  hint,
+  size = 'md',
+}: {
+  label: string
+  value: number
+  onChange: (next: number) => void
+  min?: number
+  max?: number
+  suffix?: string
+  hint?: ReactNode
+  size?: 'sm' | 'md'
+}) {
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
+  return (
+    <div>
+      <div className={`flex justify-between items-baseline gap-2 ${size === 'sm' ? 'text-[10.5px] mb-[5px]' : 'text-[12px] mb-2'}`}>
+        <span className={size === 'sm' ? 'text-white/50' : 'font-semibold'}>{label}</span>
+        <span className={size === 'sm' ? 'text-white/50 tabular-nums' : 'text-white/50 tabular-nums'}>
+          {hint}{value}{suffix}
+        </span>
+      </div>
+      <input
+        type="range"
+        className="ledger-range"
+        min={min}
+        max={max}
+        value={value}
+        aria-label={label}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{
+          background:
+            `linear-gradient(to right, #82a9f2 0%, #82a9f2 ${pct}%, ` +
+            `rgba(255,255,255,0.1) ${pct}%, rgba(255,255,255,0.1) 100%)`,
+        }}
+      />
+    </div>
+  )
+}
+
 /* ── Indicators ───────────────────────────────────────────────────────── */
 
 /** Signed percentage pill with a direction arrow — the badge beside a hero

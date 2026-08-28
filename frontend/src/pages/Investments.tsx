@@ -9,13 +9,13 @@ import {
   useInvestmentsRisk,
   useInvestmentsOptimization,
   type AllocationSlice,
-  type OptimizationSuggestion,
 } from '../hooks/useInvestments'
 import {
   Eyebrow, GlassCard, Chip, StatTile, ChangeBadge, Tag, SegmentedToggle, UnitToggle, Switch,
   EmptyState, LoadingRow, ProgressBar,
 } from '../components/ui/primitives'
 import { AreaLineChart, Donut, DonutLegend, type DonutSlice } from '../components/ui/charts'
+import OptimizerPanel from '../components/ui/OptimizerPanel'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -73,115 +73,6 @@ function buildSecurityAllocation(
     }))
 }
 
-/* ── Risk / return scatter ──────────────────────────────────────────────── */
-
-const RISK_CHART = { width: 600, height: 340, left: 58, right: 18, top: 18, bottom: 40 }
-
-/** Plots the current book against the optimizer's max-Sharpe suggestion on
- *  volatility (x) / expected return (y) axes — the two portfolios the backend
- *  actually computes. The efficient frontier itself isn't drawn: sweeping it
- *  needs a target-return optimization the API doesn't expose yet, and a curve
- *  interpolated between two points would be a drawing, not a result. */
-function RiskReturnChart({ optimization }: { optimization: OptimizationSuggestion }) {
-  const points = [
-    {
-      key: 'current',
-      label: 'Current portfolio',
-      color: '#e6bd79',
-      vol: optimization.current_volatility_pct,
-      ret: optimization.current_expected_return_pct,
-      sharpe: optimization.current_sharpe,
-    },
-    {
-      key: 'suggested',
-      label: 'Max Sharpe',
-      color: '#f4907f',
-      vol: optimization.suggested_volatility_pct,
-      ret: optimization.suggested_expected_return_pct,
-      sharpe: optimization.suggested_sharpe,
-    },
-  ].filter((p): p is typeof p & { vol: number; ret: number } => p.vol !== null && p.ret !== null)
-
-  if (points.length === 0) {
-    return <EmptyState title="Not enough price history" body="Risk/return coordinates need at least a few months of daily closes." />
-  }
-
-  // Pad the data range so markers never sit on an axis, and always include the
-  // origin side so the reader can judge absolute magnitude, not just spread.
-  const vols = points.map(p => p.vol)
-  const rets = points.map(p => p.ret)
-  const volMax = Math.max(...vols) * 1.35 || 1
-  const retMin = Math.min(0, ...rets) * 1.2
-  const retMax = Math.max(...rets) * 1.35 || 1
-
-  const { width, height, left, right, top, bottom } = RISK_CHART
-  const plotW = width - left - right
-  const plotH = height - top - bottom
-  const x = (vol: number) => left + (vol / volMax) * plotW
-  const y = (ret: number) => top + (1 - (ret - retMin) / (retMax - retMin)) * plotH
-
-  const yTicks = Array.from({ length: 5 }, (_, i) => retMin + ((retMax - retMin) * i) / 4)
-  const xTicks = Array.from({ length: 5 }, (_, i) => (volMax * i) / 4)
-
-  // With two markers this close together, a label above each would collide —
-  // so the higher-return point labels above and the other below.
-  const higherReturn = points.reduce((a, b) => (b.ret > a.ret ? b : a), points[0])
-
-  return (
-    // Capped at the viewBox's own 600×340 so the SVG renders 1:1 — scaling it
-    // up to card width would scale the axis type with it.
-    <div className="relative mt-2 h-[340px] w-full max-w-[600px]">
-      <div
-        className="absolute left-[15%] top-[30%] w-[320px] h-[260px] pointer-events-none rounded-full"
-        style={{ filter: 'blur(60px)', background: 'radial-gradient(circle, rgba(130,169,242,0.28), transparent 70%)' }}
-      />
-      <svg viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }}>
-        {yTicks.map(tick => (
-          <g key={`y${tick}`}>
-            <line x1={left} y1={y(tick)} x2={width - right} y2={y(tick)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-            <text x={left - 10} y={y(tick) + 4} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.36)">
-              {tick.toFixed(0)}%
-            </text>
-          </g>
-        ))}
-        {xTicks.map(tick => (
-          <text key={`x${tick}`} x={x(tick)} y={height - bottom + 20} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.36)">
-            {tick.toFixed(0)}%
-          </text>
-        ))}
-        <text x={left - 10} y={top - 6} textAnchor="end" fontSize="9.5" fill="rgba(255,255,255,0.3)" letterSpacing="0.12em">
-          RETURN
-        </text>
-        <text x={width - right} y={height - bottom + 36} textAnchor="end" fontSize="9.5" fill="rgba(255,255,255,0.3)" letterSpacing="0.12em">
-          VOLATILITY
-        </text>
-
-        {points.map(point => (
-          <g key={point.key}>
-            <circle cx={x(point.vol)} cy={y(point.ret)} r="13" fill={point.color} opacity="0.28" style={{ filter: 'blur(3px)' }} />
-            <circle cx={x(point.vol)} cy={y(point.ret)} r="5.5" fill={point.color} stroke="rgba(255,255,255,0.7)" strokeWidth="1.5">
-              <title>
-                {`${point.label} — ${point.ret.toFixed(1)}% return at ${point.vol.toFixed(1)}% volatility`}
-              </title>
-            </circle>
-            <text
-              x={x(point.vol)}
-              y={y(point.ret) + (point.key === higherReturn.key ? -16 : 26)}
-              textAnchor="middle"
-              fontSize="11"
-              fontWeight="600"
-              fill="rgba(255,255,255,0.82)"
-            >
-              {point.label}
-              {point.sharpe !== null ? ` · ${point.sharpe.toFixed(2)}` : ''}
-            </text>
-          </g>
-        ))}
-      </svg>
-    </div>
-  )
-}
-
 /* ── Screen ─────────────────────────────────────────────────────────────── */
 
 export default function Investments() {
@@ -227,6 +118,11 @@ export default function Investments() {
 
   const visibleTransactions = activityExpanded ? transactions : transactions.slice(0, 4)
 
+  // The GET summary carries no sectors (classifying them costs a provider call
+  // per ticker), so the panel starts with none and fills them in from its own
+  // first run.
+  const optimizerSectors = optimization?.sectors ?? []
+
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
@@ -265,7 +161,8 @@ export default function Investments() {
             <div className="min-w-0">
               <Eyebrow className="!text-white/40">Portfolio value</Eyebrow>
               <div
-                className="mt-2 text-[44px] leading-[0.95] font-bold tracking-[-0.04em] tabular-nums"
+                /* See Overview's hero: tabular-nums pads the thousands comma. */
+                className="mt-2 text-[44px] leading-[0.95] font-bold tracking-[-0.04em]"
                 style={{ textShadow: '0 0 40px rgba(200,220,255,0.28)' }}
               >
                 ${fmt(currentValue)}
@@ -274,7 +171,7 @@ export default function Investments() {
                 {hasHistory && history!.change_amount !== 0 && (
                   <>
                     <ChangeBadge positive={growthUp}>{Math.abs(history!.change_pct).toFixed(1)}%</ChangeBadge>
-                    <span className="text-[12px] font-semibold tabular-nums" style={{ color: changeToneColor }}>
+                    <span className="text-[12px] font-semibold" style={{ color: changeToneColor }}>
                       {growthUp ? '+' : '−'}${fmt(Math.abs(history!.change_amount))}
                     </span>
                   </>
@@ -503,38 +400,12 @@ export default function Investments() {
         </GlassCard>
       )}
 
-      {/* ── Advanced: risk/return positioning ──────────────────────────── */}
+      {/* ── Advanced optimization ──────────────────────────────────────── */}
       {advancedOpen && (
-        <GlassCard className="px-6 py-5">
-          <div className="text-[15px] font-bold tracking-[-0.02em]">Risk vs. return</div>
-          <div className="text-[12px] text-white/50 mt-2 max-w-[640px] leading-relaxed">
-            Where your current book sits against the max-Sharpe allocation the optimizer suggests, on annualised
-            volatility and expected return from the trailing year of daily closes. Up and to the left is better.
-          </div>
-
-          <div className="flex items-center gap-[22px] mt-4">
-            <div className="flex items-center gap-[7px] text-[12px] font-semibold text-white/60">
-              <span className="w-[9px] h-[9px] rounded-full bg-ledger-warning border-[1.5px] border-white/70 inline-block" />
-              Current portfolio
-            </div>
-            <div className="flex items-center gap-[7px] text-[12px] font-semibold text-white/60">
-              <span className="w-[9px] h-[9px] rounded-full bg-ledger-negative border-[1.5px] border-white/70 inline-block" />
-              Max Sharpe
-            </div>
-          </div>
-
-          {optimizationLoading ? (
-            <LoadingRow className="h-[340px]" />
-          ) : !optimization || optimization.insufficient_data ? (
-            <EmptyState
-              className="h-[340px]"
-              title="Not enough price history"
-              body="The optimizer needs at least 30 days of daily closes across two or more priced holdings."
-            />
-          ) : (
-            <RiskReturnChart optimization={optimization} />
-          )}
-        </GlassCard>
+        <OptimizerPanel
+          sectors={optimizerSectors}
+          tickers={optimization?.tickers.map(t => t.ticker) ?? []}
+        />
       )}
 
       {/* ── Suggested allocation ───────────────────────────────────────── */}
