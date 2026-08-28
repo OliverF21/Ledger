@@ -28,7 +28,7 @@ export const site = {
     transactions: "/product/transactions.png",
     investments: "/product/investments.png",
     advisor: "/product/advisor.png",
-    macbook: "/product/macbook.png",
+    deck: "/product/macbook-deck.png",
   },
 
   hero: {

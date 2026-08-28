@@ -53,7 +53,7 @@
   --z-nav: 40;
   --z-overlay: 50;
 
-  /* Screen slot inside public/product/macbook.png (1536x1024). */
+  /* Unused by the WebGL MacBook; kept so a still of the device can replace the model later. */
   --mb-screen-left: 13.802%;
   --mb-screen-top: 10.742%;
   --mb-screen-width: 71.745%;
@@ -210,53 +210,25 @@ body {
 }
 
 .walk-laptop {
-  will-change: transform;
+  pointer-events: none;
 }
 
 .walk-caption {
   opacity: 0;
 }
 
-.macbook-photo {
+.macbook-3d,
+.macbook-3d-fallback {
   position: relative;
   width: 100%;
-  isolation: isolate;
-  filter: drop-shadow(0 38px 72px rgba(0, 0, 0, 0.58));
+  aspect-ratio: 16 / 11;
+  min-height: 16rem;
 }
 
-.macbook-photo-body {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.macbook-photo-screen {
-  position: absolute;
-  left: var(--mb-screen-left);
-  top: var(--mb-screen-top);
-  width: var(--mb-screen-width);
-  height: var(--mb-screen-height);
-  overflow: hidden;
-  border-radius: 7px 7px 5px 5px;
-  background: #050608;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
-}
-
-.macbook-photo-glass {
-  pointer-events: none;
-  position: absolute;
-  left: var(--mb-screen-left);
-  top: var(--mb-screen-top);
-  width: var(--mb-screen-width);
-  height: var(--mb-screen-height);
-  border-radius: 7px 7px 5px 5px;
-  background: linear-gradient(
-    118deg,
-    rgba(255, 255, 255, 0.11) 0%,
-    transparent 34%,
-    transparent 64%,
-    rgba(255, 255, 255, 0.04) 100%
-  );
+.macbook-3d-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  background: transparent;
 }
 
 @media (max-width: 1023px) {

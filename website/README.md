@@ -38,14 +38,14 @@ Drop replacement captures into [`public/product/`](public/product/). Keep the fi
 
 | File | Used as |
 | --- | --- |
-| `macbook.png` | Photoreal MacBook frame. Screen slot is `--mb-screen-*` in `src/design/tokens.css` |
 | `overview.png` | First MacBook screen, Open Graph |
 | `transactions.png` | Transactions walk screen |
 | `budgets.png` | Budgets walk screen |
 | `investments.png` | Risk and optimization walk screen |
 | `advisor.png` | MCP / Advisor walk screen |
+| `macbook-deck.png` | Keyboard / trackpad texture on the 3D MacBook |
 
-To play a product video in the MacBook later, drop `walk.mp4` here and set `site.features.video` to `/product/walk.mp4`. Until then the screen crossfades the stills as you scroll.
+To play a product video in the MacBook later, drop `walk.mp4` here and set `site.features.video` to `/product/walk.mp4`. Until then the 3D display crossfades the stills as you scroll.
 
 See [`public/product/README.md`](public/product/README.md) for sizes.
 

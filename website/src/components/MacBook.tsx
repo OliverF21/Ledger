@@ -1,27 +1,24 @@
-import type { ReactNode } from "react";
-import Image from "next/image";
-import { site } from "@/content/site";
+"use client";
+
+import dynamic from "next/dynamic";
+import type { MutableRefObject } from "react";
+
+const MacBookCanvas = dynamic(
+  () => import("./MacBookCanvas").then((mod) => mod.MacBookCanvas),
+  { ssr: false, loading: () => <div className="macbook-3d-fallback" aria-hidden="true" /> },
+);
 
 type MacBookProps = {
-  children: ReactNode;
+  active: number;
+  progressRef: MutableRefObject<number>;
+  freeze?: boolean;
   className?: string;
 };
 
-export function MacBook({ children, className }: MacBookProps) {
+export function MacBook({ active, progressRef, freeze = false, className }: MacBookProps) {
   return (
-    <div className={`macbook-photo ${className ?? ""}`}>
-      <Image
-        src={site.shots.macbook}
-        alt=""
-        width={1536}
-        height={1024}
-        quality={92}
-        priority
-        sizes="(min-width: 1024px) 58vw, 94vw"
-        className="macbook-photo-body"
-      />
-      <div className="macbook-photo-screen">{children}</div>
-      <span className="macbook-photo-glass" aria-hidden="true" />
+    <div className={`macbook-3d ${className ?? ""}`}>
+      <MacBookCanvas active={active} progressRef={progressRef} freeze={freeze} />
     </div>
   );
 }

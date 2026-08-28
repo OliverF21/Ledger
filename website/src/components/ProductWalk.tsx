@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useReducedMotion } from "motion/react";
@@ -28,24 +27,20 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
   const copyRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
   const laptopRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef(0);
   const [active, setActive] = useState(0);
+  const freeze = reduce === true;
 
   useEffect(() => {
-    if (reduce || !sectionRef.current || !laptopRef.current) return;
+    if (freeze || !sectionRef.current) return;
 
     const ctx = gsap.context(() => {
       const section = sectionRef.current!;
-      const laptop = laptopRef.current!;
       const copy = copyRef.current;
       const caption = captionRef.current;
       const mm = gsap.matchMedia();
 
       mm.add("(min-width: 1024px)", () => {
-        gsap.set(laptop, {
-          xPercent: 8,
-          yPercent: 4,
-          scale: 1.03,
-        });
         gsap.set(caption, { opacity: 0, y: 18 });
 
         const tl = gsap.timeline({
@@ -55,23 +50,13 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             end: "bottom bottom",
             scrub: 1,
             onUpdate: (self) => {
+              progressRef.current = self.progress;
               const next = sceneIndex(self.progress);
               setActive((i) => (i === next ? i : next));
             },
           },
         });
 
-        tl.to(
-          laptop,
-          {
-            xPercent: 6,
-            yPercent: 1,
-            scale: 1,
-            ease: "none",
-            duration: COPY_END,
-          },
-          0,
-        );
         if (copy) {
           tl.to(
             copy,
@@ -96,8 +81,6 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
       });
 
       mm.add("(max-width: 1023px)", () => {
-        gsap.set(laptop, { xPercent: 0, yPercent: 0, scale: 1 });
-
         const tl = gsap.timeline({
           scrollTrigger: {
             trigger: section,
@@ -105,6 +88,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             end: "bottom bottom",
             scrub: 1,
             onUpdate: (self) => {
+              progressRef.current = self.progress;
               const next = Math.min(
                 scenes.length - 1,
                 Math.floor(self.progress * scenes.length),
@@ -134,7 +118,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
     }, stageRef);
 
     return () => ctx.revert();
-  }, [reduce]);
+  }, [freeze]);
 
   const scene = scenes[active];
   const scrollVh = reduce ? undefined : 100 + scenes.length * 85;
@@ -195,44 +179,13 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
 
           <div
             ref={laptopRef}
-            className="walk-laptop relative z-20 w-full origin-[80%_40%]"
+            className="walk-laptop relative z-20 w-full"
           >
-            <MacBook>
-              <div className="relative h-full w-full bg-[var(--canvas)]">
-                {site.features.video ? (
-                  <video
-                    className="absolute inset-0 h-full w-full object-cover"
-                    muted
-                    playsInline
-                    preload="metadata"
-                    poster={site.shots.overview}
-                    src={site.features.video}
-                  />
-                ) : (
-                  scenes.map((item, i) => (
-                    <div
-                      key={item.key}
-                      className="absolute inset-0"
-                      style={{
-                        opacity: i === active ? 1 : 0,
-                        transition: reduce
-                          ? "none"
-                          : "opacity 0.45s var(--ease-out)",
-                      }}
-                    >
-                      <Image
-                        src={site.shots[item.shot]}
-                        alt={i === active ? item.title : ""}
-                        fill
-                        priority={i === 0}
-                        sizes="(min-width: 1024px) 48vw, 78vw"
-                        className="object-cover object-left-top"
-                      />
-                    </div>
-                  ))
-                )}
-              </div>
-            </MacBook>
+            <MacBook
+              active={active}
+              progressRef={progressRef}
+              freeze={freeze}
+            />
           </div>
 
           {!reduce && (
