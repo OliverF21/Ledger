@@ -31,15 +31,15 @@ def test_load_migrates_and_strips_config_json(tmp_path, monkeypatch):
     assert cfg["other"] == "keep"
 
 
-def test_persist_keeps_file_when_strip_disabled(tmp_path, monkeypatch):
-    """Unsigned macOS: keychain write succeeds but the file copy is retained."""
+def test_persist_keeps_file_when_not_safe_to_strip(tmp_path, monkeypatch):
+    """If the keychain cannot be made update-stable, keep the file recovery copy."""
     monkeypatch.setenv("LEDGER_APPDATA", str(tmp_path))
     from importlib import reload
     from app import paths, key_store
 
     reload(paths)
     key_store.use_memory_backend()
-    monkeypatch.setattr(key_store, "_should_strip_file", lambda: False)
+    monkeypatch.setattr(key_store, "_safe_to_drop_file_copy", lambda: False)
     key_store.persist("secret-key")
     assert key_store.get_os_key() == "secret-key"
     cfg = json.loads((tmp_path / "config.json").read_text())
@@ -84,3 +84,23 @@ def test_get_os_key_falls_back_to_legacy_account(tmp_path, monkeypatch):
     key_store._memory[(key_store.SERVICE, legacy)] = "legacy-key"
     assert key_store._primary_account() == "encryption-key"
     assert key_store.get_os_key() == "legacy-key"
+
+
+def test_unsigned_mac_drops_file_only_after_open_acl(monkeypatch, tmp_path):
+    monkeypatch.setenv("LEDGER_APPDATA", str(tmp_path))
+    from importlib import reload
+    from app import paths, key_store
+
+    reload(paths)
+    key_store._use_memory = False
+    key_store._signed_cache = None
+    key_store._last_write_used_open_acl = False
+    monkeypatch.setattr(key_store.sys, "platform", "darwin")
+    monkeypatch.setattr(key_store, "_macos_has_stable_signature", lambda: False)
+    monkeypatch.setattr(key_store, "_darwin_ensure_open_acl", lambda *args, **kwargs: False)
+    assert key_store._safe_to_drop_file_copy() is False
+    monkeypatch.setattr(key_store, "_darwin_ensure_open_acl", lambda *args, **kwargs: True)
+    assert key_store._safe_to_drop_file_copy() is True
+    key_store._last_write_used_open_acl = True
+    monkeypatch.setattr(key_store, "_darwin_ensure_open_acl", lambda *args, **kwargs: False)
+    assert key_store._safe_to_drop_file_copy() is True
