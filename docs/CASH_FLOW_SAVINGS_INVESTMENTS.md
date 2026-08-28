@@ -344,7 +344,8 @@ Likely touch points:
 
 | Concept | Today | Target |
 | --- | --- | --- |
-| Savings node | Residual `income − spend` | Explicit savings transfers (+ optional residual/unallocated) |
-| Investments on Cash Flow | Absent | Explicit funding transfers as their own sink |
-| Transfers | Excluded (good) but undifferentiated | Still excluded from spend/income; classified into savings / investments / internal |
+| Savings node | Residual `income − spend` | Unlabeled savings transfers; leftover is Unallocated |
+| Named goal sinks | Absent | Labeled transfers (Vacation, Emergency, …) as their own Cash Flow nodes |
+| Investments on Cash Flow | Absent | Unlabeled funding transfers as Investments; labeled invest goals as named sinks |
+| Transfers | Excluded (good) but undifferentiated | Still excluded from spend/income; classified into savings / investments / internal / labeled goal |
 | Brokerage activity | Investments tab only | Still Investments tab; Cash Flow only sees cash funding/withdrawals |
