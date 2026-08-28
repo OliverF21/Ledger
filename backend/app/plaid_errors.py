@@ -52,7 +52,7 @@ def raise_for_plaid_response(response: requests.Response, context: str) -> None:
         return
     code, message = extract_plaid_error(response)
     if code:
-        raise ValueError(f"{context}: {code} — {message}")
+        raise ValueError(f"{context}: {code}. {message}")
     response.raise_for_status()
 
 

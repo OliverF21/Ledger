@@ -2,7 +2,7 @@
 
 This document describes the threat model, security practices, and hardening guidelines for Ledger, a self-hosted personal finance dashboard.
 
-> Ledger is provided "as is", without warranty, and is self-hosted — you operate and
+> Ledger is provided "as is", without warranty, and is self-hosted: you operate and
 > secure your own instance. See [DISCLAIMER.md](DISCLAIMER.md) and [TERMS.md](TERMS.md).
 
 ---
@@ -10,10 +10,10 @@ This document describes the threat model, security practices, and hardening guid
 ## Threat Model
 
 ### Assets to Protect
-1. **Plaid Access Tokens** — grant read-only access to linked bank accounts
-2. **Financial Transaction Data** — sensitive spending patterns and merchant information
-3. **User Session** — authentication to the Ledger web UI
-4. **Database** — contains encrypted tokens and transaction history
+1. **Plaid Access Tokens**: grant read-only access to linked bank accounts
+2. **Financial Transaction Data**: sensitive spending patterns and merchant information
+3. **User Session**: authentication to the Ledger web UI
+4. **Database**: contains encrypted tokens and transaction history
 
 ### Threat Scenarios
 
@@ -60,16 +60,16 @@ This document describes the threat model, security practices, and hardening guid
 **All sensitive values must be loaded from environment variables or `.env` files, never hardcoded.**
 
 **Required Secrets**:
-- `PLAID_CLIENT_ID` — Plaid client ID
-- `PLAID_SANDBOX_SECRET` / `PLAID_PROD_SECRET` — Plaid secret, selected by `PLAID_ENV`
-- `ENCRYPTION_KEY` — Fernet key for token encryption (also derives the session-token signing key unless `AUTH_TOKEN_KEY` is set)
-- `DATABASE_URL` — Database connection string (includes password)
+- `PLAID_CLIENT_ID`: Plaid client ID
+- `PLAID_SANDBOX_SECRET` / `PLAID_PROD_SECRET`: Plaid secret, selected by `PLAID_ENV`
+- `ENCRYPTION_KEY`: Fernet key for token encryption (also derives the session-token signing key unless `AUTH_TOKEN_KEY` is set)
+- `DATABASE_URL`: Database connection string (includes password)
 
 **Authentication**: a username/password account is created on first run (single-user, stored as a scrypt hash on the id=1 row). Login issues a Fernet-signed session token sent as `Authorization: Bearer` and held in `localStorage`; tokens expire after `SESSION_TTL_DAYS` (default 30). No credential is baked into the frontend bundle.
 
 **Optional secrets**:
-- `API_KEY` — legacy/automation credential accepted via the `X-API-Key` header. Leave unset to disable that path.
-- `AUTH_TOKEN_KEY` — sign sessions with an independent key so `ENCRYPTION_KEY` can rotate without logging everyone out.
+- `API_KEY`: legacy/automation credential accepted via the `X-API-Key` header. Leave unset to disable that path.
+- `AUTH_TOKEN_KEY`: sign sessions with an independent key so `ENCRYPTION_KEY` can rotate without logging everyone out.
 
 **Best Practices**:
 - Use `.env.example` to document required variables with placeholder values
@@ -116,7 +116,7 @@ This document describes the threat model, security practices, and hardening guid
 - Tokens expire after `SESSION_TTL_DAYS` (default 30); expired tokens return
   401 and the UI redirects to login
 - No credential is baked into the frontend bundle (unlike legacy `API_KEY` flows)
-- **XSS risk**: a script injection could read `localStorage` — keep dependencies
+- **XSS risk**: a script injection could read `localStorage`. Keep dependencies
   updated and do not expose the app to untrusted networks
 
 **HTTPS in Production**:
@@ -127,7 +127,7 @@ This document describes the threat model, security practices, and hardening guid
 **CORS Configuration**:
 - Frontend and backend may be on different domains in production
 - The `CORS_ORIGINS` env var (comma-separated) adds extra allowed origins on
-  top of the localhost dev defaults in `backend/main.py` — set it to your
+  top of the localhost dev defaults in `backend/main.py`. Set it to your
   production domain(s), never a wildcard
 - The desktop app and single-port setups (backend serving the built frontend)
   are same-origin, so `CORS_ORIGINS` usually isn't needed at all
@@ -136,7 +136,7 @@ This document describes the threat model, security practices, and hardening guid
 
 **Access Control** (Self-Hosted on Your Network):
 - Ledger is **single-user and intended for personal use**
-- **Never expose to the public internet** — it contains all your financial data
+- **Never expose to the public internet.** It contains all your financial data
 - Run behind a firewall or VPN if accessed remotely
 - Consider basic authentication or IP whitelisting for remote access
 

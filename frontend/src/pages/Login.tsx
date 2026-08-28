@@ -473,8 +473,8 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
 
                 {!resetOptions?.email_available && (
                   <div className="text-[11.5px] text-ledger-text-faintest text-center mt-[2px] leading-[1.5]">
-                    No recovery code? There's no email-based recovery configured for this app —
-                    the only fallback is wiping the app's local data and starting over
+                    No recovery code? There's no email-based recovery configured for this app.
+                    The only fallback is wiping the app's local data and starting over
                     (delete <code className="font-mono">~/Library/Application Support/Ledger</code> on
                     macOS, or <code className="font-mono">%APPDATA%\Ledger</code> on Windows, then
                     relaunch). This permanently deletes all local transactions and settings.
@@ -488,8 +488,8 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
               <div className="w-full flex flex-col gap-[14px]">
                 <div className="text-[12.5px] text-ledger-text-secondary leading-[1.5]">
                   This is the <span className="text-ledger-text-primary font-semibold">only</span> way
-                  to reset your password without wiping your data. Save it somewhere safe —
-                  it won't be shown again.
+                  to reset your password without wiping your data. Save it somewhere safe.
+                  It won't be shown again.
                 </div>
                 <div className="flex items-center gap-[8px]">
                   <code className="glass-chip rounded-[9px] px-[14px] py-[12px] text-[16px] font-mono tracking-wide text-ledger-text-primary flex-1 text-center">
@@ -506,7 +506,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   onClick={continueFromReveal}
                   className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold transition-opacity"
                 >
-                  I've saved it — Continue
+                  I've saved it. Continue
                 </button>
               </div>
             )}

@@ -181,7 +181,7 @@ def create_wallet(
     try:
         sync_wallet(db, wallet)
     except AlchemyConfigError:
-        wallet.last_error = "Alchemy API key not set — add it in Settings → Crypto wallets"
+        wallet.last_error = "Alchemy API key not set. Add it in Settings → Crypto wallets"
         db.commit()
     except Exception as exc:
         # Wallet is still saved; last_error set by sync_wallet

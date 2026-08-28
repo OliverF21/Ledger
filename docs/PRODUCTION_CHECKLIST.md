@@ -13,7 +13,7 @@ self-hosted deployment. Work top to bottom.
 - [ ] In the [Plaid dashboard](https://dashboard.plaid.com/), request production
       access and complete Plaid's application review.
 - [ ] Enable the products you use: **Transactions**, **Auth**, and (optional)
-      **Investments** — see [PLAID_SETUP.md](PLAID_SETUP.md).
+      **Investments**. See [PLAID_SETUP.md](PLAID_SETUP.md).
 - [ ] Copy your **production** secret (separate from the Sandbox secret).
 
 ## 2. Switch Ledger to production
@@ -22,13 +22,13 @@ In `backend/.env` (or via the in-app setup wizard / Settings → Plaid):
 
 - [ ] Set `PLAID_ENV=production`.
 - [ ] Set `PLAID_PROD_SECRET` to your production secret (keep `PLAID_SANDBOX_SECRET`
-      for testing if you like — `PLAID_ENV` selects which is used).
+      for testing if you like. `PLAID_ENV` selects which is used).
 - [ ] Confirm `PLAID_CLIENT_ID` is set.
 
 ## 3. Secrets
 
 - [ ] `ENCRYPTION_KEY` is generated with `Fernet.generate_key()` and stored securely.
-      **Never change it after linking an account** — it decrypts your stored Plaid
+      **Never change it after linking an account.** It decrypts your stored Plaid
       tokens.
 - [ ] Keep `ENCRYPTION_KEY` **separate from your database backups**; together they
       unlock your bank connection.
@@ -50,7 +50,7 @@ In `backend/.env` (or via the in-app setup wizard / Settings → Plaid):
 - [ ] For remote access, use a private VPN (e.g. [Tailscale](https://tailscale.com/))
       rather than port-forwarding.
 - [ ] If served over a network, terminate **HTTPS** in front of it and set
-      `CORS_ORIGINS` to your exact origin(s) — never a wildcard.
+      `CORS_ORIGINS` to your exact origin(s), never a wildcard.
 - [ ] Consider a shorter `SESSION_TTL_DAYS` on shared machines.
 
 ## 6. Recovery

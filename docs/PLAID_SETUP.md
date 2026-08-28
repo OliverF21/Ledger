@@ -30,8 +30,8 @@ This guide walks you through setting up a Plaid account and configuring Ledger t
 
 ### ⚠️ Important
 
-- **Never share your `secret`** — it grants full API access to your account
-- **Never commit credentials to git** — use `.env` (gitignored)
+- **Never share your `secret`.** It grants full API access to your account
+- **Never commit credentials to git.** Use `.env` (gitignored)
 - Regenerate credentials if you suspect they're leaked
 
 ---
@@ -61,7 +61,7 @@ This guide walks you through setting up a Plaid account and configuring Ledger t
    ENCRYPTION_KEY=paste_generated_fernet_key_here
    ```
 
-   `API_KEY` is **optional** — only needed for curl/automation via `X-API-Key`.
+   `API_KEY` is **optional**, only needed for curl/automation via `X-API-Key`.
    Normal use relies on username/password login (no frontend `.env` required).
 
 5. Also set:
@@ -86,9 +86,9 @@ SYNC_INTERVAL_HOURS=6
 
 Ledger uses these Plaid products:
 
-1. **Transactions** — transaction history and balances
-2. **Auth** — account verification (recommended)
-3. **Investments** — brokerage holdings (required for the Investments tab; see Step 4b)
+1. **Transactions**: transaction history and balances
+2. **Auth**: account verification (recommended)
+3. **Investments**: brokerage holdings (required for the Investments tab; see Step 4b)
 
 To enable them:
 
@@ -121,27 +121,27 @@ the Investments product enabled in addition to Transactions/Auth:
 
 `plaid_service.py` requests `transactions` as the required product, with `investments` in
 `required_if_supported_products` (Robinhood gets holdings; banks like Capital One link
-without it). Do not put `investments` in the main `products` array — that blocks banks
+without it). Do not put `investments` in the main `products` array. That blocks banks
 that don't offer brokerage accounts.
 
-### OAuth banks (Chase, Robinhood, Capital One, …) — no setup required
+### OAuth banks (Chase, Robinhood, Capital One, …): no setup required
 
 Most major US banks (Chase, Bank of America, Wells Fargo, Capital One, Citi, Robinhood,
 SoFi, …) use **OAuth**: they send you to the bank's own site to log in, then redirect
 back. Ledger uses Plaid **Hosted Link** for this, so **you do not configure a redirect
-URI, and you do not need ngrok** — Plaid hosts the entire Link flow (including the OAuth
+URI, and you do not need ngrok**. Plaid hosts the entire Link flow (including the OAuth
 redirect) on its own HTTPS domain.
 
 What happens when you link or update a bank:
 
 1. Click **+ Link new account** (or **Update connection**) in Settings.
 2. A secure Plaid page opens in your **system browser**; log in / complete OAuth there.
-3. Ledger polls in the background and updates automatically when you finish — no
+3. Ledger polls in the background and updates automatically when you finish. No
    redirect back into the app is needed.
 
 Hosted Link requires no special Plaid Dashboard enablement and no `PLAID_REDIRECT_URI`.
 This is what lets the packaged desktop app (served at `http://127.0.0.1`) link OAuth
-banks at all — Plaid rejects non-HTTPS redirect URIs in production, so the old
+banks at all. Plaid rejects non-HTTPS redirect URIs in production, so the old
 in-webview redirect approach could never work there.
 
 ### Sandbox: custom user with brokerage holdings
@@ -151,9 +151,9 @@ holdings, create a **custom sandbox user** instead:
 
 1. Dashboard → **Developers → Sandbox** → create a custom user
 2. Give it an `investment` / `brokerage` account with real tickers (e.g. `AAPL`, `VOO`,
-   `BTC`) — see [plaid.com/docs/sandbox/user-custom](https://plaid.com/docs/sandbox/user-custom/)
+   `BTC`). See [plaid.com/docs/sandbox/user-custom](https://plaid.com/docs/sandbox/user-custom/)
 3. Robinhood exists as a sandbox institution but only supports the `brokerage` subtype
-   (not `variable annuity`) — pick `brokerage` when configuring the custom user
+   (not `variable annuity`). Pick `brokerage` when configuring the custom user
 
 ### Real Robinhood data (Trial plan)
 
@@ -162,17 +162,17 @@ Robinhood is a real institution on Plaid's network (OAuth-based Link flow), but 
 
 1. Apply for the free **Trial plan** at [dashboard.plaid.com/trial-plan](https://dashboard.plaid.com/trial-plan)
    (US/Canada, up to 10 Production Items; Investments + Investments Refresh included)
-2. Trial uses **Production** API keys — set `PLAID_ENV=production` and fill in
+2. Trial uses **Production** API keys. Set `PLAID_ENV=production` and fill in
    `PLAID_PROD_SECRET`
-3. **Robinhood uses OAuth**, but Ledger links it via Plaid **Hosted Link** — the OAuth
+3. **Robinhood uses OAuth**, but Ledger links it via Plaid **Hosted Link**. The OAuth
    flow opens in your system browser on Plaid's HTTPS domain, so **no redirect URI,
    ngrok, or HTTPS setup is required** (see "OAuth banks" above). Just click **+ Link
    new account** and finish in the browser tab that opens.
 4. If an account was linked *before* `investments` was added to the Link token's
    `products`, it must be **re-linked in Update Mode** (Plaid returns
-   `ADDITIONAL_CONSENT_REQUIRED`) — re-open Plaid Link for that item to grant consent
-6. Cost basis may come back `null` for some Robinhood positions — the Investments tab
-   shows "—" in the Gain column in that case rather than erroring
+   `ADDITIONAL_CONSENT_REQUIRED`). Re-open Plaid Link for that item to grant consent
+6. Cost basis may come back `null` for some Robinhood positions. The Investments tab
+   shows "-" in the Gain column in that case rather than erroring
 
 Orphan Items created by failed link attempts still count against your trial quota. Remove
 them in [Plaid Dashboard → Items](https://dashboard.plaid.com/activity/items) before
@@ -330,7 +330,7 @@ Once you're ready to use **real** bank accounts:
 
 - Go to http://localhost:8000/docs (API documentation)
 - Use `POST /api/plaid/sync` (authorize with Bearer token from login)
-- Wait 10–30 seconds for transactions to sync
+- Wait 10-30 seconds for transactions to sync
 - Refresh http://localhost:5173 to see transactions
 
 ### "Plaid Link is stuck or slow"
@@ -393,8 +393,8 @@ Once Plaid is set up:
 
 1. Start the app (`uvicorn` with the built frontend, or the desktop app)
 2. **Create your account** on first visit (username + password)
-3. **Settings → Connect account** — link a Sandbox institution
-4. **Sync now** — pull transactions and balances
+3. **Settings → Connect account**: link a Sandbox institution
+4. **Sync now**: pull transactions and balances
 5. Explore Overview, Transactions, Cash Flow, Budgets, Investments, Trends,
    Subscriptions, and Settings
 

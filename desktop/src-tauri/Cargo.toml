@@ -1,7 +1,7 @@
 [package]
 name = "ledger-desktop"
 version = "0.1.8"
-description = "Ledger — personal finance, on your computer"
+description = "Ledger: personal finance, on your computer"
 edition = "2021"
 rust-version = "1.77"
 

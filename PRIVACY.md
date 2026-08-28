@@ -20,7 +20,7 @@ releases.
 All of your data is stored in local database files on your own disk (the Plaid
 access tokens inside them are individually encrypted at rest):
 
-- **Desktop app:** the OS application-data directory —
+- **Desktop app:** the OS application-data directory:
 `~/Library/Application Support/Ledger/` (macOS) or `%APPDATA%\Ledger\` (Windows).
 - **Running from source:** `backend/ledger.db` and `backend/budgets.db`.
 
@@ -34,8 +34,8 @@ the features you use.
 | ----------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------- |
 | **Plaid**                                 | Linking a bank and every sync                               | Requests using *your* Plaid keys; Plaid returns your transactions/balances                     | Your Plaid account  |
 | **Your bank / brokerage**                 | Via Plaid, when linking/syncing                             | Handled by Plaid; Ledger never sees your bank login                                            | Yours               |
-| **GitHub**                                | Desktop app launch (update check) and downloads             | A version check and, if updating, the download request — exposes your IP to GitHub             | n/a                 |
-| **Google Fonts** (`fonts.googleapis.com`) | Loading the web UI                                          | A font request — exposes your IP to Google                                                     | n/a                 |
+| **GitHub**                                | Desktop app launch (update check) and downloads             | A version check and, if updating, the download request (exposes your IP to GitHub)             | n/a                 |
+| **Google Fonts** (`fonts.googleapis.com`) | Loading the web UI                                          | A font request (exposes your IP to Google)                                                     | n/a                 |
 | **Resend** (optional)                     | Only if you enable the weekly email or email password-reset | The email and *your* Resend API key                                                            | Your Resend account |
 | **Alert webhook** (optional)              | Only if you set `ALERT_WEBHOOK_URL`                         | Alert text to the Slack/Discord/ntfy URL you chose                                             | Yours               |
 | **Anthropic / Claude** (optional)         | Only if you use the AI Advisor via Claude Desktop           | Whatever your local Claude Desktop sends; the Ledger backend sends nothing to Anthropic itself | Your Claude account |
@@ -51,7 +51,7 @@ Because Ledger is self-hosted, **you are the operator and data controller of you
 instance.** If any data-protection law (such as the GDPR or CCPA) applies to your
 use, the responsibilities it imposes on a controller are yours, not the Ledger
 project's. Practically, that means securing your machine, your keys, and your
-backups — see the [Disclaimer](DISCLAIMER.md) and [SECURITY.md](SECURITY.md).
+backups. See the [Disclaimer](DISCLAIMER.md) and [SECURITY.md](SECURITY.md).
 
 ## Questions
 

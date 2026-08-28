@@ -304,7 +304,7 @@ def _bar(used_pct: float, elapsed_pct: float, color: str) -> str:
 def render_html(s: WeeklySummary) -> str:
     """Inline-styled HTML matching the live app's liquid-glass design tokens."""
     # %-d is not portable on Windows; build the range manually instead.
-    week_range = f"{s.week_start.strftime('%b')} {s.week_start.day} – {s.week_end.strftime('%b')} {s.week_end.day}"
+    week_range = f"{s.week_start.strftime('%b')} {s.week_start.day} - {s.week_end.strftime('%b')} {s.week_end.day}"
     greeting_line = f"Hi {s.name}, here's your week" if s.name else "Here's your week"
 
     wow = s.wow_change_pct
@@ -416,7 +416,7 @@ def render_html(s: WeeklySummary) -> str:
 
   <tr><td style="padding:20px 32px 28px;">
     <div style="font-size:11px;color:{_TEXT_FAINTEST};">
-      Trailing 7 days ({week_range}). Spending excludes transfers, credit-card payments, pending and hidden transactions —
+      Trailing 7 days ({week_range}). Spending excludes transfers, credit-card payments, pending and hidden transactions,
       matching the app. You're receiving this because a weekly summary is configured in Ledger.
     </div>
   </td></tr>
