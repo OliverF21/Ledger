@@ -514,7 +514,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
         {/* Spending by Category Donut */}
         <div
           ref={spendingChartRef}
-          className="glass-card p-4 min-w-0 h-full grid grid-cols-[200px_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 overflow-hidden"
+          className="glass-card p-4 min-w-0 h-full grid grid-cols-[200px_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-x-4 gap-y-2"
         >
           <div className="col-span-2 flex items-center justify-between gap-3">
             <div className="text-[13px] text-ledger-text-faint font-medium">Spending by Category</div>
