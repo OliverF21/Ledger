@@ -33,7 +33,7 @@ from app.services.investment_service import (
     account_gross_holdings,
     scaled_holding_market_value,
 )
-from app.services.optimization_service import _priceable_tickers
+from app.services.price_matrix_service import priceable_tickers
 from app.services.returns_service import TWRPoint, build_cagr, build_mwr_xirr, build_twr_series
 
 # Portfolio value is observable every day the sync runs regardless of which
@@ -364,7 +364,7 @@ def build_backtest_metrics(db: Session, account_ids: list[int]) -> _BacktestResu
     end = date.today()
     start = end - timedelta(days=BACKTEST_LOOKBACK_DAYS)
     all_tickers = sorted(value_by_ticker)
-    tickers = _priceable_tickers(db, all_tickers, start, end)
+    tickers = priceable_tickers(db, all_tickers, start, end)
     excluded_tickers = [t for t in all_tickers if t not in tickers]
 
     if not tickers:
