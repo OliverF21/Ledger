@@ -43,8 +43,8 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
       mm.add("(min-width: 1024px)", () => {
         gsap.set(laptop, {
           xPercent: 8,
-          yPercent: 5,
-          scale: 1.04,
+          yPercent: 4,
+          scale: 1.03,
         });
         gsap.set(caption, { opacity: 0, y: 18 });
 
@@ -80,7 +80,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
               y: -36,
               pointerEvents: "none",
               ease: "none",
-              duration: COPY_END * 0.85,
+              duration: COPY_END * 0.7,
             },
             0,
           );
@@ -88,10 +88,11 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
         if (caption) {
           tl.to(
             caption,
-            { opacity: 1, y: 0, ease: "none", duration: COPY_END * 0.5 },
-            COPY_END * 0.55,
+            { opacity: 1, y: 0, ease: "none", duration: COPY_END * 0.35 },
+            COPY_END * 0.45,
           );
         }
+        tl.to({}, { duration: 1 - COPY_END }, COPY_END);
       });
 
       mm.add("(max-width: 1023px)", () => {
@@ -128,6 +129,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             0,
           );
         }
+        tl.to({}, { duration: 0.82 }, 0.18);
       });
     }, stageRef);
 

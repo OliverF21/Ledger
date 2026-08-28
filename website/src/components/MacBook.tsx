@@ -15,6 +15,7 @@ export function MacBook({ children, className }: MacBookProps) {
         alt=""
         width={1536}
         height={1024}
+        quality={92}
         priority
         sizes="(min-width: 1024px) 58vw, 94vw"
         className="macbook-photo-body"
