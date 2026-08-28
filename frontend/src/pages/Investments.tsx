@@ -231,11 +231,11 @@ export default function Investments() {
           <div className="grid grid-cols-3 gap-2.5 mt-2 pt-3.5 border-t border-white/10">
             <div>
               <Eyebrow size="sm">Current</Eyebrow>
-              <div className="mt-1 text-[16px] font-bold tracking-[-0.02em] tabular-nums">${fmt(currentValue)}</div>
+              <div className="mt-1 text-[16px] font-bold tracking-[-0.02em]">${fmt(currentValue)}</div>
             </div>
             <div>
               <Eyebrow size="sm">Period change</Eyebrow>
-              <div className="mt-1 text-[16px] font-bold tracking-[-0.02em] tabular-nums" style={{ color: changeToneColor }}>
+              <div className="mt-1 text-[16px] font-bold tracking-[-0.02em]" style={{ color: changeToneColor }}>
                 {history ? `${growthUp ? '+' : '−'}$${fmt(Math.abs(history.change_amount))}` : '—'}
               </div>
             </div>
@@ -280,7 +280,7 @@ export default function Investments() {
                     <div className="text-[9px] uppercase tracking-[0.18em] font-semibold text-white/[0.38] max-w-[100px] truncate">
                       {allocationSlices[activeSlice].label}
                     </div>
-                    <div className="mt-1 text-[26px] font-bold tracking-[-0.04em] tabular-nums">
+                    <div className="mt-1 text-[26px] font-bold tracking-[-0.04em]">
                       {fmtWhole(allocationSlices[activeSlice].value)}
                     </div>
                     <div className="mt-[3px] text-[10px] font-medium text-white/[0.44]">
@@ -290,7 +290,7 @@ export default function Investments() {
                 ) : (
                   <>
                     <div className="text-[9px] uppercase tracking-[0.18em] font-semibold text-white/[0.38]">Portfolio</div>
-                    <div className="mt-1 text-[26px] font-bold tracking-[-0.04em] tabular-nums">
+                    <div className="mt-1 text-[26px] font-bold tracking-[-0.04em]">
                       {fmtWhole(summary?.total_value ?? 0)}
                     </div>
                     <div className="mt-[3px] text-[10px] font-medium text-white/[0.44]">Total value</div>
@@ -462,7 +462,7 @@ export default function Investments() {
                 {account.institution_name ?? 'Unknown institution'}{account.subtype ? ` · ${account.subtype}` : ''}
               </div>
             </div>
-            <div className="text-[15px] font-bold tabular-nums shrink-0">${fmt(account.total_value)}</div>
+            <div className="text-[15px] font-bold shrink-0">${fmt(account.total_value)}</div>
           </div>
 
           {account.positions.length === 0 ? (

@@ -89,7 +89,7 @@ export function StatTile({
       <div className="text-[9.5px] uppercase tracking-[0.14em] font-semibold text-ledger-text-faint truncate">
         {label}
       </div>
-      <div className={`mt-1 text-[15px] font-bold tabular-nums tracking-tight ${toneClass}`}>{value}</div>
+      <div className={`mt-1 text-[15px] font-bold tracking-tight ${toneClass}`}>{value}</div>
       {hint && <div className="mt-1 text-[10px] text-ledger-text-faint leading-snug">{hint}</div>}
     </Chip>
   )

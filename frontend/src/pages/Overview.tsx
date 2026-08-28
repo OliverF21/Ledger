@@ -170,7 +170,7 @@ function BreakdownColumn({
   return (
     <div className="min-w-0">
       <Eyebrow size="sm">{label}</Eyebrow>
-      <div className="mt-1.5 text-[15px] font-bold tracking-[-0.025em] tabular-nums">{total}</div>
+      <div className="mt-1.5 text-[15px] font-bold tracking-[-0.025em]">{total}</div>
       <div className="mt-2 flex flex-col gap-[3px]">
         {rows.length === 0 ? (
           <span className="text-[11px] text-ledger-text-faintest italic">None</span>
@@ -178,7 +178,7 @@ function BreakdownColumn({
           rows.map(row => (
             <div key={row.key} className="flex gap-2.5 text-[11px]">
               <span className="text-ledger-text-faint truncate" style={{ width: labelWidth }}>{row.name}</span>
-              <span className="text-white/80 font-medium tabular-nums whitespace-nowrap">{row.value}</span>
+              <span className="text-white/80 font-medium whitespace-nowrap">{row.value}</span>
             </div>
           ))
         )}
@@ -350,22 +350,22 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
           <Divider />
           <div>
             <Eyebrow size="sm">This month</Eyebrow>
-            <div className="mt-1.5 flex items-baseline gap-2.5 text-[15px] font-bold tracking-[-0.025em] tabular-nums">
+            <div className="mt-1.5 flex items-baseline gap-2.5 text-[15px] font-bold tracking-[-0.025em]">
               <span className="text-ledger-positive-soft">+${fmt(data?.total_income ?? 0)}</span>
               <span className="text-ledger-negative-soft">−${fmt(data?.total_spending ?? 0)}</span>
             </div>
             <div className="mt-2 flex flex-col gap-[3px]">
               <div className="flex gap-2.5 text-[11px]">
                 <span className="text-ledger-text-faint w-[60px]">Income</span>
-                <span className="text-white/80 font-medium tabular-nums">${fmt(data?.total_income ?? 0)}</span>
+                <span className="text-white/80 font-medium">${fmt(data?.total_income ?? 0)}</span>
               </div>
               <div className="flex gap-2.5 text-[11px]">
                 <span className="text-ledger-text-faint w-[60px]">Spend</span>
-                <span className="text-white/80 font-medium tabular-nums">${fmt(data?.total_spending ?? 0)}</span>
+                <span className="text-white/80 font-medium">${fmt(data?.total_spending ?? 0)}</span>
               </div>
               <div className="flex gap-2.5 text-[11px]">
                 <span className="text-ledger-text-faint w-[60px]">Saved</span>
-                <span className="text-white/80 font-medium tabular-nums">
+                <span className="text-white/80 font-medium">
                   {data ? `${data.savings_rate.toFixed(0)}%` : '—'}
                 </span>
               </div>
@@ -402,7 +402,7 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
                 <div className="text-[9px] uppercase tracking-[0.18em] font-semibold text-white/[0.38] max-w-[110px] truncate">
                   {spendSlices[activeSlice].label}
                 </div>
-                <div className="mt-1 text-[30px] font-bold tracking-[-0.04em] tabular-nums">
+                <div className="mt-1 text-[30px] font-bold tracking-[-0.04em]">
                   {fmtWhole(spendSlices[activeSlice].value)}
                 </div>
                 <div className="mt-[3px] text-[10.5px] font-semibold text-white/50">
@@ -414,7 +414,7 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
             ) : (
               <>
                 <div className="text-[9px] uppercase tracking-[0.18em] font-semibold text-white/[0.38]">Spent</div>
-                <div className="mt-1 text-[30px] font-bold tracking-[-0.04em] tabular-nums">
+                <div className="mt-1 text-[30px] font-bold tracking-[-0.04em]">
                   {fmtWhole(data?.total_spending ?? 0)}
                 </div>
                 {spendingChange !== null && (
@@ -531,10 +531,10 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
             <>
               <div className="mt-[11px] pb-[13px] border-b border-white/[0.12]">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-[22px] font-bold tracking-[-0.035em] tabular-nums">
+                  <span className="text-[22px] font-bold tracking-[-0.035em]">
                     ${fmt(budgetData.total_spent)}
                   </span>
-                  <span className="text-[11.5px] text-white/[0.44] tabular-nums">
+                  <span className="text-[11.5px] text-white/[0.44]">
                     of ${fmt(budgetData.total_limit)}
                   </span>
                 </div>
@@ -565,7 +565,7 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
                           {formatCategory(budget.category)}
                         </span>
                         <span
-                          className={`tabular-nums whitespace-nowrap ${over ? 'text-ledger-negative-soft font-bold' : 'text-white/[0.56]'}`}
+                          className={`whitespace-nowrap ${over ? 'text-ledger-negative-soft font-bold' : 'text-white/[0.56]'}`}
                         >
                           {isVirtual
                             ? `$${fmt(budget.spent)}`
