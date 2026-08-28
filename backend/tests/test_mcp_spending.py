@@ -6,18 +6,28 @@ from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
 
+from cryptography.fernet import Fernet
+
 if not os.environ.get("DATABASE_URL", "").startswith("sqlite"):
     os.environ["DATABASE_URL"] = "sqlite:///ledger.db"
 if not os.environ.get("BUDGETS_DATABASE_URL", "sqlite:///budgets.db").startswith("sqlite"):
     os.environ["BUDGETS_DATABASE_URL"] = "sqlite:///budgets.db"
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+# mcp_server.server imports app.services.optimization_service (for the
+# portfolio_optimization tool), which imports get_cached_risk_free_rate ->
+# app_config -> app.security, which raises at import time if ENCRYPTION_KEY
+# is unset. Match the same workaround used elsewhere for this (e.g.
+# tests/test_optimization_service.py) so this file passes when run
+# standalone, not just as part of the full suite.
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 
-from app.budgets_db import Budget, BudgetsBase
-from app.models import Account, BalanceSnapshot, Base, Holding, Item, Security, Transaction, User
-from app.routes.analytics import get_monthly_summary
-from app.services.analytics_service import (
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+
+from app.budgets_db import Budget, BudgetsBase  # noqa: E402
+from app.models import Account, BalanceSnapshot, Base, Holding, Item, Security, Transaction, User  # noqa: E402
+from app.routes.analytics import get_monthly_summary  # noqa: E402
+from app.services.analytics_service import (  # noqa: E402
     build_budget_vs_actual,
     build_cash_flow,
     build_monthly_summary,
@@ -26,12 +36,12 @@ from app.services.analytics_service import (
     get_spending_by_category,
     search_transactions,
 )
-from app.services.investment_service import build_investment_performance
-from mcp_server import server as mcp_server_module
-from mcp_server.sankey import build_cash_flow_sankey_payload, build_cash_flow_sankey_svg
+from app.services.investment_service import build_investment_performance  # noqa: E402
+from mcp_server import server as mcp_server_module  # noqa: E402
+from mcp_server.sankey import build_cash_flow_sankey_payload, build_cash_flow_sankey_svg  # noqa: E402
 
 
-import pytest
+import pytest  # noqa: E402
 
 
 @pytest.fixture

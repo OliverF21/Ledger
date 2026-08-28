@@ -24,6 +24,11 @@ function payloadNum(payload: Record<string, unknown>, key: string): number | nul
   return typeof v === 'number' && Number.isFinite(v) ? v : null
 }
 
+function money(n: number | null | undefined): string {
+  if (n === null || n === undefined) return '—'
+  return `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+}
+
 function GoalCardBody({ p }: { p: { kind: string; payload: Record<string, unknown>; category_name: string | null } }) {
   const payload = p.payload
   if (p.kind === 'update_goal_contribution') {

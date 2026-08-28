@@ -22,7 +22,7 @@ from app.database import init_db, SessionLocal
 from app.models import User
 
 # Import routes
-from app.routes import plaid, transactions, analytics, budgets, categories, settings, subscriptions, investments, portfolio_risk, weekly_email, proposals, crypto, goals
+from app.routes import plaid, transactions, analytics, budgets, categories, settings, subscriptions, investments, portfolio_risk, optimization_settings, weekly_email, proposals, crypto, goals
 from app.routes import auth as auth_routes
 
 from app.auth import require_auth
@@ -114,6 +114,7 @@ app.include_router(settings.router, prefix="/api", dependencies=_auth)
 app.include_router(subscriptions.router, prefix="/api", dependencies=_auth)
 app.include_router(investments.router, prefix="/api", dependencies=_auth)
 app.include_router(portfolio_risk.router, prefix="/api", dependencies=_auth)
+app.include_router(optimization_settings.router, prefix="/api", dependencies=_auth)
 app.include_router(crypto.router, prefix="/api", dependencies=_auth)
 app.include_router(goals.router, prefix="/api", dependencies=_auth)
 app.include_router(weekly_email.router, prefix="/api", dependencies=_auth)

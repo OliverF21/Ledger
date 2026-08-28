@@ -35,7 +35,7 @@ from app.services.investment_service import (
     account_gross_holdings,
     scaled_holding_market_value,
 )
-from app.services.optimization_service import _priceable_tickers
+from app.services.price_matrix_service import priceable_tickers
 
 LOOKBACK_DAYS = 1100  # ~3yr, matches MarketPrice's actual backfill depth (BACKFILL_DAYS)
 HORIZON_DAYS = [1, 5, 30]
@@ -120,7 +120,7 @@ def main() -> None:
         end = date.today()
         start = end - timedelta(days=LOOKBACK_DAYS)
 
-        tickers = _priceable_tickers(db, sorted(value_by_ticker), start, end)
+        tickers = priceable_tickers(db, sorted(value_by_ticker), start, end)
         if not tickers:
             print("None of the held tickers have MarketPrice history yet — trigger a sync "
                   "(price_sync_service.sync_market_prices) first.")

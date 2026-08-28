@@ -37,6 +37,7 @@ from app.services.goals_service import (
     list_goal_progress,
 )
 from app.services.investment_service import build_investment_performance
+from app.services.optimization_service import build_optimization_suggestion
 from mcp_server.proposals import (
     create_budget_proposal,
     create_goal_contribution_proposal,
@@ -71,7 +72,9 @@ from mcp_server.schemas import (
     InvestmentPerformanceResult,
     InvestmentPositionResult,
     MonthlySpendingResult,
+    ObjectiveResult,
     PlanningCapacityResult,
+    PortfolioOptimizationResult,
     RecentTransactionResult,
     ResidualMonthResult,
     ProposalResult,
@@ -98,6 +101,9 @@ mcp = FastMCP(
         "- budget_status — budget vs actual\n"
         "- recurring_subscriptions — recurring charges\n"
         "- investment_performance — portfolio metrics\n"
+        "- portfolio_optimization — suggested allocation (Max Sharpe + Max Quadratic "
+        "Utility + efficient frontier); empty unless the user has advanced optimization "
+        "enabled in Settings\n"
         "- transaction_search — evidence rows\n"
         "- net_worth_data — net worth history and account breakdown (JSON)\n"
         "- trends_data — monthly spending vs income series (JSON)\n\n"
@@ -679,6 +685,39 @@ def get_investment_performance(
             for item in result.history
         ],
     )
+
+
+@mcp.tool(name="portfolio_optimization", tags={"analytics", "investments"})
+def portfolio_optimization() -> PortfolioOptimizationResult:
+    """Suggested portfolio allocation (Max Sharpe, Max Quadratic Utility, and
+    an efficient frontier), computed from the user's current holdings and
+    preferences. Returns empty objectives/advanced_enabled=False unless the
+    user has advanced optimization enabled in Settings -- there is no
+    separate, always-on basic engine. Read-only -- structured metrics only,
+    no generated explanation; summarize/explain the numbers yourself."""
+    with ledger_session() as db:
+        data = build_optimization_suggestion(db)
+        return PortfolioOptimizationResult(
+            advanced_enabled=data.advanced_enabled,
+            position_cap_pct=data.position_cap_pct,
+            objectives=[
+                ObjectiveResult(
+                    name=o.name, tickers=[vars(t) for t in o.tickers],
+                    expected_return_pct=o.expected_return_pct, volatility_pct=o.volatility_pct, sharpe=o.sharpe,
+                )
+                for o in data.objectives
+            ],
+            frontier_points=data.frontier_points,
+            # data.random_portfolios (a ~1500-point Monte Carlo backdrop cloud
+            # for the frontier chart) is deliberately NOT exposed here: it's a
+            # rendering-only artifact with no analytical content beyond what
+            # frontier_points/objectives already carry -- including it would
+            # just burn tokens for an LLM caller with nothing to explain.
+            sector_breakdown=data.sector_breakdown,
+            clip_log=data.clip_log,
+            data_points=data.data_points,
+            insufficient_data=data.insufficient_data,
+        )
 
 
 def _resolve_month_window(month: str | None) -> tuple[int, int, date, date, str]:

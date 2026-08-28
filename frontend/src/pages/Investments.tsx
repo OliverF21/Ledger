@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { ArrowUp, ArrowDown, RefreshCw } from 'lucide-react'
+import { ArrowUp, ArrowDown, RefreshCw, AlertTriangle } from 'lucide-react'
 import { PieChart, Pie, Cell, Sector, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { apiFetch } from '../api/client'
 import {
@@ -9,8 +9,12 @@ import {
   useInvestmentTransactions,
   useInvestmentsRisk,
   useInvestmentsOptimization,
+  useOptimizationPreferences,
   type AllocationSlice,
+  type ObjectiveResponse,
 } from '../hooks/useInvestments'
+import EfficientFrontierChart, { type ObjectiveMarker } from '../components/EfficientFrontierChart'
+import OptimizationPreferencesPanel from '../components/OptimizationPreferencesPanel'
 
 import { alphaColor, mixHex } from '../utils/color'
 
@@ -29,6 +33,47 @@ function formatSecurityType(t: string | null): string {
   return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ')
 }
 
+function deltaPp(current: number | null, suggested: number | null): number | null {
+  return current === null || suggested === null ? null : suggested - current
+}
+
+function deltaRaw(current: number | null, suggested: number | null | undefined): number | null {
+  return current == null || suggested == null ? null : suggested - current
+}
+
+// Matches the "Risk & performance" card's glass-chip stat tiles above --
+// headline value + a colored delta badge instead of a bare "X% -> Y%"
+// string, reusing the same ArrowUp/ArrowDown + tinted-pill language already
+// used for the portfolio-value header's period-change badge.
+function StatTile({ label, value, delta, deltaGoodDirection }: {
+  label: string; value: string; delta: number | null; deltaGoodDirection: 'up' | 'down'
+}) {
+  const deltaIsGood = delta !== null && ((delta >= 0) === (deltaGoodDirection === 'up'))
+  return (
+    <div className="glass-chip px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">{label}</div>
+      <div className="flex items-baseline gap-[6px] mt-0.5">
+        <div className="text-[15px] font-bold tabular-nums">{value}</div>
+        {delta !== null && Math.abs(delta) >= 0.005 && (
+          <span className={`inline-flex items-center gap-[1px] text-[10.5px] font-semibold ${deltaIsGood ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
+            {delta >= 0 ? <ArrowUp className="w-[9px] h-[9px]" strokeWidth={3} /> : <ArrowDown className="w-[9px] h-[9px]" strokeWidth={3} />}
+            {Math.abs(delta).toFixed(2)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LegendDot({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-[7px] text-[12px] font-semibold text-white/60">
+      <span className="w-[9px] h-[9px] rounded-full inline-block border-[1.5px] border-white/70" style={{ background: color }} />
+      {children}
+    </div>
+  )
+}
+
 function formatActivityDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -38,6 +83,44 @@ const ALLOCATION_PALETTE = [
   '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
   '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
 ]
+
+// 3 years, matching the backend's own DEFAULT_LOOKBACK_DAYS (optimization_service.py)
+// -- deliberately NOT the page's 6M/1Y history-chart toggle (lookbackDays below).
+// That toggle controls how much of the net-worth chart to show; the optimizer's
+// statistical estimation window is a different concern that should stay long and
+// stable regardless of which period the user happens to be glancing at.
+const OPTIMIZATION_LOOKBACK_DAYS = 1095
+
+// Mirrors EfficientFrontierChart's internal OBJECTIVE_LABELS (not exported from
+// there) -- used here for the per-objective comparison table's row/section labels.
+const OBJECTIVE_LABELS: Record<string, string> = {
+  max_sharpe: 'Max Sharpe',
+  max_quadratic_utility: 'Max Quadratic Utility',
+}
+
+function buildMarkers(optimization: {
+  objectives: ObjectiveResponse[]
+  current_volatility_pct: number | null
+  current_expected_return_pct: number | null
+}): ObjectiveMarker[] {
+  const colors: Record<string, string> = {
+    max_sharpe: '#f4907f',
+    max_quadratic_utility: '#e6bd79',
+    current: '#adb8cb',
+  }
+  const markers: ObjectiveMarker[] = optimization.objectives
+    .filter(o => o.volatility_pct != null && o.expected_return_pct != null)
+    .map(o => ({ name: o.name, volatility_pct: o.volatility_pct!, return_pct: o.expected_return_pct!, color: colors[o.name] ?? '#5b8def' }))
+  if (optimization.current_volatility_pct != null && optimization.current_expected_return_pct != null) {
+    markers.push({
+      name: 'current',
+      volatility_pct: optimization.current_volatility_pct,
+      return_pct: optimization.current_expected_return_pct,
+      color: colors.current,
+    })
+  }
+  return markers
+}
 
 type AllocationView = 'type' | 'security'
 
@@ -67,16 +150,52 @@ function buildSecurityAllocation(
 export default function Investments() {
   const { data: summary, loading: summaryLoading, refetch: refetchSummary } = useInvestmentsSummary()
   const { accounts, loading: holdingsLoading, refetch: refetchHoldings } = useInvestmentsHoldings()
-  const { transactions, loading: txnsLoading } = useInvestmentTransactions(6)
   const [historyRange, setHistoryRange] = useState<'6M' | '1Y'>('6M')
-  const { data: history, loading: historyLoading } = useInvestmentsHistory(historyRange === '6M' ? 6 : 12)
-  const { data: risk, loading: riskLoading } = useInvestmentsRisk(365)
-  const { data: optimization, loading: optimizationLoading } = useInvestmentsOptimization(365)
+  const historyMonths = historyRange === '6M' ? 6 : 12
+  const lookbackDays = historyRange === '6M' ? 182 : 365
+  const { transactions, loading: txnsLoading } = useInvestmentTransactions(historyMonths)
+  const { data: history, loading: historyLoading } = useInvestmentsHistory(historyMonths)
+  const { data: risk, loading: riskLoading } = useInvestmentsRisk(lookbackDays)
+  const { data: optimization, loading: optimizationLoading, refetch: refetchOptimization } = useInvestmentsOptimization(OPTIMIZATION_LOOKBACK_DAYS)
+  const { data: optimizationPrefs, update: updateOptimizationPrefs } = useOptimizationPreferences()
   const [allocationView, setAllocationView] = useState<AllocationView>('security')
   const [activeSlice, setActiveSlice] = useState<number | null>(null)
   const [activityExpanded, setActivityExpanded] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [runningOptimization, setRunningOptimization] = useState(false)
+  const [selectedObjective, setSelectedObjective] = useState<string>('max_sharpe')
   const [varUnit, setVarUnit] = useState<'pct' | 'dollar'>('pct')
+
+  // Distinct from optimizationLoading, which useInvestmentsOptimization only
+  // ever sets true for the INITIAL mount fetch (deliberately -- flipping it
+  // during a background refresh would unmount the panel mid-edit). A manual
+  // "Run optimization" click is a deliberate action, not a background
+  // side-effect, so it gets its own loading flag to drive the button.
+  const handleRunOptimization = async () => {
+    setRunningOptimization(true)
+    try {
+      await refetchOptimization()
+    } finally {
+      setRunningOptimization(false)
+    }
+  }
+
+  // Gates the results section below the panel: BOTH the live toggle
+  // (optimizationPrefs, updates instantly on flip) and the last actually-run
+  // result (optimization.advanced_enabled, only updates after Run) must
+  // agree -- otherwise flipping the toggle off would leave stale advanced
+  // results on screen until the next manual Run, and flipping it on would
+  // briefly show the previous OFF-state's empty result.
+  const showOptimizationResults = Boolean(optimizationPrefs?.advanced_enabled && optimization?.advanced_enabled)
+
+  // Falls back to the first objective the backend actually returned (rather
+  // than assuming 'max_sharpe' is present) so a stale selectedObjective from
+  // a previous run -- e.g. advanced mode was toggled off and back on with a
+  // different objective set -- can't leave the panel showing nothing.
+  const activeObjective = useMemo(
+    () => optimization?.objectives.find(o => o.name === selectedObjective) ?? optimization?.objectives[0] ?? null,
+    [optimization, selectedObjective],
+  )
 
   const loading = summaryLoading || holdingsLoading
   const typeAllocationData = summary?.allocation ?? []
@@ -86,6 +205,15 @@ export default function Investments() {
   )
   const allocationData = allocationView === 'type' ? typeAllocationData : securityAllocationData
   const activeAllocation = activeSlice !== null ? allocationData[activeSlice] ?? null : null
+  const heldTickers = useMemo(() => {
+    const tickers = new Set<string>()
+    for (const account of accounts) {
+      for (const position of account.positions) {
+        if (position.ticker) tickers.add(position.ticker)
+      }
+    }
+    return [...tickers].sort()
+  }, [accounts])
 
   useEffect(() => {
     setActiveSlice(null)
@@ -508,14 +636,14 @@ export default function Investments() {
 
           <div className="grid grid-cols-2 gap-2.5 mb-3">
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return</div>
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return (period)</div>
               <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.twr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance, excludes deposit/withdrawal timing</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance over the observed span — excludes deposit/withdrawal timing. CAGR above is this annualized.</div>
             </div>
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR)</div>
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR, annualized)</div>
               <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.mwr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, includes your deposit/withdrawal timing</div>
+              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, including deposit/withdrawal timing. Same annualization as CAGR.</div>
             </div>
           </div>
 
@@ -525,33 +653,217 @@ export default function Investments() {
         </div>
       )}
 
-      {/* Suggested allocation — depends only on Holding + MarketPrice data (populated
-          after the first nightly sync), not on the BalanceSnapshot history the risk
-          card above needs, so it's gated independently rather than nested inside it. */}
-      {!optimizationLoading && optimization && !optimization.insufficient_data && (
-        <div className="glass-card p-4">
-          <div className="text-[12px] font-semibold mb-2">Suggested allocation (max Sharpe)</div>
-          <div className="text-[11px] text-ledger-text-faint mb-2">
-            Current Sharpe (holdings only) {optimization.current_sharpe?.toFixed(2) ?? '—'} · Suggested Sharpe (holdings only) {optimization.suggested_sharpe?.toFixed(2) ?? '—'}
+      {/* Suggested allocation — Black-Litterman engine; the panel toggle
+          gates output. Layout matches the V2 OptimizerPanel: constraints left,
+          frontier right, detail tables full-width below. */}
+      {!optimizationLoading && optimization && (
+        optimizationPrefs?.advanced_enabled ? (
+          <div className="flex gap-4 items-stretch">
+            <OptimizationPreferencesPanel
+              className="w-[520px] shrink-0"
+              prefs={optimizationPrefs}
+              updatePrefs={updateOptimizationPrefs}
+              onRun={handleRunOptimization}
+              running={runningOptimization}
+              heldTickers={heldTickers}
+            />
+            <div className="glass-card flex-1 min-w-0 flex flex-col px-6 py-5 max-h-[760px]">
+              <div className="shrink-0">
+                <div className="text-[15px] font-bold tracking-[-0.02em]">Efficient frontier</div>
+                <div className="text-[12px] text-white/50 mt-2 max-w-[640px] leading-relaxed">
+                  The line is the best return available at each level of risk given your position cap ({optimization.position_cap_pct.toFixed(0)}%)
+                  and sector limits. The markers are the suggested portfolios. The faint dots are random portfolios
+                  shown only for scale — they ignore your limits.
+                </div>
+              </div>
+              <div className="flex items-center gap-[22px] mt-4 shrink-0 flex-wrap">
+                <div className="flex items-center gap-[7px] text-[12px] font-semibold text-white/60">
+                  <svg width="16" height="10" viewBox="0 0 16 10"><path d="M1 8 L15 2" stroke="#82a9f2" strokeWidth="2" strokeLinecap="round" /></svg>
+                  Efficient frontier
+                </div>
+                <LegendDot color="#f4907f">Max Sharpe</LegendDot>
+                <LegendDot color="#e6bd79">Max quadratic utility</LegendDot>
+                <LegendDot color="#adb8cb">Current</LegendDot>
+              </div>
+              {runningOptimization && !showOptimizationResults ? (
+                <div className="flex items-center justify-center h-[420px] text-[12.5px] text-ledger-text-faint">
+                  Sweeping the frontier…
+                </div>
+              ) : !showOptimizationResults ? (
+                <div className="flex flex-col items-center justify-center text-center px-6 h-[420px]">
+                  <div className="text-[14px] font-semibold">Set your constraints, then run</div>
+                  <div className="mt-1.5 text-[12.5px] text-ledger-text-faint max-w-[380px] leading-relaxed">
+                    The frontier is a constrained sweep, so it runs on demand rather than on every slider move.
+                  </div>
+                </div>
+              ) : optimization.insufficient_data ? (
+                <div className="flex flex-col items-center justify-center text-center px-6 h-[420px]">
+                  <div className="text-[14px] font-semibold">Not enough price history</div>
+                  <div className="mt-1.5 text-[12.5px] text-ledger-text-faint max-w-[380px] leading-relaxed">
+                    The optimizer needs at least 30 days of daily closes across two or more priced holdings.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <EfficientFrontierChart
+                    frontierPoints={optimization.frontier_points ?? []}
+                    markers={buildMarkers(optimization)}
+                    randomPortfolios={optimization.random_portfolios ?? []}
+                  />
+                  <div className="grid grid-cols-3 gap-2.5 mt-3 shrink-0">
+                    {[
+                      { label: 'Current', ret: optimization.current_expected_return_pct, vol: optimization.current_volatility_pct, sharpe: optimization.current_sharpe },
+                      { label: 'Max Sharpe', ret: optimization.objectives.find(o => o.name === 'max_sharpe')?.expected_return_pct ?? null, vol: optimization.objectives.find(o => o.name === 'max_sharpe')?.volatility_pct ?? null, sharpe: optimization.objectives.find(o => o.name === 'max_sharpe')?.sharpe ?? null },
+                      { label: 'Max utility', ret: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.expected_return_pct ?? null, vol: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.volatility_pct ?? null, sharpe: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.sharpe ?? null },
+                    ].map(({ label, ret, vol, sharpe }) => (
+                      <div key={label} className="glass-chip px-3 py-2">
+                        <div className="text-[9.5px] uppercase tracking-[0.14em] font-semibold text-white/40">{label}</div>
+                        <div className="mt-1 text-[13px] font-bold tabular-nums">
+                          {ret != null && vol != null ? `${ret.toFixed(1)}% / ${vol.toFixed(1)}%` : '—'}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-white/40">
+                          return / vol{sharpe != null ? ` · Sharpe ${sharpe.toFixed(2)}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="text-left text-ledger-text-faint">
-                <th className="font-medium pb-1.5">Ticker</th>
-                <th className="font-medium pb-1.5 text-right">Current</th>
-                <th className="font-medium pb-1.5 text-right">Suggested</th>
-              </tr>
-            </thead>
-            <tbody>
-              {optimization.tickers.map(t => (
-                <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
-                  <td className="py-1.5 font-medium">{t.ticker}</td>
-                  <td className="py-1.5 text-right tabular-nums">{t.current_weight_pct.toFixed(1)}%</td>
-                  <td className="py-1.5 text-right tabular-nums font-semibold">{t.suggested_weight_pct.toFixed(1)}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        ) : (
+          <OptimizationPreferencesPanel
+            prefs={optimizationPrefs}
+            updatePrefs={updateOptimizationPrefs}
+            onRun={handleRunOptimization}
+            running={runningOptimization}
+            heldTickers={heldTickers}
+          />
+        )
+      )}
+      {showOptimizationResults && !optimization?.insufficient_data && optimization && (
+        <div className="glass-card p-4">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="text-[12px] font-semibold">Suggested allocation</div>
+            {optimization.objectives.length > 1 && (
+              <div className="flex gap-[5px] shrink-0">
+                {optimization.objectives.map(o => (
+                  <button
+                    key={o.name}
+                    onClick={() => setSelectedObjective(o.name)}
+                    className={`text-[11.5px] px-[8px] py-[3px] rounded-[6px] font-semibold transition-all ${
+                      (activeObjective?.name ?? optimization.objectives[0].name) === o.name
+                        ? 'bg-ledger-accent text-ledger-accent-on'
+                        : 'glass-chip text-ledger-text-faint hover:text-ledger-text-primary'
+                    }`}
+                  >
+                    {OBJECTIVE_LABELS[o.name] ?? o.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Minimal v1 surfacing of auto-adjusted constraints -- full clip-log
+              UI polish (e.g. per-entry dismissal, linking back to the offending
+              constraint row in the panel above) is an explicit follow-up. */}
+          {(optimization.cap_relaxed || optimization.clip_log.length > 0) && (
+            <div className="mb-3">
+              <div className="flex items-center gap-[6px] text-[12px] font-semibold text-ledger-warning">
+                <AlertTriangle className="w-[13px] h-[13px] flex-shrink-0" strokeWidth={2} />
+                Some constraints were auto-adjusted
+              </div>
+              <ul className="mt-[6px] space-y-[4px]">
+                {optimization.cap_relaxed && (
+                  <li className="text-[11.5px] text-ledger-text-secondary leading-snug">
+                    Position cap relaxed from {((optimization.cap_relaxed.requested_cap ?? 0) * 100).toFixed(1)}% to {((optimization.cap_relaxed.relaxed_to ?? 0) * 100).toFixed(1)}%
+                    {optimization.cap_relaxed.reason ? ` (${optimization.cap_relaxed.reason})` : ''}
+                  </li>
+                )}
+                {/* ClipLogEntry is a union-by-optional-fields shape. Discriminate
+                    on requested_floor (not merely sector): a cap-raise after an
+                    inverted floor/cap also has `sector` set, and routing it
+                    through the floor template printed "X floor clipped from 0.0%"
+                    because requested_floor was null. Solver-level notes
+                    (risk-aversion substitution, a non-convergent solve) carry
+                    only `reason`. */}
+                {optimization.clip_log.map((entry, i) => (
+                  <li key={i} className="text-[11.5px] text-ledger-text-secondary leading-snug">
+                    {entry.sector && entry.requested_floor != null
+                      ? `${entry.sector} floor clipped from ${(entry.requested_floor * 100).toFixed(1)}% to ${((entry.clipped_to ?? 0) * 100).toFixed(1)}% — not achievable within the position cap`
+                      : entry.reason ?? 'A constraint was auto-adjusted'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Mirrors the "Risk & performance" card's glass-chip stat-tile pattern
+              above, rather than a plain HTML table -- same numbers deserve the
+              same visual language elsewhere on this exact page. Each tile pairs
+              its headline value with a colored delta badge (reusing the ArrowUp/
+              ArrowDown + tinted-pill pattern from the portfolio-value header)
+              instead of a bare "X% → Y%" string. */}
+          {activeObjective && (
+            <>
+              <div className="space-y-3 mb-4">
+                <div className="grid grid-cols-3 gap-2.5">
+                  <StatTile
+                    label="Expected return" value={fmtPct(activeObjective.expected_return_pct)}
+                    delta={deltaPp(optimization.current_expected_return_pct, activeObjective.expected_return_pct)} deltaGoodDirection="up"
+                  />
+                  <StatTile
+                    label="Volatility" value={fmtPct(activeObjective.volatility_pct)}
+                    delta={deltaPp(optimization.current_volatility_pct, activeObjective.volatility_pct)} deltaGoodDirection="down"
+                  />
+                  <StatTile
+                    label="Sharpe" value={activeObjective.sharpe?.toFixed(2) ?? '—'}
+                    delta={deltaRaw(optimization.current_sharpe, activeObjective.sharpe)} deltaGoodDirection="up"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
+                  {OBJECTIVE_LABELS[activeObjective.name] ?? activeObjective.name} suggested weights
+                </div>
+                {/* Plain Current/Suggested columns, not a weight bar -- a bar's
+                    fill+tick only encodes the two values as relative
+                    positions on a track, which reads as "some blue and a
+                    white line" rather than telling you anything concrete.
+                    Sorted by signed change (suggested minus current), so the
+                    list reads as one line from biggest cut to biggest add. */}
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="text-left text-ledger-text-faint">
+                      <th className="font-medium pb-1.5">Ticker</th>
+                      <th className="font-medium pb-1.5 text-right">Current</th>
+                      <th className="font-medium pb-1.5 text-right">Suggested</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...activeObjective.tickers]
+                      .sort(
+                        (a, b) =>
+                          (a.suggested_weight_pct - a.current_weight_pct) -
+                          (b.suggested_weight_pct - b.current_weight_pct),
+                      )
+                      .map(t => (
+                        <tr key={t.ticker} className="border-t border-ledger-border-subtle/50">
+                          <td className="py-1.5 font-medium">{t.ticker}</td>
+                          <td className="py-1.5 text-right tabular-nums text-ledger-text-faint">
+                            ${fmt(t.current_dollar)} ({t.current_weight_pct.toFixed(1)}%)
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums font-semibold">
+                            ${fmt(t.suggested_dollar)} ({t.suggested_weight_pct.toFixed(1)}%)
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -606,7 +918,7 @@ export default function Investments() {
         <div className="px-4 py-2.5 border-b border-ledger-border-subtle flex items-center justify-between gap-3">
           <div>
             <div className="text-[13px] font-semibold">Recent activity</div>
-            <div className="text-[10px] text-ledger-text-faint mt-[2px]">Last 6 months</div>
+            <div className="text-[10px] text-ledger-text-faint mt-[2px]">Last {historyMonths} months</div>
           </div>
           {!txnsLoading && transactions.length > 4 && (
             <button
@@ -620,7 +932,7 @@ export default function Investments() {
         {txnsLoading ? (
           <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">Loading…</div>
         ) : transactions.length === 0 ? (
-          <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">No investment activity in the last 6 months</div>
+          <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">No investment activity in the last {historyMonths} months</div>
         ) : (
           visibleTransactions.map(t => (
             <div key={t.id} className="flex items-center gap-3 px-4 py-[8px] border-b border-ledger-border-subtle last:border-0">

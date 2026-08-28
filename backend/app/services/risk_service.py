@@ -33,7 +33,7 @@ from app.services.investment_service import (
     account_gross_holdings,
     scaled_holding_market_value,
 )
-from app.services.optimization_service import _priceable_tickers
+from app.services.price_matrix_service import priceable_tickers
 from app.services.returns_service import TWRPoint, build_cagr, build_mwr_xirr, build_twr_series
 
 # Portfolio value is observable every day the sync runs regardless of which
@@ -231,8 +231,8 @@ def build_risk_metrics(db: Session, *, lookback_days: int = 365) -> RiskMetricsD
 # var_horizons come from the exact same portfolio_log_returns series, so they
 # can't disagree with each other about what "current risk" means.
 #
-# Two things this section does differently from optimization_service.py's
-# _price_matrix(), on purpose:
+# Two things this section does differently from the optimizer's
+# price_matrix / price_returns path, on purpose:
 #   1. Log returns, not simple returns — VaR needs multi-day horizons, and
 #      log returns are time-additive (an N-day log return is just the sum of
 #      N daily log returns), so a rolling sum gives the N-day distribution
@@ -240,15 +240,18 @@ def build_risk_metrics(db: Session, *, lookback_days: int = 365) -> RiskMetricsD
 #      annualization is also on firmer footing with log returns, whose
 #      variance scales linearly with time under a random-walk assumption —
 #      only an approximation for simple returns.
-#   2. Union of each ticker's price dates, not their intersection —
-#      _price_matrix() intersects every ticker's dates, so one thin-history
-#      ticker (e.g. a fund that IPO'd 25 days ago) truncates the ENTIRE
-#      portfolio's window down to match it. Verified against a real 57-ticker
-#      portfolio: this collapsed a 3yr window down to 24 days. Instead, each
-#      day's portfolio return here is the weighted average of whichever
-#      tickers actually have a price that day, renormalized to the tickers
-#      present — a young ticker just contributes NaN before it existed
-#      instead of vetoing everyone else's history.
+#   2. Per-day weight renormalization — each day's portfolio return is the
+#      weighted average of whichever tickers actually have a price that day,
+#      renormalized to the tickers present. A young ticker contributes NaN
+#      before it existed instead of vetoing everyone else's history. (The
+#      optimizer already uses a union-of-dates price matrix; it estimates
+#      covariance pairwise rather than renormalizing daily portfolio weights.)
+#
+# Same previous-valid-price rule as price_returns(): a crypto weekend row is
+# NaN for equities, and a naive shift(1) would then NaN out Monday's equity
+# close too (Monday / SaturdayNaN). Forward-fill only the *prior* close so
+# Friday→Monday is kept, while Saturday itself stays missing for that name
+# and is renormalized away.
 #
 # See docs/superpowers/specs/2026-08-13-var-backtest-design.md for the full
 # design writeup and the real-data verification this section is based on
@@ -318,7 +321,10 @@ def _backtest_portfolio_log_returns(
     price_frame = prices.pivot(index="date", columns="ticker", values="close").sort_index()
     price_frame = price_frame.reindex(columns=tickers)
 
-    log_return_frame = np.log(price_frame / price_frame.shift(1))
+    # Previous valid close per ticker, not row-wise shift(1): a union-of-dates
+    # frame has crypto weekend rows that are NaN for equities, and
+    # Monday/SaturdayNaN would drop the Friday→Monday equity move.
+    log_return_frame = np.log(price_frame / price_frame.ffill().shift(1))
 
     weights_series = pd.Series(weights)
     present = log_return_frame.notna()
@@ -364,7 +370,7 @@ def build_backtest_metrics(db: Session, account_ids: list[int]) -> _BacktestResu
     end = date.today()
     start = end - timedelta(days=BACKTEST_LOOKBACK_DAYS)
     all_tickers = sorted(value_by_ticker)
-    tickers = _priceable_tickers(db, all_tickers, start, end)
+    tickers = priceable_tickers(db, all_tickers, start, end)
     excluded_tickers = [t for t in all_tickers if t not in tickers]
 
     if not tickers:

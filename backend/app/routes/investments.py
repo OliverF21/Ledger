@@ -12,16 +12,17 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.analytics_shared import CATEGORY_COLORS
 from app.database import get_db
 from app.errors import log_and_raise
-from app.models import Account, BalanceSnapshot, Holding, InvestmentTransaction, Item, Security
+from app.models import Account, Holding, InvestmentTransaction, Item, Security
 from app.plaid_service import PlaidService
 from app.security import decrypt_token
 from app.services.investment_service import (
+    _build_investment_history,
+    _history_change,
     account_gross_holdings,
     investment_net_equity_total,
     scaled_holding_market_value,
@@ -144,57 +145,23 @@ class HistoryResponse(BaseModel):
 @router.get("/history", response_model=HistoryResponse)
 async def get_history(months: int = Query(6, ge=1, le=24), db: Session = Depends(get_db)):
     """
-    Portfolio value over time, from the daily BalanceSnapshot rows that sync_item()
-    already takes for every account (investment accounts included) — same mechanism
-    analytics.py's net-worth chart uses, scoped to investment accounts only.
+    Portfolio value over time. Uses daily BalanceSnapshot rows when they
+    already span the requested window; otherwise marks current holdings to
+    market (Plaid does not provide historical balances).
     """
     try:
         accounts = _investment_accounts(db)
         account_ids = [a.id for a in accounts]
-
-        today = date.today()
-        cutoff_year = today.year - (months // 12)
-        cutoff_month = today.month - (months % 12)
-        if cutoff_month <= 0:
-            cutoff_month += 12
-            cutoff_year -= 1
-        cutoff = date(cutoff_year, cutoff_month, 1)
-
-        live_total = sum(float(a.current_balance or 0) for a in accounts)
-
-        rows = []
-        if account_ids:
-            rows = (
-                db.query(
-                    BalanceSnapshot.snapshot_date,
-                    func.sum(BalanceSnapshot.balance).label("total"),
-                )
-                .filter(
-                    BalanceSnapshot.account_id.in_(account_ids),
-                    BalanceSnapshot.snapshot_date >= cutoff,
-                )
-                .group_by(BalanceSnapshot.snapshot_date)
-                .order_by(BalanceSnapshot.snapshot_date.asc())
-                .all()
-            )
-
-        snapshots = [HistoryPoint(date=str(r.snapshot_date), total=round(float(r.total), 2)) for r in rows]
-
-        today_str = str(today)
-        if snapshots and snapshots[-1].date == today_str:
-            snapshots[-1] = HistoryPoint(date=today_str, total=round(live_total, 2))
-        else:
-            snapshots.append(HistoryPoint(date=today_str, total=round(live_total, 2)))
-
-        if len(snapshots) >= 2:
-            oldest, newest = snapshots[0].total, snapshots[-1].total
-            change_amount = round(newest - oldest, 2)
-            change_pct = round((change_amount / oldest * 100) if oldest > 0 else 0.0, 2)
-        else:
-            change_amount = 0.0
-            change_pct = 0.0
-
-        return HistoryResponse(snapshots=snapshots, change_amount=change_amount, change_pct=change_pct)
+        live_total = investment_net_equity_total(accounts)
+        points = _build_investment_history(
+            db, account_ids=account_ids, months=months, live_total=live_total
+        )
+        change_amount, change_pct = _history_change(points)
+        return HistoryResponse(
+            snapshots=[HistoryPoint(date=p.date, total=p.total) for p in points],
+            change_amount=change_amount,
+            change_pct=change_pct,
+        )
     except Exception as e:
         log_and_raise(e)
 

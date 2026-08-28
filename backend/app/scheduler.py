@@ -136,7 +136,7 @@ def sync_market_data_job():
     """
     try:
         from app.database import SessionLocal
-        from app.risk_free_rate import get_cached_risk_free_rate
+        from app.risk_free_rate import fetch_and_cache_risk_free_rate
         from app.services.price_sync_service import sync_market_prices
 
         db = SessionLocal()
@@ -147,12 +147,37 @@ def sync_market_data_job():
                 price_stats.get("tickers_synced"),
                 price_stats.get("rows_upserted"),
             )
-            rate = get_cached_risk_free_rate(db)
+            rate = fetch_and_cache_risk_free_rate(db)
             logger.info(f"Risk-free rate refreshed: {rate}%")
         finally:
             db.close()
     except Exception as e:
         logger.error(f"Market data sync job failed: {str(e)}")
+
+
+def sync_sector_data_job():
+    """
+    Refresh cached sector/asset-class/AUM classifications
+    (app.services.sector_sync_service) for every held ticker that's missing
+    or stale. Runs weekly, independent of the nightly market-data sync —
+    sector/AUM composition barely moves day to day, unlike prices.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.services.sector_sync_service import sync_sector_classifications
+
+        db = SessionLocal()
+        try:
+            result = sync_sector_classifications(db)
+            logger.info(
+                "Sector classifications synced: %s tickers, %s errors",
+                result.get("tickers_synced"),
+                result.get("errors"),
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Sector sync job failed: {str(e)}")
 
 
 def _current_sync_frequency_hours() -> int:
@@ -247,6 +272,17 @@ def init_scheduler():
         CronTrigger(hour=4, minute=0),
         id="sync_market_data",
         name="Sync market prices + risk-free rate",
+        replace_existing=True
+    )
+
+    # Refresh sector/asset-class/AUM classifications weekly, Sunday 05:00
+    # (server local time, after the nightly price sync), independent of the
+    # Plaid sync loop — sector data changes far less often than prices.
+    scheduler.add_job(
+        sync_sector_data_job,
+        CronTrigger(day_of_week="sun", hour=5, minute=0),
+        id="sync_sector_data",
+        name="Sync sector/asset-class classifications",
         replace_existing=True
     )
 

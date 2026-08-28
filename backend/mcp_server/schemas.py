@@ -209,6 +209,25 @@ class InvestmentPerformanceResult(BaseModel):
     history: list[InvestmentHistoryPointResult]
 
 
+class ObjectiveResult(BaseModel):
+    name: str
+    tickers: list[dict]
+    expected_return_pct: float | None
+    volatility_pct: float | None
+    sharpe: float | None
+
+
+class PortfolioOptimizationResult(BaseModel):
+    advanced_enabled: bool
+    position_cap_pct: float
+    objectives: list[ObjectiveResult]
+    frontier_points: list[dict] | None
+    sector_breakdown: list[dict] | None
+    clip_log: list[dict]
+    data_points: int
+    insufficient_data: bool
+
+
 class ProposalResult(BaseModel):
     """Result of staging a proposal for the user to apply in Ledger."""
 
