@@ -150,7 +150,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
     >
       <div
         ref={stageRef}
-        className="walk-stage flex min-h-[100dvh] items-stretch overflow-x-clip"
+        className="walk-stage flex min-h-[100dvh] items-stretch overflow-visible"
       >
         <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-center items-center gap-8 px-5 pt-[calc(var(--nav-h)+1.25rem)] sm:px-8 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] lg:gap-8 lg:pt-[calc(var(--nav-h)+0.5rem)]">
           <div className="relative z-10 min-h-[11rem] max-w-[34rem] lg:min-h-[22rem]">
@@ -206,7 +206,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             )}
           </div>
 
-          <div className="walk-laptop relative z-20 w-full">
+          <div className="walk-laptop relative z-20 w-full pt-4 lg:pt-8 lg:pr-2">
             <MacBook progressRef={progressRef} freeze={freeze} />
           </div>
 

@@ -64,9 +64,9 @@ export function MacBookMockup({
       if (rig) {
         rig.style.transform = [
           "perspective(1800px)",
-          `rotateY(${lerp(-18, -8, eased)}deg)`,
-          `rotateX(${lerp(7, 2.5, eased)}deg)`,
-          `translateY(${lerp(4, -8, eased)}px)`,
+          `rotateY(${lerp(-16, -7, eased)}deg)`,
+          `rotateX(${lerp(4, 1.5, eased)}deg)`,
+          `translateY(${lerp(2, -4, eased)}px)`,
         ].join(" ");
       }
 
