@@ -3,9 +3,8 @@ import { apiFetch, setToken } from '../api/client'
 import { getResetOptions, requestResetCode, resetPasswordWithEmailCode, type ResetOptions } from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
 
-// The pie-chart Transportation blue (#5b8def). Rendered as a large glow that
-// diffuses outward from behind the liquid-glass card, not a tint on the card.
-const BLUE = '#5b8def'
+// Cool-white bloom behind the glass card — same family as the solid CTA.
+const GLOW = '#e8eef8'
 
 /** Minimal ring spinner for the "checking" state (no donut chart). */
 function Spinner() {
@@ -14,8 +13,8 @@ function Spinner() {
       className="w-[34px] h-[34px] rounded-full"
       style={{
         animation: 'ledger-ring-spin 0.9s linear infinite',
-        border: `2px solid ${alphaColor(BLUE, 0.25)}`,
-        borderTopColor: BLUE,
+        border: `2px solid ${alphaColor('#ffffff', 0.22)}`,
+        borderTopColor: '#ffffff',
       }}
     />
   )
@@ -157,14 +156,14 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
 
   return (
     <div className="relative z-10 min-h-dvh flex items-center justify-center p-4 text-ledger-text-primary">
-      {/* Large blue gradient diffusing outward from behind the glass card */}
+      {/* Cool-white glow diffusing outward from behind the glass card */}
       <div
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
         style={{
           width: 900,
           height: 760,
           filter: 'blur(80px)',
-          background: `radial-gradient(circle at 50% 46%, ${alphaColor(BLUE, 0.55)} 0%, ${alphaColor(BLUE, 0.30)} 28%, ${alphaColor(BLUE, 0.12)} 52%, ${alphaColor(BLUE, 0.04)} 68%, transparent 80%)`,
+          background: `radial-gradient(circle at 50% 46%, ${alphaColor(GLOW, 0.55)} 0%, ${alphaColor(GLOW, 0.28)} 28%, ${alphaColor(GLOW, 0.10)} 52%, ${alphaColor(GLOW, 0.03)} 68%, transparent 80%)`,
         }}
       />
 
@@ -172,7 +171,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
         className="glass-modal w-[400px] max-w-full px-[36px] py-[40px] flex flex-col items-center relative overflow-hidden"
         style={{
           // Translucent frosted fill (overrides glass-modal's near-opaque dark
-          // one) so the blue glow behind shows through the backdrop blur.
+          // one) so the cool-white glow behind shows through the backdrop blur.
           background: 'linear-gradient(150deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05) 46%, rgba(255,255,255,0.10))',
         }}
       >
@@ -202,7 +201,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 </div>
                 <button
                   onClick={check}
-                  className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 transition-opacity"
+                  className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold transition-opacity"
                 >
                   Re-check
                 </button>
@@ -223,7 +222,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                     autoComplete="name"
                     value={name}
                     onChange={e => setName(e.target.value)}
-                    className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                    className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                   />
                 )}
                 <input
@@ -233,7 +232,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   autoComplete="username"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
-                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                 />
                 {phase === 'setup' && (
                   <input
@@ -242,7 +241,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                     autoComplete="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                    className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                   />
                 )}
                 <input
@@ -251,7 +250,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   autoComplete={phase === 'setup' ? 'new-password' : 'current-password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                 />
                 {phase === 'setup' && (
                   <input
@@ -260,7 +259,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                     autoComplete="new-password"
                     value={confirm}
                     onChange={e => setConfirm(e.target.value)}
-                    className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                    className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                   />
                 )}
 
@@ -269,7 +268,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="submit"
                   disabled={submitting || !username || !password}
-                  className="mt-[4px] w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  className="mt-[4px] w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 >
                   {submitting ? 'Please wait…' : phase === 'setup' ? 'Create account' : 'Sign in'}
                 </button>
@@ -294,7 +293,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                         setPhase('reset')
                       }
                     }}
-                    className="text-[12px] text-ledger-text-faint hover:text-ledger-accent transition-colors mt-[2px]"
+                    className="text-[12px] text-ledger-text-faint hover:text-white transition-colors mt-[2px]"
                   >
                     Forgot password?
                   </button>
@@ -324,7 +323,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                       setRequestingCode(false)
                     }
                   }}
-                  className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 transition-opacity"
                 >
                   {requestingCode ? 'Sending…' : `Email me a code (${resetOptions?.masked_email})`}
                 </button>
@@ -339,7 +338,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="button"
                   onClick={() => { setError(null); setPhase('login') }}
-                  className="text-[12px] text-ledger-text-faint hover:text-ledger-accent transition-colors"
+                  className="text-[12px] text-ledger-text-faint hover:text-white transition-colors"
                 >
                   Back to sign in
                 </button>
@@ -380,7 +379,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   autoComplete="off"
                   value={emailCode}
                   onChange={e => setEmailCode(e.target.value)}
-                  className="glass-chip px-[14px] py-[11px] text-[14px] font-mono text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  className="glass-chip px-[14px] py-[11px] text-[14px] font-mono text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                 />
                 <input
                   type="password"
@@ -388,7 +387,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   autoComplete="new-password"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
-                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                 />
                 <input
                   type="password"
@@ -396,7 +395,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   autoComplete="new-password"
                   value={confirmNewPassword}
                   onChange={e => setConfirmNewPassword(e.target.value)}
-                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                 />
 
                 {error && <div className="text-[12.5px] text-ledger-negative">{error}</div>}
@@ -404,7 +403,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="submit"
                   disabled={submitting || !emailCode || !newPassword}
-                  className="mt-[4px] w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  className="mt-[4px] w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 >
                   {submitting ? 'Please wait…' : 'Reset password'}
                 </button>
@@ -412,7 +411,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="button"
                   onClick={() => { setError(null); setPhase('reset-choice') }}
-                  className="text-[12px] text-ledger-text-faint hover:text-ledger-accent transition-colors"
+                  className="text-[12px] text-ledger-text-faint hover:text-white transition-colors"
                 >
                   Back
                 </button>
@@ -435,7 +434,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   autoComplete="off"
                   value={recoveryCode}
                   onChange={e => setRecoveryCode(e.target.value)}
-                  className="glass-chip px-[14px] py-[11px] text-[14px] font-mono text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  className="glass-chip px-[14px] py-[11px] text-[14px] font-mono text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                 />
                 <input
                   type="password"
@@ -443,7 +442,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   autoComplete="new-password"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
-                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                 />
                 <input
                   type="password"
@@ -451,7 +450,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   autoComplete="new-password"
                   value={confirmNewPassword}
                   onChange={e => setConfirmNewPassword(e.target.value)}
-                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+                  className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                 />
 
                 {error && <div className="text-[12.5px] text-ledger-negative">{error}</div>}
@@ -459,7 +458,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="submit"
                   disabled={submitting || !recoveryCode || !newPassword}
-                  className="mt-[4px] w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  className="mt-[4px] w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 >
                   {submitting ? 'Please wait…' : 'Reset password'}
                 </button>
@@ -467,7 +466,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="button"
                   onClick={() => { setError(null); setPhase(resetOptions?.email_available ? 'reset-choice' : 'login') }}
-                  className="text-[12px] text-ledger-text-faint hover:text-ledger-accent transition-colors"
+                  className="text-[12px] text-ledger-text-faint hover:text-white transition-colors"
                 >
                   {resetOptions?.email_available ? 'Back' : 'Back to sign in'}
                 </button>
@@ -498,14 +497,14 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   </code>
                   <button
                     onClick={copyCode}
-                    className="glass-chip rounded-[9px] px-[12px] py-[12px] text-[12px] text-ledger-text-secondary hover:text-ledger-accent transition-colors"
+                    className="glass-chip rounded-[9px] px-[12px] py-[12px] text-[12px] text-ledger-text-secondary hover:text-white transition-colors"
                   >
                     {copied ? 'Copied' : 'Copy'}
                   </button>
                 </div>
                 <button
                   onClick={continueFromReveal}
-                  className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 transition-opacity"
+                  className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold transition-opacity"
                 >
                   I've saved it — Continue
                 </button>

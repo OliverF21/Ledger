@@ -1,6 +1,15 @@
 import { AlertTriangle, TrendingUp } from 'lucide-react'
 import { useAlerts } from '../hooks/useAlerts'
 
+function fmt(n: number) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/**
+ * Inline alert strip above the Overview hero. Deliberately a row of chips
+ * rather than a card: alerts are transient, and a full glass panel here would
+ * push the net-worth figure — the reason for the screen — below the fold.
+ */
 export default function AlertsPanel() {
   const { alerts, loading } = useAlerts()
 
@@ -8,22 +17,36 @@ export default function AlertsPanel() {
   if (alerts.budget_exceeded.length === 0 && alerts.large_transactions.length === 0) return null
 
   return (
-    <div className="glass-card p-3.5 mb-3 space-y-2">
-      {alerts.budget_exceeded.map(b => (
-        <div key={b.category} className="flex items-center gap-[10px] text-[13px]">
-          <AlertTriangle className="w-[15px] h-[15px] text-ledger-negative flex-shrink-0" strokeWidth={2} />
-          <span className="text-ledger-text-primary">
-            <span className="font-semibold">{b.category}</span> is over budget — ${b.spent.toFixed(2)} spent of ${b.limit.toFixed(2)}
-          </span>
-        </div>
+    <div className="flex flex-wrap items-center gap-2 mb-2.5">
+      {alerts.budget_exceeded.map(budget => (
+        <span
+          key={budget.category}
+          className="inline-flex items-center gap-[7px] text-[11.5px] px-[10px] py-[5px] rounded-[9px] whitespace-nowrap"
+          style={{
+            color: '#f5b3a4',
+            background: 'rgba(244,144,127,0.11)',
+            border: '1px solid rgba(244,144,127,0.26)',
+          }}
+        >
+          <AlertTriangle className="w-[13px] h-[13px] shrink-0" strokeWidth={2.2} />
+          <span className="font-bold">{budget.category}</span>
+          over budget · ${fmt(budget.spent)} of ${fmt(budget.limit)}
+        </span>
       ))}
-      {alerts.large_transactions.map(t => (
-        <div key={t.id} className="flex items-center gap-[10px] text-[13px]">
-          <TrendingUp className="w-[15px] h-[15px] text-ledger-warning flex-shrink-0" strokeWidth={2} />
-          <span className="text-ledger-text-primary">
-            Large transaction: <span className="font-semibold">{t.merchant}</span> — ${t.amount.toFixed(2)} on {t.date}
-          </span>
-        </div>
+      {alerts.large_transactions.map(txn => (
+        <span
+          key={txn.id}
+          className="inline-flex items-center gap-[7px] text-[11.5px] px-[10px] py-[5px] rounded-[9px] whitespace-nowrap"
+          style={{
+            color: '#f0d3a4',
+            background: 'rgba(230,189,121,0.11)',
+            border: '1px solid rgba(230,189,121,0.26)',
+          }}
+        >
+          <TrendingUp className="w-[13px] h-[13px] shrink-0" strokeWidth={2.2} />
+          <span className="font-bold">{txn.merchant}</span>
+          ${fmt(txn.amount)} on {txn.date}
+        </span>
       ))}
     </div>
   )

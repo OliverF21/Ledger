@@ -7,93 +7,9 @@ interface AdvisorProps {
   advisor: ReturnType<typeof useProposals>
 }
 
-function chipFor(p: { kind: string; month: string | null }): string {
-  if (p.kind === 'set_budget') return `Budget · ${p.month ?? ''}`
-  if (p.kind === 'set_goal' || p.kind === 'update_goal_contribution') return 'Goal'
-  if (p.kind === 'attribute_transfer') return 'Label'
-  return p.kind
-}
-
-function payloadStr(payload: Record<string, unknown>, key: string): string | null {
-  const v = payload[key]
-  return typeof v === 'string' && v ? v : null
-}
-
-function payloadNum(payload: Record<string, unknown>, key: string): number | null {
-  const v = payload[key]
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-}
-
 function money(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
   return `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-}
-
-function GoalCardBody({ p }: { p: { kind: string; payload: Record<string, unknown>; category_name: string | null } }) {
-  const payload = p.payload
-  if (p.kind === 'update_goal_contribution') {
-    const name = payloadStr(payload, 'goal_name') ?? 'Goal'
-    const next = payloadNum(payload, 'monthly_contribution')
-    const basis = payloadNum(payload, 'basis_contribution')
-    return (
-      <div className="flex items-baseline gap-[10px] mb-[10px] flex-wrap">
-        <span className="text-[15px] font-semibold">{name}</span>
-        {basis !== null && (
-          <>
-            <span className="text-[14px] text-ledger-text-faint line-through tabular-nums">{money(basis)}/mo</span>
-            <span className="text-ledger-text-faint">→</span>
-          </>
-        )}
-        <span className="text-[16px] font-bold text-ledger-accent tabular-nums">{money(next)}/mo</span>
-      </div>
-    )
-  }
-  if (p.kind === 'attribute_transfer') {
-    const merchant = payloadStr(payload, 'merchant') ?? 'Transfer'
-    const date = payloadStr(payload, 'date')
-    const attrs = Array.isArray(payload.attributions) ? payload.attributions as Array<Record<string, unknown>> : []
-    const prior = Array.isArray(payload.basis_attributions) ? payload.basis_attributions as Array<Record<string, unknown>> : []
-    const first = attrs[0] ?? {}
-    const goalName = typeof first.goal_name === 'string' ? first.goal_name : 'Goal'
-    const amount = typeof first.amount === 'number' ? first.amount : null
-    const priorFirst = prior[0]
-    const priorName = priorFirst && typeof priorFirst.goal_name === 'string' ? priorFirst.goal_name : null
-    const priorAmt = priorFirst && typeof priorFirst.amount === 'number' ? priorFirst.amount : null
-    return (
-      <div className="mb-[10px]">
-        <div className="flex items-baseline gap-[10px] flex-wrap">
-          <span className="text-[15px] font-semibold">{merchant}</span>
-          {date && <span className="text-[12px] text-ledger-text-faint">{date}</span>}
-        </div>
-        <div className="text-[16px] font-bold text-ledger-accent tabular-nums mt-[4px]">
-          {priorName && (
-            <>
-              <span className="text-[14px] text-ledger-text-faint font-semibold line-through">
-                {money(priorAmt)} → {priorName}
-              </span>
-              <span className="text-ledger-text-faint font-normal mx-[8px]">→</span>
-            </>
-          )}
-          {money(amount)} → {goalName}
-        </div>
-      </div>
-    )
-  }
-  const name = payloadStr(payload, 'name') ?? 'Goal'
-  const target = payloadNum(payload, 'target_amount')
-  const current = payloadNum(payload, 'current_amount') ?? 0
-  const pmt = payloadNum(payload, 'monthly_contribution')
-  const targetDate = payloadStr(payload, 'target_date')
-  return (
-    <div className="mb-[10px]">
-      <div className="text-[15px] font-semibold mb-[6px]">{name}</div>
-      <div className="flex flex-wrap gap-x-[14px] gap-y-[4px] text-[13px] text-ledger-text-faint">
-        <span className="tabular-nums">{money(current)} → {money(target)}</span>
-        {pmt !== null && <span className="tabular-nums">{money(pmt)}/mo</span>}
-        {targetDate && <span>by {targetDate}</span>}
-      </div>
-    </div>
-  )
 }
 
 /** Read the ?proposal=<id> deep-link param (set by Claude's apply_url). */
@@ -105,9 +21,9 @@ function deepLinkedId(): number | null {
 }
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
-  applied: { label: 'Applied', color: '#4ec38a' },
+  applied: { label: 'Applied', color: '#74d8a8' },
   dismissed: { label: 'Dismissed', color: '#9096a0' },
-  undone: { label: 'Undone', color: '#d9a85b' },
+  undone: { label: 'Undone', color: '#e6bd79' },
   expired: { label: 'Expired', color: '#7a808c' },
   superseded: { label: 'Superseded', color: '#7a808c' },
 }
@@ -180,12 +96,12 @@ export default function Advisor({ advisor }: AdvisorProps) {
   }
 
   return (
-    <div className="flex flex-col gap-[24px] max-w-[860px]">
+    <div className="flex flex-col gap-4 max-w-[1000px]">
       {/* Intro */}
       <div className="glass-card p-[22px]">
         <div className="flex items-start gap-[14px]">
-          <div className="w-[34px] h-[34px] rounded-lg bg-ledger-accent/15 flex items-center justify-center flex-shrink-0">
-            <Sparkles className="w-[18px] h-[18px] text-ledger-accent" strokeWidth={2} />
+          <div className="icon-well w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-[18px] h-[18px]" strokeWidth={2} />
           </div>
           <div>
             <div className="text-[14px] font-semibold mb-[4px]">AI Advisor</div>
@@ -200,8 +116,8 @@ export default function Advisor({ advisor }: AdvisorProps) {
       </div>
 
       {actionError && (
-        <div className="glass-card p-[14px] flex items-center gap-[10px] border border-[#e7705f]/40">
-          <AlertCircle className="w-[16px] h-[16px] text-[#e7705f] flex-shrink-0" strokeWidth={2} />
+        <div className="glass-card p-[14px] flex items-center gap-[10px] border border-[#f4907f]/40">
+          <AlertCircle className="w-[16px] h-[16px] text-[#f4907f] flex-shrink-0" strokeWidth={2} />
           <span className="text-[12.5px] text-ledger-text-secondary">{actionError}</span>
         </div>
       )}
@@ -210,7 +126,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
       {cfg && !cfg.configured && (
         <div className="glass-card p-[22px]">
           <div className="flex items-center gap-[10px] mb-[10px]">
-            <KeyRound className="w-[18px] h-[18px] text-ledger-accent" strokeWidth={2} />
+            <KeyRound className="w-[18px] h-[18px] text-white" strokeWidth={2} />
             <div className="text-[14px] font-semibold">Set up the AI Advisor</div>
           </div>
           <p className="text-[12.5px] text-ledger-text-faint leading-[1.5] mb-[14px]">
@@ -222,7 +138,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
           <button
             onClick={generateKey}
             disabled={genLoading}
-            className="bg-ledger-accent text-ledger-accent-on rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="solid-cta rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] disabled:opacity-50"
           >
             {genLoading ? 'Generating…' : 'Generate connection key'}
           </button>
@@ -239,7 +155,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
               <Check className="w-[16px] h-[16px] text-ledger-positive" strokeWidth={2.2} />
               AI Advisor connected
             </span>
-            <span className="text-[12px] text-ledger-accent">{showSetup ? 'Hide setup' : 'Show setup'}</span>
+            <span className="text-[12px] text-white/70">{showSetup ? 'Hide setup' : 'Show setup'}</span>
           </button>
 
           {showSetup && (
@@ -252,7 +168,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
                   </code>
                   <button
                     onClick={() => copy(cfg.service_key ?? '', 'key')}
-                    className="glass-chip rounded-[8px] px-[10px] py-[8px] text-[12px] text-ledger-text-secondary hover:text-ledger-accent transition-colors flex items-center gap-[5px]"
+                    className="glass-chip rounded-[8px] px-[10px] py-[8px] text-[12px] text-ledger-text-secondary hover:text-white transition-colors flex items-center gap-[5px]"
                   >
                     <Copy className="w-[13px] h-[13px]" strokeWidth={2} />
                     {copied === 'key' ? 'Copied' : 'Copy'}
@@ -267,7 +183,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
                   </div>
                   <button
                     onClick={() => copy(cfg.config_snippet, 'snippet')}
-                    className="text-[12px] text-ledger-text-secondary hover:text-ledger-accent transition-colors flex items-center gap-[5px]"
+                    className="text-[12px] text-ledger-text-secondary hover:text-white transition-colors flex items-center gap-[5px]"
                   >
                     <Copy className="w-[13px] h-[13px]" strokeWidth={2} />
                     {copied === 'snippet' ? 'Copied' : 'Copy config'}
@@ -311,47 +227,41 @@ export default function Advisor({ advisor }: AdvisorProps) {
             <Sparkles className="w-[24px] h-[24px] text-ledger-text-faint mx-auto mb-[10px]" strokeWidth={1.8} />
             <div className="text-[14px] font-semibold mb-[8px]">No pending suggestions</div>
             <div className="text-[13px] text-ledger-text-faint leading-[1.5]">
-              Ask Claude about a budget, a savings goal, or labeling a transfer
-              (e.g. “Propose a $10k emergency fund at $500/mo”). Suggestions land here
-              for you to review and apply.
+              Ask Claude about your budget (e.g. “Am I overspending on dining? Propose a budget.”).
+              Its suggestions land here for you to review and apply.
             </div>
           </div>
         ) : (
           pending.map(p => {
             const isHighlighted = highlightId.current === p.id
             const hasBasis = p.basis_limit !== null && p.basis_limit !== undefined
-            const isBudget = p.kind === 'set_budget'
             return (
               <div
                 key={p.id}
                 ref={el => { cardRefs.current[p.id] = el }}
-                className={`glass-card p-[18px] transition-all ${isHighlighted ? 'ring-2 ring-ledger-accent/60' : ''}`}
+                className={`glass-card p-[18px] transition-all ${isHighlighted ? 'ring-2 ring-white/50' : ''}`}
               >
                 <div className="flex items-start gap-[14px]">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-[8px] mb-[8px]">
                       <span className="text-[10px] uppercase tracking-widest glass-chip px-[8px] py-[2px] rounded-[6px] text-ledger-text-muted">
-                        {chipFor(p)}
+                        Budget · {p.month}
                       </span>
                     </div>
-                    {isBudget ? (
-                      <div className="flex items-baseline gap-[10px] mb-[10px] flex-wrap">
-                        <span className="text-[15px] font-semibold">{p.category_name}</span>
-                        {hasBasis && (
-                          <>
-                            <span className="text-[14px] text-ledger-text-faint line-through tabular-nums">
-                              {money(p.basis_limit)}
-                            </span>
-                            <span className="text-ledger-text-faint">→</span>
-                          </>
-                        )}
-                        <span className="text-[16px] font-bold text-ledger-accent tabular-nums">
-                          {money(p.proposed_limit)}
-                        </span>
-                      </div>
-                    ) : (
-                      <GoalCardBody p={p} />
-                    )}
+                    <div className="flex items-baseline gap-[10px] mb-[10px] flex-wrap">
+                      <span className="text-[15px] font-semibold">{p.category_name}</span>
+                      {hasBasis && (
+                        <>
+                          <span className="text-[14px] text-ledger-text-faint line-through tabular-nums">
+                            {money(p.basis_limit)}
+                          </span>
+                          <span className="text-ledger-text-faint">→</span>
+                        </>
+                      )}
+                      <span className="text-[16px] font-bold text-white tabular-nums">
+                        {money(p.proposed_limit)}
+                      </span>
+                    </div>
                     {p.rationale && (
                       <div className="text-[12.5px] text-ledger-text-faint leading-[1.5]">{p.rationale}</div>
                     )}
@@ -360,7 +270,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
                     <button
                       onClick={() => run(p.id, apply, 'Apply')}
                       disabled={busyId === p.id}
-                      className="flex items-center justify-center gap-[6px] text-[12.5px] font-semibold px-[14px] py-[7px] rounded-[8px] bg-ledger-accent text-ledger-accent-on hover:opacity-90 transition-all disabled:opacity-50"
+                      className="flex items-center justify-center gap-[6px] text-[12.5px] font-semibold px-[14px] py-[7px] rounded-[8px] solid-cta disabled:opacity-50"
                     >
                       <Check className="w-[14px] h-[14px]" strokeWidth={2.5} />
                       Apply
@@ -397,7 +307,8 @@ export default function Advisor({ advisor }: AdvisorProps) {
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12.5px] text-ledger-text-secondary truncate">
-                    {p.summary}
+                    {p.category_name} · {money(p.proposed_limit)}
+                    <span className="text-ledger-text-faint"> · {p.month}</span>
                   </div>
                 </div>
                 <span className="text-[11px] text-ledger-text-faint whitespace-nowrap">

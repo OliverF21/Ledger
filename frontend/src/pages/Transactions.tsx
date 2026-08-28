@@ -12,8 +12,8 @@ type SortDir = 'asc' | 'desc'
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   if (!active) return <ChevronsUpDown className="w-[12px] h-[12px] opacity-30" strokeWidth={2} />
   return active && dir === 'asc'
-    ? <ChevronUp className="w-[12px] h-[12px] text-ledger-accent" strokeWidth={2.5} />
-    : <ChevronDown className="w-[12px] h-[12px] text-ledger-accent" strokeWidth={2.5} />
+    ? <ChevronUp className="w-[12px] h-[12px] text-white" strokeWidth={2.5} />
+    : <ChevronDown className="w-[12px] h-[12px] text-white" strokeWidth={2.5} />
 }
 
 function escapeRegExp(str: string): string {
@@ -343,13 +343,13 @@ export default function Transactions() {
           placeholder="Search merchant or category…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-[180px] glass-chip px-[12px] py-[8px] text-ledger-text-primary text-[13px] placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
+          className="flex-1 min-w-[180px] glass-chip px-[12px] py-[8px] text-ledger-text-primary text-[13px] placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
         />
 
         <select
           value={selectedMonth}
           onChange={e => setSelectedMonth(e.target.value)}
-          className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none focus:border-ledger-accent/60"
+          className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none focus:border-white/60"
         >
           <option value="all">All months</option>
           {months.map(m => (
@@ -360,7 +360,7 @@ export default function Transactions() {
         <select
           value={selectedAccount}
           onChange={e => setSelectedAccount(e.target.value)}
-          className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none focus:border-ledger-accent/60"
+          className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none focus:border-white/60"
         >
           <option value="all">All accounts</option>
           {accounts.map(a => (
@@ -371,7 +371,7 @@ export default function Transactions() {
         <select
           value={selectedCategory}
           onChange={e => setSelectedCategory(e.target.value)}
-          className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none focus:border-ledger-accent/60"
+          className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none focus:border-white/60"
         >
           <option value="all">All categories</option>
           {categories.map(c => (
@@ -489,12 +489,12 @@ export default function Transactions() {
                             onClick={() => setAction(isRecat ? null : { type: 'recategorize', id: txn.id, draft: categoryPickerDraft(txn) })}
                             className={`inline-flex max-w-full items-center gap-[6px] text-[11px] px-[9px] py-[3px] rounded-[7px] border transition-all ${
                               isRecat
-                                ? 'bg-ledger-accent/18 text-ledger-text-primary border-ledger-accent/40'
-                                : 'glass-chip text-ledger-text-muted border-white/15 hover:text-ledger-text-primary hover:border-ledger-accent/30'
+                                ? 'bg-white/16 text-ledger-text-primary border-white/40'
+                                : 'glass-chip text-ledger-text-muted border-white/15 hover:text-ledger-text-primary hover:border-white/30'
                             }`}
                           >
                             <span className="truncate">{formatTransactionCategory(txn)}</span>
-                            <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 transition-transform ${isRecat ? 'rotate-180 text-ledger-accent' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
+                            <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 transition-transform ${isRecat ? 'rotate-180 text-white' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
                           </button>
                         </td>
                         <td className="px-[20px] py-[11px]">
@@ -502,9 +502,9 @@ export default function Transactions() {
                             onClick={() => setAction(isGoalLabel ? null : { type: 'goal-label', id: txn.id })}
                             className={`inline-flex max-w-full items-center gap-[6px] text-[11px] px-[9px] py-[3px] rounded-[7px] border transition-all ${
                               isGoalLabel
-                                ? 'bg-ledger-accent/18 text-ledger-text-primary border-ledger-accent/40'
+                                ? 'bg-white/16 text-ledger-text-primary border-white/40'
                                 : txn.goal_labels?.length
-                                  ? 'glass-chip text-ledger-text-muted border-white/15 hover:text-ledger-text-primary hover:border-ledger-accent/30'
+                                  ? 'glass-chip text-ledger-text-muted border-white/15 hover:text-ledger-text-primary hover:border-white/30'
                                   : 'text-ledger-text-faintest border-transparent hover:text-ledger-text-muted'
                             }`}
                           >
@@ -513,7 +513,7 @@ export default function Transactions() {
                                 ? txn.goal_labels.map((l: { name: string }) => l.name).join(', ')
                                 : 'Label'}
                             </span>
-                            <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 ${isGoalLabel ? 'rotate-180 text-ledger-accent' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
+                            <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 ${isGoalLabel ? 'rotate-180 text-white' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
                           </button>
                         </td>
                         <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-faintest tabular-nums">
@@ -537,14 +537,14 @@ export default function Transactions() {
                                 const abs = Math.abs(txn.original_amount ?? txn.amount)
                                 setAction(isSplit ? null : { type: 'split', id: txn.id, draft: (abs / 2).toFixed(2), originalAbs: abs })
                               }}
-                              className={`p-[5px] rounded-[6px] transition-colors ${isSplit ? 'bg-ledger-accent/20 text-ledger-accent' : 'text-ledger-text-faint hover:text-ledger-text-primary hover:bg-ledger-inset'}`}
+                              className={`p-[5px] rounded-[6px] transition-colors ${isSplit ? 'bg-white/16 text-white' : 'text-ledger-text-faint hover:text-ledger-text-primary hover:bg-ledger-inset'}`}
                             >
                               <Scissors className="w-[13px] h-[13px]" strokeWidth={2} />
                             </button>
                             <button
                               title={txn.hidden ? 'Unhide' : 'Hide'}
                               onClick={() => handleHide(txn.id)}
-                              className={`p-[5px] rounded-[6px] transition-colors ${txn.hidden ? 'text-ledger-accent hover:bg-ledger-inset' : 'text-ledger-text-faint hover:text-ledger-negative hover:bg-ledger-inset'}`}
+                              className={`p-[5px] rounded-[6px] transition-colors ${txn.hidden ? 'text-white hover:bg-ledger-inset' : 'text-ledger-text-faint hover:text-ledger-negative hover:bg-ledger-inset'}`}
                             >
                               {txn.hidden
                                 ? <Eye className="w-[13px] h-[13px]" strokeWidth={2} />
@@ -570,7 +570,7 @@ export default function Transactions() {
                                     if (e.key === 'Enter') handleRecategorize(txn.id, recatDraft)
                                     if (e.key === 'Escape') setAction(null)
                                   }}
-                                  className="flex-1 glass-chip rounded-[8px] px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/50"
+                                  className="flex-1 glass-chip rounded-[8px] px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/50"
                                   placeholder="Type or choose a category…"
                                 />
                                 <button
@@ -784,7 +784,7 @@ export default function Transactions() {
                       if (e.key === 'Enter') handleSplit(splitAction.id, splitAction.draft, splitAction.originalAbs)
                       if (e.key === 'Escape') setAction(null)
                     }}
-                    className="w-full glass-chip pl-[28px] pr-[12px] py-[10px] text-[18px] font-semibold text-ledger-text-primary tabular-nums bg-white/[0.06] focus:outline-none focus:border-ledger-accent/70"
+                    className="w-full glass-chip pl-[28px] pr-[12px] py-[10px] text-[18px] font-semibold text-ledger-text-primary tabular-nums bg-white/[0.06] focus:outline-none focus:border-white/70"
                     placeholder="0.00"
                   />
                 </div>
@@ -800,7 +800,7 @@ export default function Transactions() {
                 <button
                   key={n}
                   onClick={() => setAction({ ...splitAction, draft: (splitAction.originalAbs / n).toFixed(2) })}
-                  className="flex-1 py-[7px] rounded-[8px] glass-chip bg-white/[0.05] text-[12px] text-ledger-text-secondary hover:text-ledger-text-primary hover:border-ledger-accent/40 hover:bg-white/[0.08] transition-colors"
+                  className="flex-1 py-[7px] rounded-[8px] glass-chip bg-white/[0.05] text-[12px] text-ledger-text-secondary hover:text-ledger-text-primary hover:border-white/40 hover:bg-white/[0.08] transition-colors"
                 >
                   ÷{n} = ${(splitAction.originalAbs / n).toFixed(2)}
                 </button>

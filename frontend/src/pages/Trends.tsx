@@ -165,7 +165,7 @@ export default function Trends() {
                 onClick={() => setRange(r)}
                 className={`px-[12px] py-[6px] rounded-[6px] text-[13px] font-semibold transition-all ${
                   range === r
-                    ? 'bg-ledger-accent text-ledger-accent-on'
+                    ? 'bg-white text-ledger-accent-on'
                     : 'text-ledger-text-muted hover:text-ledger-text-primary'
                 }`}
               >
@@ -183,8 +183,8 @@ export default function Trends() {
             <button
               key={c.name}
               onClick={() => setFocus(focus === c.name ? null : c.name)}
-              className={`glass-chip flex items-center gap-[8px] px-[12px] py-[7px] text-[12px] transition-all hover:border-ledger-accent/40 ${
-                focus === c.name ? 'border-ledger-accent/60' : ''
+              className={`glass-chip flex items-center gap-[8px] px-[12px] py-[7px] text-[12px] transition-all hover:border-white/40 ${
+                focus === c.name ? 'border-white/60' : ''
               }`}
             >
               <span className="w-[8px] h-[8px] rounded-[2px]" style={{ backgroundColor: c.color }} />
@@ -225,10 +225,10 @@ export default function Trends() {
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} barCategoryGap="28%">
                 <CartesianGrid strokeDasharray="0" stroke="rgba(255,255,255,0.07)" horizontal={true} vertical={false} />
-                <XAxis dataKey="label" stroke="#5c626f" style={{ fontSize: '12px' }} tickLine={false} />
-                <YAxis stroke="#5c626f" style={{ fontSize: '12px' }} tickFormatter={v => `$${fmt(v)}`} tickLine={false} axisLine={false} />
+                <XAxis dataKey="label" stroke="rgba(255,255,255,0.40)" style={{ fontSize: '12px' }} tickLine={false} />
+                <YAxis stroke="rgba(255,255,255,0.40)" style={{ fontSize: '12px' }} tickFormatter={v => `$${fmt(v)}`} tickLine={false} axisLine={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px' }}
+                  contentStyle={{ backgroundColor: '#12151c', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px' }}
                   labelFormatter={(_, payload) => {
                     const p = payload?.[0]?.payload
                     return p ? `${p.fullLabel}${p.isPartial ? ' · in progress' : ''}` : ''
@@ -244,17 +244,17 @@ export default function Trends() {
                     )}
                   />
                 )}
-                <Bar dataKey="spending" fill={focused ? focused.color : '#5b8def'} radius={[4, 4, 0, 0]} maxBarSize={44}>
+                <Bar dataKey="spending" fill={focused ? focused.color : '#82a9f2'} radius={[4, 4, 0, 0]} maxBarSize={44}>
                   {chartData.map((entry, i) => (
                     <Cell
                       key={i}
-                      fill={focused ? focused.color : '#5b8def'}
+                      fill={focused ? focused.color : '#82a9f2'}
                       fillOpacity={entry.isPartial ? 0.4 : 0.9}
                     />
                   ))}
                 </Bar>
                 {!focused && (
-                  <Line type="monotone" dataKey="income" stroke="#4ec38a" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="income" stroke="#74d8a8" strokeWidth={2} dot={false} />
                 )}
               </ComposedChart>
             </ResponsiveContainer>

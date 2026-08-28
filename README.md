@@ -53,7 +53,7 @@ Start in **Sandbox** (fake banks, no real money). When you're ready for a real a
 | **Budgets** | Per-category monthly limits, progress, overage alerts. Limits carry into new months. |
 | **Trends** | Spending over 3 / 6 / 12 / 24 months. |
 | **Investments** | Brokerage holdings and performance (needs Plaid Investments). |
-| **Subscriptions** | Detects recurring charges. |
+| **Subscriptions** | Recurring charges on the Budgets page. |
 | **Net worth** | Daily balance snapshots over time. |
 | **Crypto wallets** | Optional Robinhood Chain addresses (USDG, majors, Earn/steakUSDG) in net worth. |
 | **Alerts** | In-app, or push to Slack / Discord / [ntfy](https://ntfy.sh/). |
@@ -116,6 +116,14 @@ cd frontend && npm run dev          # Vite → http://localhost:5173
 ```
 
 That points source mode at `~/Library/Application Support/Ledger/` (macOS) without turning on packaged-desktop behavior. Do not run the desktop app and this server at the same time — SQLite is one writer at a time.
+
+**UI-only preview (no backend, no Plaid):** to look at the interface without standing up a server or linking accounts:
+
+```bash
+cd frontend && npm run dev:demo     # Vite → http://localhost:5173
+```
+
+That sets `VITE_MOCK_API=1`, which swaps `fetch` for the canned fixtures in `frontend/src/dev/mockApi.ts` and seeds a demo session, so every screen renders from sample data. It is guarded on `import.meta.env.DEV` as well as the flag, so it can't reach a production build. Use it for design work only — the numbers are invented.
 
 **Data files (source):** `backend/ledger.db` (transactions, accounts) and `backend/budgets.db` (budgets). Copy them while the app is stopped to back up. **Desktop** stores the same filenames under Application Support (see `desktop/README.md`).
 

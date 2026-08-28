@@ -103,7 +103,7 @@ export default function CategoryPicker({
                 onClick={() => onSelect(group.label)}
                 className={`flex-1 flex items-center justify-between gap-3 px-[4px] pr-[10px] py-[8px] text-left text-[12px] transition-colors ${
                   primarySelected
-                    ? 'bg-ledger-accent/18 text-ledger-text-primary'
+                    ? 'bg-white/16 text-ledger-text-primary'
                     : 'text-ledger-text-secondary hover:bg-white/6 hover:text-ledger-text-primary'
                 }`}
               >
@@ -125,7 +125,7 @@ export default function CategoryPicker({
                       onClick={() => onSelect(sub.label)}
                       className={`w-full flex items-center justify-between gap-3 pl-[34px] pr-[10px] py-[7px] text-left text-[12px] transition-colors ${
                         isSelected
-                          ? 'bg-ledger-accent/18 text-ledger-text-primary'
+                          ? 'bg-white/16 text-ledger-text-primary'
                           : 'text-ledger-text-muted hover:bg-white/6 hover:text-ledger-text-primary'
                       }`}
                     >
@@ -156,7 +156,7 @@ export default function CategoryPicker({
                 onClick={() => onSelect(category)}
                 className={`w-full flex items-center justify-between gap-3 px-[10px] py-[8px] text-left text-[12px] transition-colors ${
                   isSelected
-                    ? 'bg-ledger-accent/18 text-ledger-text-primary'
+                    ? 'bg-white/16 text-ledger-text-primary'
                     : 'text-ledger-text-secondary hover:bg-white/6 hover:text-ledger-text-primary'
                 }`}
               >

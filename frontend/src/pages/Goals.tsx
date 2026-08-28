@@ -32,8 +32,8 @@ const KIND_OPTIONS = [
 ]
 
 const PALETTE = [
-  '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
-  '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
+  '#82a9f2', '#63cfcc', '#a196fa', '#74d8a8', '#e6bd79',
+  '#f4907f', '#95c8ff', '#adb8cb', '#b6ebcd', '#c4b5fd',
 ]
 
 function fmt(n: number) {
@@ -123,7 +123,7 @@ function GoalModal({ editing, onClose, onSaved }: GoalModalProps) {
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="e.g. Emergency fund, Vacation…"
-            className="w-full glass-chip px-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+            className="w-full glass-chip px-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
           />
         </div>
         <div>

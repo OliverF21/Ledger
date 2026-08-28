@@ -5,8 +5,8 @@ import {
 } from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
 
-// The same Transportation blue used behind the Login card.
-const BLUE = '#5b8def'
+// Cool-white bloom behind the glass card, matching Login.
+const GLOW = '#e8eef8'
 
 type Step = 'welcome' | 'byok' | 'plaid' | 'import'
 
@@ -130,14 +130,14 @@ export default function Setup({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="relative z-10 min-h-dvh flex items-center justify-center p-4 text-ledger-text-primary">
-      {/* Large blue gradient diffusing outward from behind the glass card, matching Login. */}
+      {/* Cool-white glow diffusing outward from behind the glass card, matching Login. */}
       <div
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
         style={{
           width: 900,
           height: 760,
           filter: 'blur(80px)',
-          background: `radial-gradient(circle at 50% 46%, ${alphaColor(BLUE, 0.55)} 0%, ${alphaColor(BLUE, 0.30)} 28%, ${alphaColor(BLUE, 0.12)} 52%, ${alphaColor(BLUE, 0.04)} 68%, transparent 80%)`,
+          background: `radial-gradient(circle at 50% 46%, ${alphaColor(GLOW, 0.55)} 0%, ${alphaColor(GLOW, 0.28)} 28%, ${alphaColor(GLOW, 0.10)} 52%, ${alphaColor(GLOW, 0.03)} 68%, transparent 80%)`,
         }}
       />
 
@@ -163,7 +163,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 </p>
                 <button
                   onClick={() => { window.location.hash = ''; setStep('welcome') }}
-                  className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors"
+                  className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[rgba(255,255,255,0.07)] transition-colors"
                 >
                   Back to Welcome
                 </button>
@@ -177,7 +177,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                     value={sourceDir}
                     onChange={e => setSourceDir(e.target.value)}
                     placeholder="/path/to/old/ledger/backend"
-                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                   />
                 </div>
 
@@ -186,7 +186,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                     type="checkbox"
                     checked={confirmOverwrite}
                     onChange={e => setConfirmOverwrite(e.target.checked)}
-                    className="accent-ledger-accent"
+                    className="accent-white"
                   />
                   Overwrite existing data
                 </label>
@@ -196,7 +196,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={handleImport}
                   disabled={importing || !sourceDir.trim()}
-                  className="w-full bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="w-full solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
                 >
                   {importing ? 'Importing…' : 'Import'}
                 </button>
@@ -221,7 +221,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
 
             <button
               onClick={() => setStep('plaid')}
-              className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 transition-opacity"
+              className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold transition-opacity"
             >
               Get started
             </button>
@@ -249,7 +249,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                   value={byokEmail}
                   onChange={e => setByokEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                 />
               </div>
 
@@ -260,7 +260,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                   value={byokResendKey}
                   onChange={e => setByokResendKey(e.target.value)}
                   placeholder="re_..."
-                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                 />
                 <div className="mt-[4px] text-[11px] text-ledger-text-faintest">
                   Free at <span className="underline">resend.com/api-keys</span>. Used only for
@@ -274,14 +274,14 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={goToImport}
                   disabled={byokSaving}
-                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[rgba(255,255,255,0.07)] transition-colors disabled:opacity-50"
                 >
                   Skip for now
                 </button>
                 <button
                   onClick={handleByokContinue}
                   disabled={byokSaving}
-                  className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="flex-1 solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
                 >
                   {byokSaving ? 'Saving…' : 'Continue'}
                 </button>
@@ -310,7 +310,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                   value={clientId}
                   onChange={e => setClientId(e.target.value)}
                   placeholder="Plaid client ID"
-                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                 />
               </div>
 
@@ -319,7 +319,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <select
                   value={env}
                   onChange={e => setEnv(e.target.value)}
-                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary focus:outline-none focus:border-ledger-accent/60"
+                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary focus:outline-none focus:border-white/60"
                 >
                   <option value="sandbox">Sandbox</option>
                   <option value="production">Production</option>
@@ -333,7 +333,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                   value={secret}
                   onChange={e => setSecret(e.target.value)}
                   placeholder="Plaid secret"
-                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                  className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                 />
               </div>
 
@@ -347,7 +347,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
               <button
                 onClick={handleTest}
                 disabled={testing}
-                className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[rgba(255,255,255,0.07)] transition-colors disabled:opacity-50"
               >
                 {testing ? 'Testing…' : 'Test connection'}
               </button>
@@ -356,14 +356,14 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={handleSkip}
                   disabled={skipping || saving}
-                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[rgba(255,255,255,0.07)] transition-colors disabled:opacity-50"
                 >
                   {skipping ? 'Please wait…' : 'Skip for now'}
                 </button>
                 <button
                   onClick={handleFinish}
                   disabled={saving || skipping}
-                  className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="flex-1 solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
                 >
                   {saving ? 'Saving…' : 'Finish'}
                 </button>

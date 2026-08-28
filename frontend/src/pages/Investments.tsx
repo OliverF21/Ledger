@@ -1,6 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
-import { ArrowUp, ArrowDown, RefreshCw, AlertTriangle } from 'lucide-react'
-import { PieChart, Pie, Cell, Sector, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { useState, useMemo, useEffect, type ReactNode } from 'react'
+import { RefreshCw, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react'
 import { apiFetch } from '../api/client'
 import {
   useInvestmentsSummary,
@@ -13,24 +12,46 @@ import {
   type AllocationSlice,
   type ObjectiveResponse,
 } from '../hooks/useInvestments'
+import {
+  Eyebrow, GlassCard, Chip, StatTile, ChangeBadge, Tag, UnitToggle,
+  EmptyState, LoadingRow,
+} from '../components/ui/primitives'
+import { AreaLineChart, Donut, DonutLegend, type AreaLineHover, type DonutSlice } from '../components/ui/charts'
 import EfficientFrontierChart, { type ObjectiveMarker } from '../components/EfficientFrontierChart'
 import OptimizationPreferencesPanel from '../components/OptimizationPreferencesPanel'
-
-import { alphaColor, mixHex } from '../utils/color'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function fmtWhole(n: number) {
+  return `$${Math.round(n).toLocaleString('en-US')}`
+}
+
+/** Splits a dollar amount so the cents can be set smaller and dimmer than the
+ *  dollars, matching Overview's hero figure. */
+function splitAmount(value: number): { dollars: string; cents: string } {
+  const abs = Math.abs(value)
+  const dollars = Math.floor(abs).toLocaleString('en-US')
+  const cents = (abs % 1).toFixed(2).slice(1)
+  return { dollars: `${value < 0 ? '−' : ''}$${dollars}`, cents }
+}
+
+/** Typographic minus (U+2212), matching every other signed figure in the UI —
+ *  a hyphen sits too high and too short next to tabular digits. */
 function fmtPct(n: number | null): string {
   if (n === null) return '—'
-  return `${n >= 0 ? '' : ''}${n.toFixed(2)}%`
+  return `${n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}%`
 }
 
 function formatSecurityType(t: string | null): string {
   if (!t) return 'Other'
   if (t.toLowerCase() === 'etf') return 'ETF'
   return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ')
+}
+
+function formatActivityDate(iso: string): string {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function deltaPp(current: number | null, suggested: number | null): number | null {
@@ -41,11 +62,7 @@ function deltaRaw(current: number | null, suggested: number | null | undefined):
   return current == null || suggested == null ? null : suggested - current
 }
 
-// Matches the "Risk & performance" card's glass-chip stat tiles above --
-// headline value + a colored delta badge instead of a bare "X% -> Y%"
-// string, reusing the same ArrowUp/ArrowDown + tinted-pill language already
-// used for the portfolio-value header's period-change badge.
-function StatTile({ label, value, delta, deltaGoodDirection }: {
+function DeltaStatTile({ label, value, delta, deltaGoodDirection }: {
   label: string; value: string; delta: number | null; deltaGoodDirection: 'up' | 'down'
 }) {
   const deltaIsGood = delta !== null && ((delta >= 0) === (deltaGoodDirection === 'up'))
@@ -74,25 +91,8 @@ function LegendDot({ color, children }: { color: string; children: React.ReactNo
   )
 }
 
-function formatActivityDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-const ALLOCATION_PALETTE = [
-  '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
-  '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
-]
-
-// 3 years, matching the backend's own DEFAULT_LOOKBACK_DAYS (optimization_service.py)
-// -- deliberately NOT the page's 6M/1Y history-chart toggle (lookbackDays below).
-// That toggle controls how much of the net-worth chart to show; the optimizer's
-// statistical estimation window is a different concern that should stay long and
-// stable regardless of which period the user happens to be glancing at.
 const OPTIMIZATION_LOOKBACK_DAYS = 1095
 
-// Mirrors EfficientFrontierChart's internal OBJECTIVE_LABELS (not exported from
-// there) -- used here for the per-objective comparison table's row/section labels.
 const OBJECTIVE_LABELS: Record<string, string> = {
   max_sharpe: 'Max Sharpe',
   max_quadratic_utility: 'Max Quadratic Utility',
@@ -110,7 +110,7 @@ function buildMarkers(optimization: {
   }
   const markers: ObjectiveMarker[] = optimization.objectives
     .filter(o => o.volatility_pct != null && o.expected_return_pct != null)
-    .map(o => ({ name: o.name, volatility_pct: o.volatility_pct!, return_pct: o.expected_return_pct!, color: colors[o.name] ?? '#5b8def' }))
+    .map(o => ({ name: o.name, volatility_pct: o.volatility_pct!, return_pct: o.expected_return_pct!, color: colors[o.name] ?? '#82a9f2' }))
   if (optimization.current_volatility_pct != null && optimization.current_expected_return_pct != null) {
     markers.push({
       name: 'current',
@@ -121,6 +121,66 @@ function buildMarkers(optimization: {
   }
   return markers
 }
+
+
+/** One column of the Current / Period change / Range triple beneath the
+ *  portfolio figure. Same recipe as Overview's Assets / Liabilities columns. */
+function BreakdownColumn({
+  label,
+  total,
+  rows,
+  labelWidth = 118,
+}: {
+  label: string
+  total: ReactNode
+  rows: { key: string | number; name: string; value: string }[]
+  labelWidth?: number
+}) {
+  return (
+    <div className="min-w-0">
+      <Eyebrow size="sm">{label}</Eyebrow>
+      <div className="mt-1.5 text-[15px] font-bold tracking-[-0.025em]">{total}</div>
+      {rows.length > 0 && (
+        <div className="mt-2 flex flex-col gap-[3px]">
+          {rows.map(row => (
+            <div key={row.key} className="flex gap-2.5 text-[11px]">
+              <span className="text-ledger-text-faint truncate" style={{ width: labelWidth }}>{row.name}</span>
+              <span className="text-white/80 font-medium whitespace-nowrap">{row.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Divider() {
+  return (
+    <div
+      className="w-px self-stretch shrink-0"
+      style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.14), transparent)' }}
+    />
+  )
+}
+
+/** Keep the hero donut to Overview's ~8-slice density; fold the rest into Other
+ *  so the ring still represents the full portfolio. */
+function collapseSlices(slices: DonutSlice[], limit = 8): DonutSlice[] {
+  if (slices.length <= limit) return slices
+  const head = slices.slice(0, limit - 1)
+  const rest = slices.slice(limit - 1)
+  const otherValue = rest.reduce((sum, slice) => sum + slice.value, 0)
+  return [
+    ...head,
+    { key: '__other', label: 'Other', value: otherValue, color: '#adb8cb' },
+  ]
+}
+
+/** Donut / legend cycling order from the V2 design tokens. */
+const ALLOCATION_PALETTE = [
+  '#82a9f2', '#63cfcc', '#e6bd79', '#f4907f',
+  '#a196fa', '#adb8cb', '#74d8a8', '#95c8ff',
+]
 
 type AllocationView = 'type' | 'security'
 
@@ -147,6 +207,8 @@ function buildSecurityAllocation(
     }))
 }
 
+/* ── Screen ─────────────────────────────────────────────────────────────── */
+
 export default function Investments() {
   const { data: summary, loading: summaryLoading, refetch: refetchSummary } = useInvestmentsSummary()
   const { accounts, loading: holdingsLoading, refetch: refetchHoldings } = useInvestmentsHoldings()
@@ -154,7 +216,7 @@ export default function Investments() {
   const historyMonths = historyRange === '6M' ? 6 : 12
   const lookbackDays = historyRange === '6M' ? 182 : 365
   const { transactions, loading: txnsLoading } = useInvestmentTransactions(historyMonths)
-  const { data: history, loading: historyLoading } = useInvestmentsHistory(historyMonths)
+  const { data: history } = useInvestmentsHistory(historyMonths)
   const { data: risk, loading: riskLoading } = useInvestmentsRisk(lookbackDays)
   const { data: optimization, loading: optimizationLoading, refetch: refetchOptimization } = useInvestmentsOptimization(OPTIMIZATION_LOOKBACK_DAYS)
   const { data: optimizationPrefs, update: updateOptimizationPrefs } = useOptimizationPreferences()
@@ -165,12 +227,8 @@ export default function Investments() {
   const [runningOptimization, setRunningOptimization] = useState(false)
   const [selectedObjective, setSelectedObjective] = useState<string>('max_sharpe')
   const [varUnit, setVarUnit] = useState<'pct' | 'dollar'>('pct')
+  const [hoverPoint, setHoverPoint] = useState<AreaLineHover | null>(null)
 
-  // Distinct from optimizationLoading, which useInvestmentsOptimization only
-  // ever sets true for the INITIAL mount fetch (deliberately -- flipping it
-  // during a background refresh would unmount the panel mid-edit). A manual
-  // "Run optimization" click is a deliberate action, not a background
-  // side-effect, so it gets its own loading flag to drive the button.
   const handleRunOptimization = async () => {
     setRunningOptimization(true)
     try {
@@ -180,18 +238,8 @@ export default function Investments() {
     }
   }
 
-  // Gates the results section below the panel: BOTH the live toggle
-  // (optimizationPrefs, updates instantly on flip) and the last actually-run
-  // result (optimization.advanced_enabled, only updates after Run) must
-  // agree -- otherwise flipping the toggle off would leave stale advanced
-  // results on screen until the next manual Run, and flipping it on would
-  // briefly show the previous OFF-state's empty result.
   const showOptimizationResults = Boolean(optimizationPrefs?.advanced_enabled && optimization?.advanced_enabled)
 
-  // Falls back to the first objective the backend actually returned (rather
-  // than assuming 'max_sharpe' is present) so a stale selectedObjective from
-  // a previous run -- e.g. advanced mode was toggled off and back on with a
-  // different objective set -- can't leave the panel showing nothing.
   const activeObjective = useMemo(
     () => optimization?.objectives.find(o => o.name === selectedObjective) ?? optimization?.objectives[0] ?? null,
     [optimization, selectedObjective],
@@ -204,20 +252,33 @@ export default function Investments() {
     [accounts, summary],
   )
   const allocationData = allocationView === 'type' ? typeAllocationData : securityAllocationData
-  const activeAllocation = activeSlice !== null ? allocationData[activeSlice] ?? null : null
-  const heldTickers = useMemo(() => {
-    const tickers = new Set<string>()
-    for (const account of accounts) {
-      for (const position of account.positions) {
-        if (position.ticker) tickers.add(position.ticker)
-      }
-    }
-    return [...tickers].sort()
-  }, [accounts])
+
+  const allocationSlices: DonutSlice[] = useMemo(
+    () => allocationData.map((slice, i) => ({
+      key: slice.type,
+      label: allocationView === 'type' ? formatSecurityType(slice.type) : slice.type,
+      value: slice.value,
+      // Type allocation arrives pre-coloured from the API; re-key security
+      // slices onto the V2 palette so both views share one colour family.
+      color: allocationView === 'type'
+        ? ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length]
+        : slice.color,
+    })),
+    [allocationData, allocationView],
+  )
+  const visibleAllocation = useMemo(
+    () => collapseSlices(allocationSlices),
+    [allocationSlices],
+  )
 
   useEffect(() => {
     setActiveSlice(null)
   }, [allocationView, allocationData.length])
+
+  useEffect(() => {
+    setHoverPoint(null)
+  }, [historyRange])
+
   const visibleTransactions = activityExpanded ? transactions : transactions.slice(0, 4)
 
   const handleRefresh = async () => {
@@ -232,430 +293,311 @@ export default function Investments() {
     }
   }
 
-  const hasAccounts = !loading && summary && summary.account_count > 0
-
   if (!loading && (!summary || summary.account_count === 0)) {
     return (
-      <div className="flex flex-col items-center justify-center h-[420px] glass-card text-center px-6">
-        <div className="text-[15px] font-semibold mb-1.5">No investment accounts linked</div>
-        <div className="text-[13px] text-ledger-text-faint max-w-[360px]">
-          Connect a brokerage account in Settings to see position-level holdings here.
-        </div>
-      </div>
+      <GlassCard className="h-[420px] flex items-center justify-center">
+        <EmptyState
+          title="No investment accounts linked"
+          body="Connect a brokerage account in Settings to see position-level holdings, risk metrics and allocation here."
+        />
+      </GlassCard>
     )
   }
 
+  const hasHistory = Boolean(history && history.snapshots.length >= 2)
+  const growthUp = (history?.change_amount ?? 0) >= 0
+  const chartColor = growthUp ? '#74d8a8' : '#f4907f'
+  const changeToneColor = growthUp ? '#b6ebcd' : '#f5b3a4'
+  const hoverSnap = hoverPoint && history ? history.snapshots[hoverPoint.index] ?? null : null
+  const currentValue = history?.snapshots[history.snapshots.length - 1]?.total ?? summary?.total_value ?? 0
+  const displayValue = hoverSnap?.total ?? currentValue
+  const { dollars, cents } = splitAmount(displayValue)
+  const activeAlloc = activeSlice !== null ? visibleAllocation[activeSlice] ?? null : null
+  const activeAllocShare = activeAlloc && currentValue > 0
+    ? (activeAlloc.value / currentValue) * 100
+    : null
+
   return (
-    <div className="flex flex-col gap-3">
-      {/* Portfolio value over time + allocation */}
-      <div className="grid grid-cols-[1.85fr_1.15fr] gap-3 items-stretch">
-        <div className="glass-card p-4">
-          <div className="flex items-start justify-between mb-2.5">
-            <div>
-              <div className="text-[13px] font-semibold">Portfolio value</div>
-              <div className="text-[11px] text-ledger-text-faint mt-[2px]">
-                {summary?.account_count ?? 0} accounts · {summary?.position_count ?? 0} positions
-                {hasAccounts && summary?.last_synced_at && (
-                  <> · Last synced {new Date(summary.last_synced_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
+    <div className="flex flex-col gap-4 min-w-0">
+      {/* ── Hero: portfolio curve as the section floor, allocation over the fade.
+          Same no-card treatment as Overview's net-worth + spending donut. */}
+      <section className="relative h-[410px] shrink-0 mt-1.5 overflow-visible pr-14">
+        {hasHistory && (
+          <AreaLineChart
+            values={history!.snapshots.map(s => s.total)}
+            color={chartColor}
+            width={1180}
+            height={300}
+            className="absolute top-[50px] z-[1] h-[268px]"
+            style={{ left: -18, right: -18, width: 'calc(100% + 36px)' }}
+            maskImage="linear-gradient(90deg, #000 0%, #000 44%, rgba(0,0,0,0.25) 58%, transparent 66%)"
+            onHover={setHoverPoint}
+          />
+        )}
+
+        <div className="absolute left-[2px] top-0 z-20 pointer-events-none ledger-rise-fast">
+          <Eyebrow className="!tracking-[0.2em] !text-white/40">Portfolio value</Eyebrow>
+          <div
+            className="mt-2 text-[68px] leading-[0.92] font-bold tracking-[-0.05em]"
+            style={{ textShadow: '0 0 46px rgba(200,220,255,0.3)' }}
+          >
+            {summaryLoading ? '—' : dollars}
+            {!summaryLoading && (
+              <span className="text-[34px] font-semibold tracking-[-0.025em] text-white/[0.46]">{cents}</span>
+            )}
+          </div>
+
+          <div className="mt-[13px] flex items-center gap-2.5 whitespace-nowrap">
+            {hoverSnap ? (
+              <span className="text-[12.5px] text-white/40">{formatActivityDate(hoverSnap.date)}</span>
+            ) : (
+              <>
+                {hasHistory && history!.change_amount !== 0 && (
+                  <>
+                    <ChangeBadge positive={growthUp}>
+                      {Math.abs(history!.change_pct).toFixed(1)}%
+                    </ChangeBadge>
+                    <span className="text-[12.5px] font-semibold" style={{ color: chartColor }}>
+                      {growthUp ? '+' : '−'}${fmt(Math.abs(history!.change_amount))}
+                    </span>
+                  </>
                 )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="inline-flex items-center gap-[5px] text-[11.5px] px-[8px] py-[3px] rounded-[6px] font-semibold glass-chip text-ledger-text-faint hover:text-ledger-text-primary transition-all disabled:opacity-60"
-              >
-                <RefreshCw className={`w-[12px] h-[12px] ${refreshing ? 'animate-spin' : ''}`} strokeWidth={2} />
-                {refreshing ? 'Refreshing…' : 'Refresh'}
-              </button>
-              {!historyLoading && history && history.snapshots.length >= 2 && history.change_amount !== 0 && (
-                <span className={`inline-flex items-center gap-[3px] text-[11.5px] font-semibold px-[6px] py-[2px] rounded-[6px] ${
-                  history.change_amount >= 0
-                    ? 'bg-[rgba(78,195,138,0.13)] text-ledger-positive'
-                    : 'bg-[rgba(231,112,95,0.13)] text-ledger-negative'
-                }`}>
-                  {history.change_amount >= 0
-                    ? <ArrowUp className="w-[11px] h-[11px]" strokeWidth={2.5} />
-                    : <ArrowDown className="w-[11px] h-[11px]" strokeWidth={2.5} />}
-                  {Math.abs(history.change_pct).toFixed(1)}%
+                <span className="text-[12.5px] text-white/40">
+                  past {historyRange === '6M' ? '6 months' : '12 months'}
                 </span>
-              )}
-              <div className="flex gap-[5px]">
-                {(['6M', '1Y'] as const).map(r => (
+              </>
+            )}
+            <span className="w-px h-[13px] bg-white/[0.14]" />
+            <div className="flex gap-2.5 text-[11.5px] font-semibold pointer-events-auto">
+              {(['6M', '1Y'] as const).map(range => (
+                <button
+                  key={range}
+                  type="button"
+                  onClick={() => setHistoryRange(range)}
+                  className={historyRange === range ? 'text-white' : 'text-white/[0.36] hover:text-white/85'}
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="flex items-center gap-[5px] text-[11.5px] font-semibold text-white/[0.36] hover:text-white/85 disabled:opacity-60 pointer-events-auto"
+            >
+              <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} strokeWidth={2} />
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+
+        <div
+          className="absolute left-0 bottom-0 w-[600px] h-[200px] z-10 pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(60% 65% at 20% 100%, rgba(8,11,15,0.92) 0%, rgba(8,11,15,0.6) 45%, rgba(8,11,15,0) 78%)',
+          }}
+        />
+
+        <div className="absolute left-[2px] bottom-1 z-20 flex items-start gap-[34px] pointer-events-none ledger-fade ledger-delay-1">
+          <BreakdownColumn
+            label="Current"
+            total={`$${fmt(currentValue)}`}
+            rows={[
+              { key: 'accounts', name: 'Accounts', value: String(summary?.account_count ?? 0) },
+              { key: 'positions', name: 'Positions', value: String(summary?.position_count ?? 0) },
+            ]}
+          />
+          <Divider />
+          <BreakdownColumn
+            label="Period change"
+            total={
+              <span style={{ color: changeToneColor }}>
+                {history ? `${growthUp ? '+' : '−'}$${fmt(Math.abs(history.change_amount))}` : '—'}
+              </span>
+            }
+            labelWidth={72}
+            rows={history ? [
+              { key: 'pct', name: 'Return', value: `${Math.abs(history.change_pct).toFixed(1)}%` },
+              { key: 'range', name: 'Range', value: historyRange === '6M' ? '6 months' : '12 months' },
+            ] : []}
+          />
+          <Divider />
+          <BreakdownColumn
+            label="Last synced"
+            total={
+              summary?.last_synced_at
+                ? new Date(summary.last_synced_at).toLocaleString('en-US', {
+                    month: 'short', day: 'numeric',
+                  })
+                : '—'
+            }
+            labelWidth={72}
+            rows={summary?.last_synced_at ? [
+              {
+                key: 'time',
+                name: 'Time',
+                value: new Date(summary.last_synced_at).toLocaleString('en-US', {
+                  hour: 'numeric', minute: '2-digit',
+                }),
+              },
+            ] : []}
+          />
+        </div>
+
+        {/* `right-14` matches section `pr-14`. Absolute `right-0` ignores that
+            padding and clips the donut halo against the page's overflow-x. */}
+        <div className="absolute right-14 top-5 z-20 flex items-center gap-5 ledger-rise">
+          <div className="flex flex-col items-end gap-px">
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <Eyebrow size="sm">Allocation</Eyebrow>
+              <div className="flex gap-2.5 text-[11.5px] font-semibold">
+                {(['security', 'type'] as const).map(view => (
                   <button
-                    key={r}
-                    onClick={() => setHistoryRange(r)}
-                    className={`text-[11.5px] px-[8px] py-[3px] rounded-[6px] font-semibold transition-all ${
-                      historyRange === r
-                        ? 'bg-ledger-accent text-ledger-accent-on'
-                        : 'glass-chip text-ledger-text-faint hover:text-ledger-text-primary'
-                    }`}
+                    key={view}
+                    type="button"
+                    onClick={() => setAllocationView(view)}
+                    className={allocationView === view ? 'text-white' : 'text-white/[0.36] hover:text-white/85'}
                   >
-                    {r}
+                    {view === 'type' ? 'Type' : 'Security'}
                   </button>
                 ))}
               </div>
             </div>
+            {loading ? (
+              <span className="text-[11.5px] text-ledger-text-faint">Loading…</span>
+            ) : visibleAllocation.length === 0 ? (
+              <span className="text-[11.5px] text-ledger-text-faint">No positions yet</span>
+            ) : (
+              <DonutLegend
+                slices={visibleAllocation}
+                activeIndex={activeSlice}
+                onHover={setActiveSlice}
+                formatValue={fmtWhole}
+              />
+            )}
           </div>
 
-          {historyLoading ? (
-            <div className="h-[240px] flex items-center justify-center text-ledger-text-faint text-[13px]">Loading…</div>
-          ) : !history || history.snapshots.length === 0 ? (
-            <div className="h-[240px] flex items-center justify-center text-ledger-text-faint text-[13px]">No history yet</div>
-          ) : (
-            <div className="h-[240px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={history.snapshots}>
-                  <defs>
-                    <linearGradient id="investmentHistoryFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#5b8def" stopOpacity={0.28} />
-                      <stop offset="100%" stopColor="#5b8def" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="0" stroke="rgba(255,255,255,0.06)" horizontal={true} vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#5c626f"
-                    axisLine={false}
-                    tickLine={false}
-                    style={{ fontSize: '12px' }}
-                    tickFormatter={d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  />
-                  <YAxis
-                    stroke="#5c626f"
-                    axisLine={false}
-                    tickLine={false}
-                    style={{ fontSize: '12px' }}
-                    tickFormatter={v => `$${fmt(v)}`}
-                    domain={['auto', 'auto']}
-                  />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px' }}
-                    labelFormatter={d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    formatter={(val: number) => [`$${fmt(val)}`, 'Value']}
-                  />
-                  <Area type="monotone" dataKey="total" stroke="#5b8def" strokeWidth={2.5} fill="url(#investmentHistoryFill)" dot={history.snapshots.length === 1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {!historyLoading && history && history.snapshots.length > 0 && (
-            <div className="grid grid-cols-3 gap-2.5 mt-3 pt-3 border-t border-ledger-border-subtle">
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Current</div>
-                <div className="text-[15px] font-bold tabular-nums mt-[2px]">
-                  ${fmt(history.snapshots[history.snapshots.length - 1]?.total ?? 0)}
+          <Donut
+            slices={visibleAllocation}
+            size={258}
+            radius={84}
+            strokeWidth={24}
+            activeIndex={activeSlice}
+            onHover={setActiveSlice}
+          >
+            {activeAlloc ? (
+              <>
+                <div className="text-[9px] uppercase tracking-[0.18em] font-semibold text-white/[0.38] max-w-[110px] truncate">
+                  {activeAlloc.label}
                 </div>
-              </div>
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Period change</div>
-                <div className={`text-[15px] font-bold tabular-nums mt-[2px] ${history.change_amount >= 0 ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
-                  {history.change_amount >= 0 ? '+' : '−'}${fmt(Math.abs(history.change_amount))}
+                <div className="mt-1 text-[30px] font-bold tracking-[-0.04em]">
+                  {fmtWhole(activeAlloc.value)}
                 </div>
-              </div>
-              <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Range</div>
-                <div className="text-[15px] font-bold tabular-nums mt-[2px]">
-                  {historyRange}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Allocation donut — matches overview visual language */}
-        <div className="glass-card p-4 flex flex-col">
-          <div className="flex items-start justify-between gap-3 mb-[2px]">
-            <div>
-              <div className="text-[13px] font-semibold">Allocation</div>
-              <div className="text-[11px] text-ledger-text-faint mt-[2px]">
-                {allocationView === 'type' ? 'By security type' : 'By security'}
-              </div>
-            </div>
-            <div className="flex gap-[5px] shrink-0">
-              {(['security', 'type'] as const).map(view => (
-                <button
-                  key={view}
-                  onClick={() => setAllocationView(view)}
-                  className={`text-[11.5px] px-[8px] py-[3px] rounded-[6px] font-semibold transition-all ${
-                    allocationView === view
-                      ? 'bg-ledger-accent text-ledger-accent-on'
-                      : 'glass-chip text-ledger-text-faint hover:text-ledger-text-primary'
-                  }`}
-                >
-                  {view === 'type' ? 'Type' : 'Security'}
-                </button>
-              ))}
-            </div>
-          </div>
-          {loading ? (
-            <div className="flex-1 flex items-center justify-center text-ledger-text-faint text-[13px]">Loading…</div>
-          ) : allocationData.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-ledger-text-faint text-[12px]">No positions yet</div>
-          ) : (
-            <div className="relative flex-1 mt-1 min-h-[252px] pr-[214px]">
-              <div className="relative h-[248px] w-[244px] overflow-visible">
-                <div
-                  className="absolute left-1/2 top-1/2 h-[220px] w-[220px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[28px] pointer-events-none"
-                  style={{
-                    background: `radial-gradient(circle, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.28 : 0.16)} 0%, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.18 : 0.10)} 28%, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', 0.08)} 54%, transparent 82%)`,
-                  }}
-                />
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <defs>
-                      {allocationData.map((entry, i) => (
-                        <radialGradient
-                          id={`investment-allocation-slice-${i}`}
-                          key={entry.type}
-                          cx="42%"
-                          cy="42%"
-                          r="78%"
-                          fx="36%"
-                          fy="36%"
-                        >
-                          <stop offset="0%" stopColor={mixHex(entry.color, '#ffffff', 0.22)} stopOpacity={0.98} />
-                          <stop offset="48%" stopColor={entry.color} stopOpacity={0.94} />
-                          <stop offset="100%" stopColor={mixHex(entry.color, '#0d0f14', 0.12)} stopOpacity={0.88} />
-                        </radialGradient>
-                      ))}
-                    </defs>
-                    <Pie
-                      data={allocationData}
-                      cx="50%" cy="50%"
-                      innerRadius={78} outerRadius={114}
-                      paddingAngle={1}
-                      dataKey="value"
-                      activeIndex={activeSlice ?? undefined}
-                      activeShape={(props: unknown) => (
-                        <Sector {...props as any} outerRadius={(props as any).outerRadius + 4} style={{ outline: 'none' }} />
-                      )}
-                      onMouseEnter={(_, i) => setActiveSlice(i)}
-                      onMouseLeave={() => setActiveSlice(null)}
-                      style={{ outline: 'none' }}
-                      isAnimationActive={false}
-                    >
-                      {allocationData.map((entry, i) => (
-                        <Cell
-                          key={entry.type}
-                          fill={`url(#investment-allocation-slice-${i})`}
-                          stroke={activeSlice === i ? alphaColor(entry.color, 0.34) : 'rgba(255,255,255,0.06)'}
-                          strokeWidth={activeSlice === i ? 0.9 : 0.4}
-                          style={{
-                            outline: 'none',
-                            cursor: 'default',
-                            filter: activeSlice === i ? `drop-shadow(0 0 12px ${alphaColor(entry.color, 0.22)})` : undefined,
-                          }}
-                        />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <div
-                    className="absolute left-1/2 top-1/2 h-[196px] w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[18px]"
-                    style={{
-                      background: `radial-gradient(circle, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.42 : 0.28)} 0%, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.30 : 0.18)} 18%, rgba(54,60,92,0.24) 34%, rgba(26,30,44,0.10) 56%, rgba(18,21,30,0.04) 72%, rgba(18,21,30,0) 100%)`,
-                    }}
-                  />
-                  <div
-                    className="absolute left-1/2 top-1/2 h-[130px] w-[130px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[12px]"
-                    style={{
-                      background: `radial-gradient(circle, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.30 : 0.20)} 0%, ${alphaColor(activeAllocation?.color ?? '#8ea5ff', activeAllocation ? 0.14 : 0.10)} 42%, rgba(20,24,34,0) 78%)`,
-                    }}
-                  />
-                  <div className="relative flex h-[108px] w-[108px] flex-col items-center justify-center">
-                    {activeAllocation ? (
-                      <>
-                        <span className="relative z-10 w-[82px] text-center text-[10px] font-medium leading-snug text-ledger-text-faint break-words">
-                          {allocationView === 'type' ? formatSecurityType(activeAllocation.type) : activeAllocation.type}
-                        </span>
-                        <span className="relative z-10 mt-[4px] text-[17px] font-bold tabular-nums tracking-tight">
-                          ${fmt(activeAllocation.value)}
-                        </span>
-                        <span className="relative z-10 mt-[2px] text-[9px] font-semibold uppercase tracking-[0.12em] text-ledger-text-faintest">
-                          {activeAllocation.pct.toFixed(0)}% of portfolio
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="relative z-10 text-[9px] font-semibold uppercase tracking-[0.14em] text-ledger-text-faintest">
-                          Portfolio
-                        </span>
-                        <span className="relative z-10 mt-[4px] text-[16px] font-bold tabular-nums tracking-tight">
-                          ${fmt(summary?.total_value ?? 0)}
-                        </span>
-                        <span className="relative z-10 mt-[2px] text-[9px] font-medium text-ledger-text-faint">
-                          Total value
-                        </span>
-                      </>
-                    )}
+                {activeAllocShare !== null && (
+                  <div className="mt-[3px] text-[10.5px] font-semibold text-white/50">
+                    {activeAllocShare.toFixed(0)}% of portfolio
                   </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="text-[9px] uppercase tracking-[0.18em] font-semibold text-white/[0.38]">Portfolio</div>
+                <div className="mt-1 text-[30px] font-bold tracking-[-0.04em]">
+                  {fmtWhole(summary?.total_value ?? 0)}
                 </div>
-              </div>
-              <div className="absolute right-0 top-0 flex w-[206px] max-h-[252px] flex-col gap-[12px] items-stretch overflow-y-auto pr-1">
-                {allocationData.map((slice, i) => (
-                  <div
-                    key={slice.type}
-                    className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-[12px] px-3 py-[9px] min-h-[42px] cursor-default transition-all ${
-                      activeSlice === i ? 'border' : 'border border-transparent'
-                    }`}
-                    style={{
-                      opacity: activeSlice === null || activeSlice === i ? 1 : 0.62,
-                      borderColor: activeSlice === i ? alphaColor(slice.color, 0.36) : 'transparent',
-                      background: activeSlice === i
-                        ? `linear-gradient(135deg, ${alphaColor(slice.color, 0.24)} 0%, ${alphaColor(slice.color, 0.12)} 52%, rgba(255,255,255,0.04) 100%)`
-                        : 'transparent',
-                      boxShadow: activeSlice === i
-                        ? `inset 0 1px 0 rgba(255,255,255,0.12), 0 0 20px ${alphaColor(slice.color, 0.12)}`
-                        : 'none',
-                    }}
-                    onMouseEnter={() => setActiveSlice(i)}
-                    onMouseLeave={() => setActiveSlice(null)}
-                  >
-                    <div className="min-w-0">
-                      <div
-                        className={`min-w-0 truncate text-[12.5px] leading-tight transition-colors ${activeSlice === i ? 'font-semibold' : 'font-medium text-ledger-text-secondary'}`}
-                        style={activeSlice === i ? { color: slice.color } : undefined}
-                      >
-                        {allocationView === 'type' ? formatSecurityType(slice.type) : slice.type}
-                      </div>
-                      <div className="text-[10px] text-ledger-text-faint tabular-nums mt-[2px]">
-                        {slice.pct.toFixed(0)}% of portfolio
-                      </div>
-                    </div>
-                    <span
-                      className={`text-[11px] tabular-nums font-semibold ${activeSlice === i ? '' : 'text-ledger-text-faint'}`}
-                      style={activeSlice === i ? { color: slice.color } : undefined}
-                    >
-                      ${fmt(slice.value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+                <div className="mt-[3px] text-[10.5px] font-medium text-white/[0.44]">Total value</div>
+              </>
+            )}
+          </Donut>
         </div>
-      </div>
+      </section>
 
-      {/* Risk & performance */}
+      {/* ── Risk & performance ─────────────────────────────────────────── */}
       {!riskLoading && risk && risk.data_points >= 5 && (
-        <div className="glass-card p-4">
-          <div className="flex items-start justify-between mb-2.5">
+        <GlassCard className="px-5 py-[18px]">
+          <div className="flex items-start justify-between gap-4 mb-3.5">
             <div>
-              <div className="text-[13px] font-semibold">Risk & performance</div>
-              <div className="text-[11px] text-ledger-text-faint mt-[2px]">
+              <div className="text-[13px] font-bold">Risk &amp; performance</div>
+              <div className="text-[11px] text-white/[0.44] mt-[3px]">
                 Trailing {risk.lookback_days} days · time-weighted return basis · risk-free rate {risk.risk_free_rate_pct.toFixed(2)}%
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-2.5 mb-3">
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Volatility</div>
-              <div className="text-[15px] font-bold tabular-nums mt-0.5">{fmtPct(risk.volatility_pct)}</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Portfolio Sharpe</div>
-              <div className="text-[15px] font-bold tabular-nums mt-0.5">{risk.sharpe_ratio === null ? '—' : risk.sharpe_ratio.toFixed(2)}</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Max drawdown</div>
-              <div className={`text-[15px] font-bold tabular-nums mt-0.5 ${risk.max_drawdown_pct !== null && risk.max_drawdown_pct < 0 ? 'text-ledger-negative' : ''}`}>
-                {fmtPct(risk.max_drawdown_pct)}
-              </div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Beta vs. SPY</div>
-              <div className="text-[15px] font-bold tabular-nums mt-0.5">{risk.beta_vs_spy === null ? '—' : risk.beta_vs_spy.toFixed(2)}</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">CAGR</div>
-              <div className={`text-[15px] font-bold tabular-nums mt-0.5 ${risk.cagr_pct !== null ? (risk.cagr_pct >= 0 ? 'text-ledger-positive' : 'text-ledger-negative') : ''}`}>
-                {fmtPct(risk.cagr_pct)}
-              </div>
-            </div>
+          <div className="grid grid-cols-5 gap-2.5 mb-3.5">
+            <StatTile label="Volatility" value={fmtPct(risk.volatility_pct)} />
+            <StatTile label="Portfolio Sharpe" value={risk.sharpe_ratio === null ? '—' : risk.sharpe_ratio.toFixed(2)} />
+            <StatTile label="Max drawdown" value={fmtPct(risk.max_drawdown_pct)} tone="negative" />
+            <StatTile label="Beta vs. SPY" value={risk.beta_vs_spy === null ? '—' : risk.beta_vs_spy.toFixed(2)} />
+            <StatTile
+              label="CAGR"
+              value={fmtPct(risk.cagr_pct)}
+              tone={risk.cagr_pct !== null && risk.cagr_pct < 0 ? 'negative' : 'positive'}
+            />
           </div>
 
-          {/* VaR — separate backtest of today's holdings vs. real price history,
-              independent of the TWR-based tiles above. See risk_service.py's
-              VaR section. */}
           {risk.var_horizons.length > 0 && (
-            <div className="glass-chip px-3 py-2.5 mb-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">
-                  Value at risk (backtest)
-                </div>
-                <div className="flex text-[10px] rounded-md overflow-hidden border border-ledger-border">
-                  <button
-                    onClick={() => setVarUnit('pct')}
-                    className={`px-2 py-0.5 font-medium ${varUnit === 'pct' ? 'bg-ledger-accent/20 text-ledger-text' : 'text-ledger-text-faint'}`}
-                  >
-                    %
-                  </button>
-                  <button
-                    onClick={() => setVarUnit('dollar')}
-                    className={`px-2 py-0.5 font-medium ${varUnit === 'dollar' ? 'bg-ledger-accent/20 text-ledger-text' : 'text-ledger-text-faint'}`}
-                  >
-                    $
-                  </button>
-                </div>
+            <Chip className="px-3 py-2.5 mb-3.5">
+              <div className="flex items-center justify-between mb-2">
+                <Eyebrow size="sm" className="!tracking-[0.14em] !text-white/40">Value at risk (backtest)</Eyebrow>
+                <UnitToggle
+                  options={[{ value: 'pct', label: '%' }, { value: 'dollar', label: '$' }] as const}
+                  value={varUnit}
+                  onChange={setVarUnit}
+                />
               </div>
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="text-left text-ledger-text-faint">
-                    <th className="font-medium pb-1">Horizon</th>
-                    <th className="font-medium pb-1 text-right">95%</th>
-                    <th className="font-medium pb-1 text-right">99%</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {risk.var_horizons.map(h => (
-                    <tr key={h.days}>
-                      <td className="py-0.5 text-ledger-text-faint">{h.days}d</td>
-                      <td className="py-0.5 text-right tabular-nums font-medium">
-                        {varUnit === 'pct' ? fmtPct(h.var_95_pct) : (h.var_95_dollar === null ? '—' : `$${fmt(h.var_95_dollar)}`)}
-                      </td>
-                      <td className="py-0.5 text-right tabular-nums font-medium">
-                        {varUnit === 'pct' ? fmtPct(h.var_99_pct) : (h.var_99_dollar === null ? '—' : `$${fmt(h.var_99_dollar)}`)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="text-[10px] text-ledger-text-faint mt-1.5">
+              <div className="grid grid-cols-3 text-[12px] text-white/[0.44] pb-1.5">
+                <span>Horizon</span>
+                <span className="text-right">95%</span>
+                <span className="text-right">99%</span>
+              </div>
+              {risk.var_horizons.map(horizon => (
+                <div key={horizon.days} className="grid grid-cols-3 text-[12.5px] py-1 border-t border-white/[0.06]">
+                  <span className="text-white/70">{horizon.days}d</span>
+                  <span className="text-right font-semibold tabular-nums">
+                    {varUnit === 'pct'
+                      ? fmtPct(horizon.var_95_pct)
+                      : (horizon.var_95_dollar === null ? '—' : `$${fmt(horizon.var_95_dollar)}`)}
+                  </span>
+                  <span className="text-right font-semibold tabular-nums">
+                    {varUnit === 'pct'
+                      ? fmtPct(horizon.var_99_pct)
+                      : (horizon.var_99_dollar === null ? '—' : `$${fmt(horizon.var_99_dollar)}`)}
+                  </span>
+                </div>
+              ))}
+              <div className="text-[10px] text-white/40 mt-2">
                 Backtested from current holdings across {risk.var_data_points} days of price history
                 {risk.var_coverage_pct !== null && risk.var_coverage_pct < 99.5 && (
                   <> · covers {risk.var_coverage_pct.toFixed(0)}% of portfolio value ({risk.var_excluded_tickers.join(', ')} excluded — no price history)</>
                 )}
               </div>
-            </div>
+            </Chip>
           )}
 
           <div className="grid grid-cols-2 gap-2.5 mb-3">
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Time-weighted return (period)</div>
-              <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.twr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">Strategy performance over the observed span — excludes deposit/withdrawal timing. CAGR above is this annualized.</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Money-weighted return (XIRR, annualized)</div>
-              <div className="text-[13px] font-semibold tabular-nums mt-0.5">{fmtPct(risk.mwr_pct)}</div>
-              <div className="text-[10px] text-ledger-text-faint mt-0.5">What you actually earned, including deposit/withdrawal timing. Same annualization as CAGR.</div>
-            </div>
+            <StatTile
+              label="Time-weighted return"
+              value={<span className="text-[13.5px]">{fmtPct(risk.twr_pct)}</span>}
+              hint="Strategy performance, excludes deposit/withdrawal timing"
+            />
+            <StatTile
+              label="Money-weighted return (XIRR)"
+              value={<span className="text-[13.5px]">{fmtPct(risk.mwr_pct)}</span>}
+              hint="What you actually earned, includes your deposit/withdrawal timing"
+            />
           </div>
 
-          <div className="text-[10px] text-ledger-text-faint">
-            Portfolio Sharpe is time-weighted return on total account equity (includes cash drag). It won't match the "Current Sharpe" below, which covers held tickers only.
+          <div className="text-[10px] text-white/40 leading-relaxed">
+            Portfolio Sharpe is time-weighted return on total account equity (includes cash drag). It won&rsquo;t match the
+            Sharpe figures below, which cover held tickers only.
           </div>
-        </div>
+        </GlassCard>
       )}
 
-      {/* Suggested allocation — Black-Litterman engine; the panel toggle
-          gates output. Layout matches the V2 OptimizerPanel: constraints left,
-          frontier right, detail tables full-width below. */}
+      {/* Suggested allocation — Black-Litterman engine on main. */}
       {!optimizationLoading && optimization && (
         optimizationPrefs?.advanced_enabled ? (
           <div className="flex gap-4 items-stretch">
@@ -665,9 +607,9 @@ export default function Investments() {
               updatePrefs={updateOptimizationPrefs}
               onRun={handleRunOptimization}
               running={runningOptimization}
-              heldTickers={heldTickers}
+              heldTickers={optimization.tickers.map(t => t.ticker)}
             />
-            <div className="glass-card flex-1 min-w-0 flex flex-col px-6 py-5 max-h-[760px]">
+            <GlassCard className="flex-1 min-w-0 flex flex-col px-6 py-5 max-h-[760px]" overflow="visible">
               <div className="shrink-0">
                 <div className="text-[15px] font-bold tracking-[-0.02em]">Efficient frontier</div>
                 <div className="text-[12px] text-white/50 mt-2 max-w-[640px] leading-relaxed">
@@ -729,7 +671,7 @@ export default function Investments() {
                   </div>
                 </>
               )}
-            </div>
+            </GlassCard>
           </div>
         ) : (
           <OptimizationPreferencesPanel
@@ -737,23 +679,24 @@ export default function Investments() {
             updatePrefs={updateOptimizationPrefs}
             onRun={handleRunOptimization}
             running={runningOptimization}
-            heldTickers={heldTickers}
+            heldTickers={optimization.tickers.map(t => t.ticker)}
           />
         )
       )}
       {showOptimizationResults && !optimization?.insufficient_data && optimization && (
-        <div className="glass-card p-4">
+        <GlassCard className="px-5 py-[18px]">
           <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="text-[12px] font-semibold">Suggested allocation</div>
+            <div className="text-[13px] font-bold">Suggested allocation</div>
             {optimization.objectives.length > 1 && (
               <div className="flex gap-[5px] shrink-0">
                 {optimization.objectives.map(o => (
                   <button
                     key={o.name}
+                    type="button"
                     onClick={() => setSelectedObjective(o.name)}
                     className={`text-[11.5px] px-[8px] py-[3px] rounded-[6px] font-semibold transition-all ${
                       (activeObjective?.name ?? optimization.objectives[0].name) === o.name
-                        ? 'bg-ledger-accent text-ledger-accent-on'
+                        ? 'bg-white text-ledger-accent-on'
                         : 'glass-chip text-ledger-text-faint hover:text-ledger-text-primary'
                     }`}
                   >
@@ -764,9 +707,6 @@ export default function Investments() {
             )}
           </div>
 
-          {/* Minimal v1 surfacing of auto-adjusted constraints -- full clip-log
-              UI polish (e.g. per-entry dismissal, linking back to the offending
-              constraint row in the panel above) is an explicit follow-up. */}
           {(optimization.cap_relaxed || optimization.clip_log.length > 0) && (
             <div className="mb-3">
               <div className="flex items-center gap-[6px] text-[12px] font-semibold text-ledger-warning">
@@ -780,13 +720,6 @@ export default function Investments() {
                     {optimization.cap_relaxed.reason ? ` (${optimization.cap_relaxed.reason})` : ''}
                   </li>
                 )}
-                {/* ClipLogEntry is a union-by-optional-fields shape. Discriminate
-                    on requested_floor (not merely sector): a cap-raise after an
-                    inverted floor/cap also has `sector` set, and routing it
-                    through the floor template printed "X floor clipped from 0.0%"
-                    because requested_floor was null. Solver-level notes
-                    (risk-aversion substitution, a non-convergent solve) carry
-                    only `reason`. */}
                 {optimization.clip_log.map((entry, i) => (
                   <li key={i} className="text-[11.5px] text-ledger-text-secondary leading-snug">
                     {entry.sector && entry.requested_floor != null
@@ -798,25 +731,19 @@ export default function Investments() {
             </div>
           )}
 
-          {/* Mirrors the "Risk & performance" card's glass-chip stat-tile pattern
-              above, rather than a plain HTML table -- same numbers deserve the
-              same visual language elsewhere on this exact page. Each tile pairs
-              its headline value with a colored delta badge (reusing the ArrowUp/
-              ArrowDown + tinted-pill pattern from the portfolio-value header)
-              instead of a bare "X% → Y%" string. */}
           {activeObjective && (
             <>
               <div className="space-y-3 mb-4">
                 <div className="grid grid-cols-3 gap-2.5">
-                  <StatTile
+                  <DeltaStatTile
                     label="Expected return" value={fmtPct(activeObjective.expected_return_pct)}
                     delta={deltaPp(optimization.current_expected_return_pct, activeObjective.expected_return_pct)} deltaGoodDirection="up"
                   />
-                  <StatTile
+                  <DeltaStatTile
                     label="Volatility" value={fmtPct(activeObjective.volatility_pct)}
                     delta={deltaPp(optimization.current_volatility_pct, activeObjective.volatility_pct)} deltaGoodDirection="down"
                   />
-                  <StatTile
+                  <DeltaStatTile
                     label="Sharpe" value={activeObjective.sharpe?.toFixed(2) ?? '—'}
                     delta={deltaRaw(optimization.current_sharpe, activeObjective.sharpe)} deltaGoodDirection="up"
                   />
@@ -827,12 +754,6 @@ export default function Investments() {
                 <div className="text-[11px] font-semibold text-ledger-text-faint uppercase tracking-wide mb-1.5">
                   {OBJECTIVE_LABELS[activeObjective.name] ?? activeObjective.name} suggested weights
                 </div>
-                {/* Plain Current/Suggested columns, not a weight bar -- a bar's
-                    fill+tick only encodes the two values as relative
-                    positions on a track, which reads as "some blue and a
-                    white line" rather than telling you anything concrete.
-                    Sorted by signed change (suggested minus current), so the
-                    list reads as one line from biggest cut to biggest add. */}
                 <table className="w-full text-[12px]">
                   <thead>
                     <tr className="text-left text-ledger-text-faint">
@@ -864,96 +785,123 @@ export default function Investments() {
               </div>
             </>
           )}
-        </div>
+        </GlassCard>
       )}
 
-      {/* Per-account holdings */}
+      {/* ── Per-account holdings ───────────────────────────────────────── */}
       {!holdingsLoading && accounts.map(account => (
-        <div key={account.id} className="glass-card overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-ledger-border-subtle">
-            <div>
-              <div className="text-[13px] font-semibold">{account.name}</div>
-              <div className="text-[11px] text-ledger-text-faint">
+        <GlassCard key={account.id} className="flex flex-col">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10">
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold truncate">{account.name}</div>
+              <div className="text-[11px] text-white/[0.44] mt-0.5 truncate">
                 {account.institution_name ?? 'Unknown institution'}{account.subtype ? ` · ${account.subtype}` : ''}
               </div>
             </div>
-            <div className="text-[15px] font-bold tabular-nums">${fmt(account.total_value)}</div>
+            <div className="text-[15px] font-bold shrink-0">${fmt(account.total_value)}</div>
           </div>
 
           {account.positions.length === 0 ? (
-            <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">No positions in this account</div>
+            <EmptyState title="No positions in this account" />
           ) : (
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-wide text-ledger-text-faintest border-b border-ledger-border-subtle">
-                  <th className="text-left font-semibold px-4 py-2">Ticker</th>
-                  <th className="text-left font-semibold px-2 py-2">Name</th>
-                  <th className="text-right font-semibold px-2 py-2">Qty</th>
-                  <th className="text-right font-semibold px-2 py-2">Price</th>
-                  <th className="text-right font-semibold px-2 py-2">Value</th>
-                  <th className="text-right font-semibold px-4 py-2">Gain</th>
-                </tr>
-              </thead>
-              <tbody>
-                {account.positions.map((p, i) => (
-                  <tr key={i} className="border-b border-ledger-border-subtle last:border-0">
-                    <td className="px-4 py-2 font-semibold">{p.ticker ?? '—'}</td>
-                    <td className="px-2 py-2 text-ledger-text-secondary truncate max-w-[220px]">{p.name ?? '—'}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{p.quantity.toLocaleString('en-US', { maximumFractionDigits: 4 })}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{p.price !== null ? `$${fmt(p.price)}` : '—'}</td>
-                    <td className="px-2 py-2 text-right tabular-nums font-medium">${fmt(p.value)}</td>
-                    <td className={`px-4 py-2 text-right tabular-nums ${p.gain !== null ? (p.gain >= 0 ? 'text-ledger-positive' : 'text-ledger-negative') : 'text-ledger-text-faint'}`}>
-                      {p.gain !== null ? `${p.gain >= 0 ? '+' : '−'}$${fmt(Math.abs(p.gain))}${p.gain_pct !== null ? ` (${p.gain_pct.toFixed(1)}%)` : ''}` : '—'}
-                    </td>
-                  </tr>
+            <div className="overflow-x-auto soft-scrollbar">
+              <div className="min-w-[860px]">
+                <div className="grid grid-cols-[80px_minmax(0,1fr)_90px_110px_120px_190px] text-[10px] uppercase tracking-[0.1em] text-white/[0.36] font-bold px-5 py-2.5 border-b border-white/[0.08]">
+                  <span>Ticker</span>
+                  <span>Name</span>
+                  <span className="text-right">Qty</span>
+                  <span className="text-right">Price</span>
+                  <span className="text-right">Value</span>
+                  <span className="text-right">Gain</span>
+                </div>
+                {account.positions.map((position, i) => (
+                  <div
+                    key={`${position.ticker ?? position.name ?? 'row'}-${i}`}
+                    className="grid grid-cols-[80px_minmax(0,1fr)_90px_110px_120px_190px] text-[12.5px] px-5 py-[9px] border-b border-white/[0.06] last:border-0 row-hover-soft"
+                  >
+                    <span className="font-bold">{position.ticker ?? '—'}</span>
+                    <span className="text-white/70 truncate pr-3">{position.name ?? '—'}</span>
+                    <span className="text-right tabular-nums">
+                      {position.quantity.toLocaleString('en-US', { maximumFractionDigits: 4 })}
+                    </span>
+                    <span className="text-right tabular-nums">
+                      {position.price !== null ? `$${fmt(position.price)}` : '—'}
+                    </span>
+                    <span className="text-right tabular-nums font-medium">${fmt(position.value)}</span>
+                    <span
+                      className="text-right tabular-nums font-semibold whitespace-nowrap pl-3"
+                      style={{
+                        color: position.gain === null
+                          ? 'rgba(255,255,255,0.46)'
+                          : position.gain >= 0 ? '#b6ebcd' : '#f5b3a4',
+                      }}
+                    >
+                      {position.gain === null ? '—' : (
+                        <>
+                          {position.gain >= 0 ? '+' : '−'}${fmt(Math.abs(position.gain))}
+                          {position.gain_pct !== null && (
+                            <span className="ml-1.5 font-medium opacity-60">
+                              {position.gain_pct >= 0 ? '+' : '−'}{Math.abs(position.gain_pct).toFixed(1)}%
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
           )}
-        </div>
+        </GlassCard>
       ))}
 
-      {/* Recent activity */}
-      <div className="glass-card overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-ledger-border-subtle flex items-center justify-between gap-3">
+      {/* ── Recent activity ────────────────────────────────────────────── */}
+      <GlassCard className="flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
           <div>
-            <div className="text-[13px] font-semibold">Recent activity</div>
-            <div className="text-[10px] text-ledger-text-faint mt-[2px]">Last {historyMonths} months</div>
+            <div className="text-[13px] font-bold">Recent activity</div>
+            <div className="text-[10px] text-white/[0.44] mt-0.5">Last {historyMonths} months</div>
           </div>
           {!txnsLoading && transactions.length > 4 && (
             <button
+              type="button"
               onClick={() => setActivityExpanded(expanded => !expanded)}
-              className="text-[11px] font-semibold text-ledger-text-secondary hover:text-ledger-text-primary transition-colors"
+              className="text-[11px] font-bold text-white/70 hover:text-white"
             >
               {activityExpanded ? 'Collapse' : `Show all (${transactions.length})`}
             </button>
           )}
         </div>
+
         {txnsLoading ? (
-          <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">Loading…</div>
+          <LoadingRow />
         ) : transactions.length === 0 ? (
-          <div className="px-4 py-4 text-center text-ledger-text-faint text-[12px]">No investment activity in the last {historyMonths} months</div>
+          <EmptyState title={`No investment activity in the last ${historyMonths} months`} />
         ) : (
-          visibleTransactions.map(t => (
-            <div key={t.id} className="flex items-center gap-3 px-4 py-[8px] border-b border-ledger-border-subtle last:border-0">
+          visibleTransactions.map(txn => (
+            <div
+              key={txn.id}
+              className="flex items-center gap-3 px-5 py-[9px] border-b border-white/[0.06] last:border-0 row-hover-soft"
+            >
               <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold truncate leading-tight">
-                  {t.name}{t.ticker ? ` · ${t.ticker}` : ''}
+                <div className="text-[12px] font-semibold truncate">
+                  {txn.name}{txn.ticker ? ` · ${txn.ticker}` : ''}
                 </div>
-                <div className="text-[10px] text-ledger-text-faint leading-tight">
-                  {t.account_name} · {formatActivityDate(t.date)}
+                <div className="text-[10px] text-white/[0.44] mt-px truncate">
+                  {txn.account_name} · {formatActivityDate(txn.date)}
                 </div>
               </div>
-              <span className="text-[9.5px] px-[6px] py-[1px] rounded-[5px] glass-chip text-ledger-text-secondary whitespace-nowrap capitalize">
-                {t.type}
-              </span>
-              <span className={`text-[12px] font-semibold w-[88px] text-right tabular-nums flex-shrink-0 ${t.amount < 0 ? 'text-ledger-positive' : ''}`}>
-                {t.amount < 0 ? '+' : '−'}${fmt(Math.abs(t.amount))}
+              <Tag className="capitalize">{txn.type}</Tag>
+              <span
+                className="text-[12px] font-bold w-[90px] text-right tabular-nums shrink-0"
+                style={txn.amount < 0 ? { color: '#b6ebcd' } : undefined}
+              >
+                {txn.amount < 0 ? '+' : '−'}${fmt(Math.abs(txn.amount))}
               </span>
             </div>
           ))
         )}
-      </div>
+      </GlassCard>
     </div>
   )
 }
