@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import Image from "next/image";
+import { site } from "@/content/site";
 
 type MacBookProps = {
   children: ReactNode;
@@ -7,23 +9,18 @@ type MacBookProps = {
 
 export function MacBook({ children, className }: MacBookProps) {
   return (
-    <div className={`macbook-scene ${className ?? ""}`}>
-      <div className="macbook">
-        <div className="macbook-lid">
-          <div className="macbook-bezel">
-            <span className="macbook-camera" aria-hidden="true" />
-            <div className="macbook-screen">{children}</div>
-          </div>
-        </div>
-        <div className="macbook-base" aria-hidden="true">
-          <div className="macbook-hinge" />
-          <div className="macbook-deck">
-            <div className="macbook-keys" />
-            <div className="macbook-trackpad" />
-          </div>
-          <div className="macbook-front" />
-        </div>
-      </div>
+    <div className={`macbook-photo ${className ?? ""}`}>
+      <Image
+        src={site.shots.macbook}
+        alt=""
+        width={1536}
+        height={1024}
+        priority
+        sizes="(min-width: 1024px) 58vw, 94vw"
+        className="macbook-photo-body"
+      />
+      <div className="macbook-photo-screen">{children}</div>
+      <span className="macbook-photo-glass" aria-hidden="true" />
     </div>
   );
 }

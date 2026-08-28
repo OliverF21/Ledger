@@ -4,6 +4,7 @@ Replace these files in place. The landing MacBook reads them by filename.
 
 | File | Used as |
 | --- | --- |
+| `macbook.png` | Device photo. Keep the screen dark; UI composites via `--mb-screen-*` |
 | `overview.png` | First walk screen and Open Graph |
 | `transactions.png` | Transactions / scheduled sync screen |
 | `budgets.png` | Budgets screen |

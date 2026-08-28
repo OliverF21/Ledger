@@ -53,11 +53,11 @@
   --z-nav: 40;
   --z-overlay: 50;
 
-  --mb-lid: #2b2e34;
-  --mb-lid-hi: #4a4e56;
-  --mb-lid-lo: #16181c;
-  --mb-key: #1c1e22;
-  --mb-deck: #3a3e46;
+  /* Screen slot inside public/product/macbook.png (1536x1024). */
+  --mb-screen-left: 13.802%;
+  --mb-screen-top: 10.742%;
+  --mb-screen-width: 71.745%;
+  --mb-screen-height: 61.328%;
 
   --ease-out: cubic-bezier(0.22, 0.8, 0.2, 1);
   --shadow-cta: 0 12px 30px -12px var(--cta-glow), inset 0 1px 0 rgba(255, 255, 255, 0.95);
@@ -107,49 +107,6 @@ body {
   box-shadow: var(--shadow-frame);
   backdrop-filter: blur(34px) saturate(150%);
   -webkit-backdrop-filter: blur(34px) saturate(150%);
-}
-
-.liquid-glass {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  border-radius: 28px;
-  background: linear-gradient(
-    165deg,
-    rgba(255, 255, 255, 0.26) 0%,
-    rgba(255, 255, 255, 0.08) 34%,
-    rgba(255, 255, 255, 0.04) 72%,
-    rgba(255, 255, 255, 0.09) 100%
-  );
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.62),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 0 40px rgba(255, 255, 255, 0.04),
-    0 28px 64px -30px rgba(0, 0, 0, 0.72),
-    0 0 48px -16px rgba(196, 216, 252, 0.22);
-  backdrop-filter: blur(48px) saturate(180%);
-  -webkit-backdrop-filter: blur(48px) saturate(180%);
-}
-
-.liquid-glass::before {
-  content: "";
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    radial-gradient(90% 70% at 8% -8%, rgba(255, 255, 255, 0.34), transparent 46%),
-    radial-gradient(50% 40% at 92% 108%, rgba(116, 206, 206, 0.12), transparent 58%);
-}
-
-.liquid-glass::after {
-  content: "";
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .atmosphere-wash {
@@ -235,30 +192,6 @@ body {
   to { background-position: -100% 0; }
 }
 
-@keyframes ledger-float {
-  0%, 100% { transform: translate3d(0, 0, 0); }
-  50% { transform: translate3d(0, -10px, 0); }
-}
-
-.walk-card {
-  opacity: 0;
-  transform: translate3d(0, 22px, 0) scale(0.985);
-  pointer-events: none;
-  transition:
-    opacity 0.5s var(--ease-out),
-    transform 0.5s var(--ease-out);
-}
-
-.walk-card-active {
-  opacity: 1;
-  transform: translate3d(0, 0, 0) scale(1);
-  pointer-events: auto;
-}
-
-.walk-card-active .walk-card-panel {
-  animation: ledger-float 6.4s ease-in-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .btn-primary,
   .btn-ghost {
@@ -267,10 +200,6 @@ body {
 
   .btn-skeleton {
     animation: none;
-  }
-
-  .walk-card-active .walk-card-panel {
-    animation: none !important;
   }
 }
 
@@ -281,137 +210,53 @@ body {
 }
 
 .walk-laptop {
-  transform-style: preserve-3d;
   will-change: transform;
 }
 
-.macbook {
-  position: relative;
-  transform-style: preserve-3d;
-  filter: drop-shadow(0 40px 70px rgba(0, 0, 0, 0.62));
+.walk-caption {
+  opacity: 0;
 }
 
-.macbook-lid {
+.macbook-photo {
   position: relative;
-  z-index: 2;
-  transform-style: preserve-3d;
+  width: 100%;
+  isolation: isolate;
+  filter: drop-shadow(0 38px 72px rgba(0, 0, 0, 0.58));
 }
 
-.macbook-bezel {
-  position: relative;
-  border-radius: 18px 18px 10px 10px;
-  padding: 12px 11px 22px;
-  background:
-    linear-gradient(180deg, var(--mb-lid-hi) 0%, var(--mb-lid) 38%, var(--mb-lid-lo) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(0, 0, 0, 0.55);
+.macbook-photo-body {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
-.macbook-camera {
+.macbook-photo-screen {
   position: absolute;
-  top: 5px;
-  left: 50%;
-  z-index: 3;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #0a0b0d;
-  box-shadow: inset 0 0 0 1px rgba(80, 140, 200, 0.35);
-  transform: translateX(-50%);
-}
-
-.macbook-screen {
-  position: relative;
+  left: var(--mb-screen-left);
+  top: var(--mb-screen-top);
+  width: var(--mb-screen-width);
+  height: var(--mb-screen-height);
   overflow: hidden;
-  aspect-ratio: 16 / 10.2;
-  border-radius: 4px;
+  border-radius: 7px 7px 5px 5px;
   background: #050608;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
 }
 
-.macbook-glare {
+.macbook-photo-glass {
   pointer-events: none;
   position: absolute;
-  inset: 0;
+  left: var(--mb-screen-left);
+  top: var(--mb-screen-top);
+  width: var(--mb-screen-width);
+  height: var(--mb-screen-height);
+  border-radius: 7px 7px 5px 5px;
   background: linear-gradient(
     118deg,
-    rgba(255, 255, 255, 0.09) 0%,
-    transparent 36%,
-    transparent 62%,
-    rgba(255, 255, 255, 0.03) 100%
+    rgba(255, 255, 255, 0.11) 0%,
+    transparent 34%,
+    transparent 64%,
+    rgba(255, 255, 255, 0.04) 100%
   );
-}
-
-.macbook-base {
-  position: relative;
-  z-index: 1;
-  transform-style: preserve-3d;
-  transform-origin: top center;
-  transform: rotateX(64deg);
-  margin-top: -1px;
-}
-
-.macbook-hinge {
-  height: 7px;
-  background: linear-gradient(180deg, #1a1c20, #4c5058 45%, #1f2227);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
-}
-
-.macbook-deck {
-  padding: 10px 8% 14px;
-  background: linear-gradient(180deg, var(--mb-deck), #26292f 70%, #1a1c20);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.macbook-keys {
-  height: 38px;
-  border-radius: 4px;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      var(--mb-key) 0 18px,
-      rgba(0, 0, 0, 0.55) 18px 20px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      transparent 0 10px,
-      rgba(0, 0, 0, 0.35) 10px 12px
-    );
-  background-color: var(--mb-key);
-  opacity: 0.7;
-}
-
-.macbook-trackpad {
-  width: 32%;
-  height: 22px;
-  margin: 10px auto 0;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #2a2d33, #1c1e22);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.macbook-front {
-  height: 8px;
-  border-radius: 0 0 10px 10px;
-  background: linear-gradient(180deg, #4a4e56, #2c2f35);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-
-@media (max-width: 1023px) {
-  .macbook-base {
-    transform: rotateX(80deg) scaleY(0.72);
-  }
-
-  .macbook-keys {
-    height: 22px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .macbook-scene {
-    perspective: none;
-  }
 }
 
 @media (max-width: 1023px) {
@@ -425,18 +270,16 @@ body {
   .hero-product-tilt {
     transform: none;
   }
+
+  .walk-caption {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .glass-frame,
-  .liquid-glass {
+  .glass-frame {
     background: #12151c;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-  }
-
-  .liquid-glass::before,
-  .liquid-glass::after {
-    display: none;
   }
 }

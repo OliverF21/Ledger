@@ -38,6 +38,7 @@ Drop replacement captures into [`public/product/`](public/product/). Keep the fi
 
 | File | Used as |
 | --- | --- |
+| `macbook.png` | Photoreal MacBook frame. Screen slot is `--mb-screen-*` in `src/design/tokens.css` |
 | `overview.png` | First MacBook screen, Open Graph |
 | `transactions.png` | Transactions walk screen |
 | `budgets.png` | Budgets walk screen |
