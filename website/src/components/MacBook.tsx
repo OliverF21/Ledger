@@ -1,12 +1,7 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import type { MutableRefObject } from "react";
-
-const MacBookCanvas = dynamic(
-  () => import("./MacBookCanvas").then((mod) => mod.MacBookCanvas),
-  { ssr: false, loading: () => <div className="macbook-3d-fallback" aria-hidden="true" /> },
-);
+import { MacBookMockup } from "@/components/MacBookMockup";
 
 type MacBookProps = {
   progressRef: MutableRefObject<number>;
@@ -16,8 +11,8 @@ type MacBookProps = {
 
 export function MacBook({ progressRef, freeze = false, className }: MacBookProps) {
   return (
-    <div className={`macbook-3d ${className ?? ""}`}>
-      <MacBookCanvas progressRef={progressRef} freeze={freeze} />
+    <div className={`macbook-mockup-wrap ${className ?? ""}`}>
+      <MacBookMockup progressRef={progressRef} freeze={freeze} />
     </div>
   );
 }

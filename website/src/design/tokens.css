@@ -53,11 +53,12 @@
   --z-nav: 40;
   --z-overlay: 50;
 
-  /* Unused by the WebGL MacBook; kept so a still of the device can replace the model later. */
-  --mb-screen-left: 13.802%;
-  --mb-screen-top: 10.742%;
-  --mb-screen-width: 71.745%;
-  --mb-screen-height: 61.328%;
+  /* Screen inset on /product/macbook.png — tweak if you swap the mockup PNG. */
+  --mb-screen-left: 13.65%;
+  --mb-screen-top: 10.55%;
+  --mb-screen-width: 72%;
+  --mb-screen-height: 61.55%;
+  --mb-screen-radius: 0.28rem;
 
   --ease-out: cubic-bezier(0.22, 0.8, 0.2, 1);
   --shadow-cta: 0 12px 30px -12px var(--cta-glow), inset 0 1px 0 rgba(255, 255, 255, 0.95);
@@ -219,9 +220,7 @@ body {
     min-height: clamp(20rem, 68vh, 34rem);
   }
 
-  .macbook-3d,
-  .macbook-3d-fallback {
-    aspect-ratio: 4 / 3.2;
+  .macbook-mockup-wrap {
     min-height: clamp(20rem, 68vh, 34rem);
   }
 }
@@ -235,23 +234,74 @@ body {
   will-change: transform;
 }
 
-.macbook-3d,
-.macbook-3d-fallback {
+.macbook-mockup-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 5 / 4;
   min-height: 16rem;
 }
 
-.macbook-3d-canvas {
-  width: 100% !important;
-  height: 100% !important;
-  background: transparent;
+.macbook-mockup {
+  width: 100%;
+}
+
+.macbook-mockup__rig {
+  transform-origin: 62% 42%;
+  filter: drop-shadow(0 42px 72px rgba(0, 0, 0, 0.55));
+  will-change: transform;
+}
+
+.macbook-mockup__device {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+}
+
+.macbook-mockup__frame {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
+}
+
+.macbook-mockup__screen {
+  position: absolute;
+  left: var(--mb-screen-left);
+  top: var(--mb-screen-top);
+  width: var(--mb-screen-width);
+  height: var(--mb-screen-height);
+  overflow: hidden;
+  border-radius: var(--mb-screen-radius);
+  z-index: 2;
+  background: #050608;
+}
+
+.macbook-mockup__layer {
+  position: absolute;
+  inset: 0;
+}
+
+.macbook-mockup__shot {
+  object-fit: cover;
+  object-position: top center;
+}
+
+.macbook-mockup__notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 3;
+  width: 9.5%;
+  height: 3.2%;
+  transform: translateX(-50%);
+  border-radius: 0 0 0.45rem 0.45rem;
+  background: #050608;
+  pointer-events: none;
 }
 
 @media (max-width: 1023px) {
-  .hero-product-tilt {
-    transform: none;
+  .macbook-mockup__rig {
+    transform: none !important;
     filter: drop-shadow(0 28px 48px rgba(0, 0, 0, 0.45));
   }
 }
@@ -259,6 +309,11 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .hero-product-tilt {
     transform: none;
+  }
+
+  .macbook-mockup__rig {
+    transform: none !important;
+    will-change: auto;
   }
 
   .walk-caption {

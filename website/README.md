@@ -43,9 +43,10 @@ Drop replacement captures into [`public/product/`](public/product/). Keep the fi
 | `budgets.png` | Budgets walk screen |
 | `investments.png` | Risk and optimization walk screen |
 | `advisor.png` | MCP / Advisor walk screen |
-| `macbook-deck.png` | Keyboard / trackpad texture on the 3D MacBook |
+| `macbook.png` | MacBook Pro mockup frame; product shots overlay on the screen |
+| `macbook-deck.png` | Legacy 3D texture (unused) |
 
-To play a product video in the MacBook later, drop `walk.mp4` here and set `site.features.video` to `/product/walk.mp4`. Until then the 3D display crossfades the stills as you scroll.
+To play a product video in the MacBook later, drop `walk.mp4` here and set `site.features.video` to `/product/walk.mp4`. Until then the mockup crossfades stills as you scroll.
 
 See [`public/product/README.md`](public/product/README.md) for sizes.
 
