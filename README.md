@@ -160,7 +160,10 @@ This app holds bank connection data. A few hard rules:
 
 - Don't expose it on the public internet. Use a VPN ([Tailscale](https://tailscale.com/) works well) if you need remote access.
 - Access tokens are encrypted on disk and never sent to the browser.
-- Keep `.env` and the `.db` files private. Store `ENCRYPTION_KEY` separately from database backups; together they unlock your bank link.
+- Keep `.env` and the `.db` files private. On desktop the encryption key lives in
+  the OS keychain, not next to `ledger.db`. For source installs, store
+  `ENCRYPTION_KEY` separately from database backups; together they unlock your
+  bank link.
 - Back up `ledger.db` and `budgets.db` regularly (copy while stopped, or `sqlite3 backend/ledger.db ".backup 'ledger-backup.db'"`).
 
 Longer writeup: **[SECURITY.md](SECURITY.md)**.

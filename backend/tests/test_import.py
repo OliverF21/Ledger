@@ -43,9 +43,12 @@ def test_import_happy_path(tmp_path, monkeypatch):
     assert result["imported_items"] == 1
     assert result["restart_required"] is True
     assert (appdata / "ledger.db").exists()
-    import json
-    cfg = json.loads((appdata / "config.json").read_text())
-    assert cfg["ENCRYPTION_KEY"] == SRC_KEY
+    from app import key_store
+    assert key_store.get_os_key() == SRC_KEY
+    cfg_path = appdata / "config.json"
+    if cfg_path.exists():
+        import json
+        assert "ENCRYPTION_KEY" not in json.loads(cfg_path.read_text())
 
 
 def test_import_wrong_key_rejected(tmp_path, monkeypatch):
@@ -167,6 +170,5 @@ def test_import_allows_empty_items_source(tmp_path, monkeypatch):
 
     result = settings_mod._do_import(str(src), confirm_overwrite=False)
     assert result["imported_items"] == 0
-    import json
-    cfg = json.loads((appdata / "config.json").read_text())
-    assert cfg["ENCRYPTION_KEY"] == SRC_KEY
+    from app import key_store
+    assert key_store.get_os_key() == SRC_KEY

@@ -1,8 +1,9 @@
 """Resolve the per-OS application-data directory for desktop mode.
 
-Databases and the generated encryption key live here (never inside the
-install dir, so app updates don't wipe user data). Set LEDGER_APPDATA to
-override (tests, custom locations).
+Databases live here (never inside the install dir, so app updates don't
+wipe user data). The Fernet encryption key is stored in the OS keychain
+when possible; config.json is only a fallback if the keychain refuses the
+write. Set LEDGER_APPDATA to override (tests, custom locations).
 """
 
 from __future__ import annotations
