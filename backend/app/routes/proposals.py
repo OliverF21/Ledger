@@ -48,6 +48,7 @@ from app.services.goals_service import (
     snapshot_goal,
     snapshots_equal,
     upsert_goal,
+    validate_txn_attributions,
 )
 from app.services.tvm import money
 
@@ -299,7 +300,7 @@ def _validate_goal_contribution(payload: dict[str, Any]) -> UpdateGoalContributi
 
 
 def _validate_attribute_transfer(
-    payload: dict[str, Any], ldb: Session | None = None
+    payload: dict[str, Any], ldb: Session | None = None, bdb: Session | None = None
 ) -> AttributeTransferPayload:
     try:
         model = AttributeTransferPayload(**payload)
@@ -319,10 +320,23 @@ def _validate_attribute_transfer(
             model.merchant = txn.merchant
         if not model.date:
             model.date = txn.date.isoformat() if txn.date else None
+        if bdb is not None:
+            items = [(row.goal_id, row.amount) for row in model.attributions]
+            try:
+                validate_txn_attributions(ldb, bdb, model.transaction_id, items)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+            if not model.basis_attributions:
+                model.basis_attributions = [
+                    AttributionLine(goal_id=a.goal_id, amount=float(a.amount))
+                    for a in attributions_for_transaction(ldb, model.transaction_id)
+                ]
     return model
 
 
-def _validate_kind(kind: str, payload: dict[str, Any], ldb: Session | None = None) -> dict[str, Any]:
+def _validate_kind(
+    kind: str, payload: dict[str, Any], ldb: Session | None = None, bdb: Session | None = None
+) -> dict[str, Any]:
     if kind == "set_budget":
         return _validate_set_budget(payload).model_dump()
     if kind == "set_goal":
@@ -330,7 +344,7 @@ def _validate_kind(kind: str, payload: dict[str, Any], ldb: Session | None = Non
     if kind == "update_goal_contribution":
         return _validate_goal_contribution(payload).model_dump()
     if kind == "attribute_transfer":
-        return _validate_attribute_transfer(payload, ldb).model_dump()
+        return _validate_attribute_transfer(payload, ldb, bdb).model_dump()
     raise HTTPException(status_code=422, detail=f"Unsupported kind '{kind}'")
 
 
@@ -395,7 +409,7 @@ async def create_proposal(
         raise HTTPException(status_code=422, detail=f"Unsupported kind '{req.kind}'")
 
     try:
-        normalized = _validate_kind(req.kind, req.payload, ldb)
+        normalized = _validate_kind(req.kind, req.payload, ldb, pdb)
         priors = _pending_to_supersede(pdb, req.kind, normalized)
 
         proposal = Proposal(
@@ -585,7 +599,7 @@ def _apply_goal_contribution(proposal: Proposal, pdb: Session) -> ApplyResponse:
 
 
 def _apply_attribute_transfer(proposal: Proposal, pdb: Session, ldb: Session) -> ApplyResponse:
-    model = _validate_attribute_transfer(proposal.payload or {}, ldb)
+    model = _validate_attribute_transfer(proposal.payload or {}, ldb, pdb)
     items = [(row.goal_id, row.amount) for row in model.attributions]
     prior = replace_txn_attributions(ldb, pdb, model.transaction_id, items)
     applied = [{"goal_id": gid, "amount": money(amt)} for gid, amt in items]
@@ -596,8 +610,22 @@ def _apply_attribute_transfer(proposal: Proposal, pdb: Session, ldb: Session) ->
         "prev": prior,
         "applied": applied,
     }
-    ldb.commit()
-    pdb.commit()
+    try:
+        ldb.commit()
+    except Exception:
+        pdb.rollback()
+        raise
+    try:
+        pdb.commit()
+    except Exception:
+        try:
+            restore_items = [(int(row["goal_id"]), float(row["amount"])) for row in prior]
+            replace_txn_attributions(ldb, pdb, model.transaction_id, restore_items)
+            ldb.commit()
+        except Exception:
+            ldb.rollback()
+        pdb.rollback()
+        raise
     return ApplyResponse(
         success=True,
         proposal_id=proposal.id,
@@ -647,7 +675,7 @@ async def undo_proposal(
         if proposal.kind == "set_budget":
             _undo_set_budget(proposal, pdb)
         elif proposal.kind == "set_goal":
-            _undo_set_goal(proposal, pdb)
+            _undo_set_goal(proposal, pdb, ldb)
         elif proposal.kind == "update_goal_contribution":
             _undo_goal_contribution(proposal, pdb)
         elif proposal.kind == "attribute_transfer":
@@ -656,6 +684,7 @@ async def undo_proposal(
             raise HTTPException(status_code=422, detail=f"Cannot undo kind '{proposal.kind}'")
         proposal.status = "undone"
         proposal.undone_at = datetime.utcnow()
+        ldb.commit()
         pdb.commit()
         return MutateResponse(success=True, proposal_id=proposal.id, status="undone")
     except HTTPException:
@@ -690,7 +719,7 @@ def _undo_set_budget(proposal: Proposal, pdb: Session) -> None:
             pdb.delete(budget)
 
 
-def _undo_set_goal(proposal: Proposal, pdb: Session) -> None:
+def _undo_set_goal(proposal: Proposal, pdb: Session, ldb: Session) -> None:
     undo = proposal.undo or {}
     goal_id = undo.get("goal_id")
     applied = undo.get("applied") or {}
@@ -707,7 +736,7 @@ def _undo_set_goal(proposal: Proposal, pdb: Session) -> None:
             detail="Goal changed since this was applied; undo refused to avoid overwriting your edit.",
         )
     if undo.get("created"):
-        delete_created_goal(pdb, int(goal_id))
+        delete_created_goal(pdb, int(goal_id), ledger_db=ldb)
     else:
         prev = undo.get("prev")
         if not prev:
@@ -751,4 +780,3 @@ def _undo_attribute_transfer(proposal: Proposal, pdb: Session, ldb: Session) -> 
     prev = undo.get("prev") or []
     items = [(int(row["goal_id"]), float(row["amount"])) for row in prev]
     replace_txn_attributions(ldb, pdb, int(txn_id), items)
-    ldb.commit()

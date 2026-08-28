@@ -34,6 +34,7 @@ _INVESTMENT_TEXT = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_ACH_TEXT = re.compile(r"\bach\b", re.IGNORECASE)
 _SAVINGS_TEXT = re.compile(
     r"\b(savings|hysa|high[\s\-]?yield|money[\s\-]?market|emergency[\s\-]?fund)\b",
     re.IGNORECASE,

@@ -11,6 +11,10 @@ from cryptography.fernet import Fernet
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("PLAID_CLIENT_ID", "test_client_id")
 os.environ.setdefault("PLAID_SANDBOX_SECRET", "test_sandbox_secret")
+if not os.environ.get("DATABASE_URL", "").startswith("sqlite"):
+    os.environ["DATABASE_URL"] = "sqlite:///ledger.db"
+if not os.environ.get("BUDGETS_DATABASE_URL", "sqlite:///budgets.db").startswith("sqlite"):
+    os.environ["BUDGETS_DATABASE_URL"] = "sqlite:///budgets.db"
 
 import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
@@ -332,3 +336,10 @@ def test_progress_uses_labels_not_opening_only(ctx):
     assert progress.progress == 2600.0
     ls.close()
     bs.close()
+
+
+def test_transactions_router_imports():
+    from app.routes.transactions import SimilarTransaction, router
+
+    assert router.prefix == "/transactions"
+    assert SimilarTransaction.model_fields["merchant"]

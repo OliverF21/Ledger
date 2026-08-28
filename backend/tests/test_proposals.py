@@ -19,6 +19,11 @@ from cryptography.fernet import Fernet
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("PLAID_CLIENT_ID", "test_client_id")
 os.environ.setdefault("PLAID_SANDBOX_SECRET", "test_sandbox_secret")
+# Cloud/dev shells may export a non-SQLAlchemy DATABASE_URL; tests use dependency overrides.
+if not os.environ.get("DATABASE_URL", "").startswith("sqlite"):
+    os.environ["DATABASE_URL"] = "sqlite:///ledger.db"
+if not os.environ.get("BUDGETS_DATABASE_URL", "sqlite:///budgets.db").startswith("sqlite"):
+    os.environ["BUDGETS_DATABASE_URL"] = "sqlite:///budgets.db"
 
 import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
@@ -497,3 +502,76 @@ def test_set_savings_budget_kind_rejected(ctx):
         headers=_svc_headers(),
     )
     assert r.status_code == 422
+
+
+def test_attribute_transfer_undo_refused_after_manual_edit(ctx):
+    txn_id = _seed_transfer(ctx)
+    pid_g = ctx.client.post(
+        "/api/proposals",
+        json=_goal_payload(name="Vacation", kind="sinking_fund"),
+        headers=_svc_headers(),
+    ).json()["id"]
+    gid = ctx.client.post(f"/api/proposals/{pid_g}/apply", headers=_auth_headers(ctx)).json()["entity_id"]
+    pid = ctx.client.post(
+        "/api/proposals",
+        json={
+            "kind": "attribute_transfer",
+            "payload": {
+                "payload_version": 1,
+                "transaction_id": txn_id,
+                "attributions": [{"goal_id": gid, "amount": 500.0, "goal_name": "Vacation"}],
+            },
+        },
+        headers=_svc_headers(),
+    ).json()["id"]
+    assert ctx.client.post(f"/api/proposals/{pid}/apply", headers=_auth_headers(ctx)).status_code == 200
+    ls = ctx.ledger()
+    try:
+        row = ls.query(GoalAttribution).filter(GoalAttribution.transaction_id == txn_id).one()
+        row.amount = 1.0
+        ls.commit()
+    finally:
+        ls.close()
+    r = ctx.client.post(f"/api/proposals/{pid}/undo", headers=_auth_headers(ctx))
+    assert r.status_code == 409
+
+
+def test_attribute_transfer_pending_supersedes_same_txn(ctx):
+    txn_id = _seed_transfer(ctx)
+    pid_g = ctx.client.post(
+        "/api/proposals", json=_goal_payload(name="Vacation", kind="sinking_fund"), headers=_svc_headers()
+    ).json()["id"]
+    gid = ctx.client.post(f"/api/proposals/{pid_g}/apply", headers=_auth_headers(ctx)).json()["entity_id"]
+    p1 = ctx.client.post(
+        "/api/proposals",
+        json={
+            "kind": "attribute_transfer",
+            "payload": {
+                "payload_version": 1,
+                "transaction_id": txn_id,
+                "attributions": [{"goal_id": gid, "amount": 200.0}],
+            },
+        },
+        headers=_svc_headers(),
+    ).json()["id"]
+    p2 = ctx.client.post(
+        "/api/proposals",
+        json={
+            "kind": "attribute_transfer",
+            "payload": {
+                "payload_version": 1,
+                "transaction_id": txn_id,
+                "attributions": [{"goal_id": gid, "amount": 500.0}],
+            },
+        },
+        headers=_svc_headers(),
+    ).json()["id"]
+    lst = ctx.client.get("/api/proposals", headers=_auth_headers(ctx)).json()
+    pending = [p for p in lst["proposals"] if p["status"] == "pending" and p["kind"] == "attribute_transfer"]
+    assert len(pending) == 1
+    assert pending[0]["id"] == p2
+    s = ctx.session()
+    try:
+        assert s.query(Proposal).get(p1).status == "superseded"
+    finally:
+        s.close()

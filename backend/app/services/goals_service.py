@@ -238,7 +238,12 @@ def restore_goal_snapshot(budgets_db: Session, snapshot: dict[str, Any]) -> None
     goal.color = snapshot["color"]
 
 
-def delete_created_goal(budgets_db: Session, goal_id: int) -> None:
+def delete_created_goal(
+    budgets_db: Session, goal_id: int, ledger_db: Session | None = None
+) -> None:
+    if ledger_db is not None:
+        ledger_db.query(GoalAttribution).filter(GoalAttribution.goal_id == goal_id).delete()
+        ledger_db.flush()
     goal = get_goal(budgets_db, goal_id)
     budgets_db.delete(goal)
 
@@ -262,13 +267,13 @@ def attributions_for_transaction(ledger_db: Session, transaction_id: int) -> lis
     )
 
 
-def replace_txn_attributions(
+def validate_txn_attributions(
     ledger_db: Session,
     budgets_db: Session,
     transaction_id: int,
     items: list[tuple[int, float]],
-) -> list[dict[str, Any]]:
-    """Replace labels on a transaction. Returns the previous attribution list."""
+) -> Transaction:
+    """Raise ValueError if the proposed labels cannot be applied."""
     txn = (
         ledger_db.query(Transaction)
         .filter(Transaction.id == transaction_id, Transaction.removed.is_(False))
@@ -292,7 +297,17 @@ def replace_txn_attributions(
     for goal_id, _ in items:
         if goal_id not in active_ids:
             raise ValueError(f"goal {goal_id} is not an active goal")
+    return txn
 
+
+def replace_txn_attributions(
+    ledger_db: Session,
+    budgets_db: Session,
+    transaction_id: int,
+    items: list[tuple[int, float]],
+) -> list[dict[str, Any]]:
+    """Replace labels on a transaction. Returns the previous attribution list."""
+    validate_txn_attributions(ledger_db, budgets_db, transaction_id, items)
     prior = [
         {"goal_id": a.goal_id, "amount": money(float(a.amount))}
         for a in attributions_for_transaction(ledger_db, transaction_id)

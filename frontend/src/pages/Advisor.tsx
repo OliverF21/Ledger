@@ -47,9 +47,13 @@ function GoalCardBody({ p }: { p: { kind: string; payload: Record<string, unknow
     const merchant = payloadStr(payload, 'merchant') ?? 'Transfer'
     const date = payloadStr(payload, 'date')
     const attrs = Array.isArray(payload.attributions) ? payload.attributions as Array<Record<string, unknown>> : []
+    const prior = Array.isArray(payload.basis_attributions) ? payload.basis_attributions as Array<Record<string, unknown>> : []
     const first = attrs[0] ?? {}
     const goalName = typeof first.goal_name === 'string' ? first.goal_name : 'Goal'
     const amount = typeof first.amount === 'number' ? first.amount : null
+    const priorFirst = prior[0]
+    const priorName = priorFirst && typeof priorFirst.goal_name === 'string' ? priorFirst.goal_name : null
+    const priorAmt = priorFirst && typeof priorFirst.amount === 'number' ? priorFirst.amount : null
     return (
       <div className="mb-[10px]">
         <div className="flex items-baseline gap-[10px] flex-wrap">
@@ -57,6 +61,14 @@ function GoalCardBody({ p }: { p: { kind: string; payload: Record<string, unknow
           {date && <span className="text-[12px] text-ledger-text-faint">{date}</span>}
         </div>
         <div className="text-[16px] font-bold text-ledger-accent tabular-nums mt-[4px]">
+          {priorName && (
+            <>
+              <span className="text-[14px] text-ledger-text-faint font-semibold line-through">
+                {money(priorAmt)} → {priorName}
+              </span>
+              <span className="text-ledger-text-faint font-normal mx-[8px]">→</span>
+            </>
+          )}
           {money(amount)} → {goalName}
         </div>
       </div>
@@ -66,12 +78,14 @@ function GoalCardBody({ p }: { p: { kind: string; payload: Record<string, unknow
   const target = payloadNum(payload, 'target_amount')
   const current = payloadNum(payload, 'current_amount') ?? 0
   const pmt = payloadNum(payload, 'monthly_contribution')
+  const targetDate = payloadStr(payload, 'target_date')
   return (
     <div className="mb-[10px]">
       <div className="text-[15px] font-semibold mb-[6px]">{name}</div>
       <div className="flex flex-wrap gap-x-[14px] gap-y-[4px] text-[13px] text-ledger-text-faint">
         <span className="tabular-nums">{money(current)} → {money(target)}</span>
         {pmt !== null && <span className="tabular-nums">{money(pmt)}/mo</span>}
+        {targetDate && <span>by {targetDate}</span>}
       </div>
     </div>
   )

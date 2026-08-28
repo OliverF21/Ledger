@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
+
+if not os.environ.get("DATABASE_URL", "").startswith("sqlite"):
+    os.environ["DATABASE_URL"] = "sqlite:///ledger.db"
+if not os.environ.get("BUDGETS_DATABASE_URL", "sqlite:///budgets.db").startswith("sqlite"):
+    os.environ["BUDGETS_DATABASE_URL"] = "sqlite:///budgets.db"
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker

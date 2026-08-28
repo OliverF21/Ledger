@@ -284,6 +284,9 @@ async def update_transaction_goal_labels(
     except Exception as e:
         db.rollback()
         log_and_raise(e, status_code=400)
+
+
+class SimilarTransaction(BaseModel):
     id: int
     merchant: str
     date: date

@@ -331,6 +331,7 @@ def create_transfer_label_proposal(
             )
 
     named: list[dict] = []
+    basis: list[dict] = []
     with budgets_session() as bdb:
         goals = {
             g.id: g
@@ -346,6 +347,18 @@ def create_transfer_label_proposal(
                     "goal_name": goal.name if goal is not None else f"Goal {gid}",
                 }
             )
+        with ledger_session() as ldb:
+            from app.services.goals_service import attributions_for_transaction
+
+            for attr in attributions_for_transaction(ldb, transaction_id):
+                goal = goals.get(attr.goal_id)
+                basis.append(
+                    {
+                        "goal_id": attr.goal_id,
+                        "amount": round(float(attr.amount), 2),
+                        "goal_name": goal.name if goal is not None else f"Goal {attr.goal_id}",
+                    }
+                )
 
     rationale_out = rationale or ""
     if role_note:
@@ -355,7 +368,7 @@ def create_transfer_label_proposal(
         "payload_version": 1,
         "transaction_id": transaction_id,
         "attributions": named,
-        "basis_attributions": [],
+        "basis_attributions": basis,
         "merchant": merchant,
         "date": txn_date,
     }
