@@ -152,17 +152,17 @@ export function Donut({
   const circumference = 2 * Math.PI * radius
   const total = slices.reduce((sum, slice) => sum + Math.max(0, slice.value), 0)
 
+  // A small gap between arcs, sized as a fraction of the circumference so it
+  // scales with radius — the design's own numbers work out to ~0.47% of the
+  // ring (a hair under 2°) between every pair of segments.
+  const gap = circumference * 0.0047
+
   let cursor = 0
-  const boundaries: number[] = []
   const arcs = slices.map(slice => {
     const fraction = total > 0 ? Math.max(0, slice.value) / total : 0
-    // Arcs butt directly against each other and are separated by the hairline
-    // light stroke below — cutting a gap into the dash instead punches hard
-    // dark wedges through the ring.
-    const dash = fraction * circumference
+    const dash = Math.max(0, fraction * circumference - gap)
     const offset = -cursor
     cursor += fraction * circumference
-    boundaries.push(cursor)
     return { slice, dash, offset }
   })
 
@@ -195,9 +195,8 @@ export function Donut({
       />
       <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full" style={{ transform: 'rotate(-90deg)' }}>
         <defs>
-          {/* Per-arc gradient with an off-centre focal point, so the ring reads
-              as one lit surface rather than a set of flat cut-out blocks. Same
-              recipe the Recharts pie used before the redesign. */}
+          {/* Per-arc gradient with an off-centre focal point, so each segment
+              reads as a lit surface rather than a flat cut-out block. */}
           {slices.map((slice, i) => (
             <radialGradient
               key={slice.key}
@@ -211,49 +210,32 @@ export function Donut({
           ))}
         </defs>
         <circle cx="100" cy="100" r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={strokeWidth} />
-        <g style={{ filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.45))' }}>
-          {arcs.map(({ slice, dash, offset }, i) => (
-            <circle
-              key={slice.key}
-              cx="100"
-              cy="100"
-              r={radius}
-              fill="none"
-              stroke={`url(#${gradientId}-${i})`}
-              strokeWidth={activeIndex === i ? strokeWidth + 5 : strokeWidth}
-              strokeDasharray={`${dash.toFixed(2)} ${circumference.toFixed(2)}`}
-              strokeDashoffset={offset.toFixed(2)}
-              style={{
-                cursor: onHover ? 'pointer' : 'default',
-                transition: 'stroke-width .18s ease, filter .18s ease, opacity .18s ease',
-                opacity: activeIndex === null || activeIndex === i ? 1 : 0.55,
-                filter: activeIndex === i ? `drop-shadow(0 0 12px ${slice.color}b3)` : undefined,
-              }}
-              onMouseEnter={() => onHover?.(i)}
-              onMouseLeave={() => onHover?.(null)}
-            />
-          ))}
-          {/* Hairline seams at each boundary. The old pie got these free from
-              the Cell stroke; with stroke-arcs the ends aren't strokeable, so
-              they're drawn as radial ticks — enough to read the boundary,
-              nowhere near enough to cut the ring the way a gap does. */}
-          {slices.length > 1 && boundaries.map((angle, i) => {
-            const rad = (angle / circumference) * 2 * Math.PI
-            const inner = radius - strokeWidth / 2
-            const outer = radius + strokeWidth / 2
-            return (
-              <line
-                key={`seam-${i}`}
-                x1={100 + Math.cos(rad) * inner}
-                y1={100 + Math.sin(rad) * inner}
-                x2={100 + Math.cos(rad) * outer}
-                y2={100 + Math.sin(rad) * outer}
-                stroke="rgba(255,255,255,0.10)"
-                strokeWidth="0.8"
-              />
-            )
-          })}
-        </g>
+        {/* No shared <g filter="drop-shadow(...)">: applying one drop-shadow to
+            a group of disjoint stroked arcs blurs each arc's shadow across the
+            gap into its neighbour, which is what reads as a hard dark edge at
+            every boundary. A per-arc glow on hover (below) doesn't have this
+            problem since only one arc casts it at a time. */}
+        {arcs.map(({ slice, dash, offset }, i) => (
+          <circle
+            key={slice.key}
+            cx="100"
+            cy="100"
+            r={radius}
+            fill="none"
+            stroke={`url(#${gradientId}-${i})`}
+            strokeWidth={activeIndex === i ? strokeWidth + 5 : strokeWidth}
+            strokeDasharray={`${dash.toFixed(2)} ${circumference.toFixed(2)}`}
+            strokeDashoffset={offset.toFixed(2)}
+            style={{
+              cursor: onHover ? 'pointer' : 'default',
+              transition: 'stroke-width .18s ease, filter .18s ease, opacity .18s ease',
+              opacity: activeIndex === null || activeIndex === i ? 1 : 0.55,
+              filter: activeIndex === i ? `drop-shadow(0 0 12px ${slice.color}b3)` : undefined,
+            }}
+            onMouseEnter={() => onHover?.(i)}
+            onMouseLeave={() => onHover?.(null)}
+          />
+        ))}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-6">
         {children}
