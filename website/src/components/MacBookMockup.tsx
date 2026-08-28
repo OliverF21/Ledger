@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef } from "react";
 import type { MutableRefObject } from "react";
+import { DeviceFrame } from "@/components/DeviceFrame";
 import { site } from "@/content/site";
 import { walkFrame } from "@/components/walkProgress";
 
@@ -10,7 +11,7 @@ const scenes = site.features.scenes;
 
 function smoothstep(t: number) {
   const x = Math.min(1, Math.max(0, t));
-  return x * x * (3 - 2 * x);
+  return x * x * (3 - 2 * t);
 }
 
 function lerp(a: number, b: number, t: number) {
@@ -62,11 +63,10 @@ export function MacBookMockup({
       const rig = rigRef.current;
       if (rig) {
         rig.style.transform = [
-          "perspective(1600px)",
-          `rotateY(${lerp(-14, -4, eased)}deg)`,
-          `rotateX(${lerp(5, 1.5, eased)}deg)`,
-          `translateY(${lerp(0, -6, eased)}px)`,
-          `scale(${lerp(1, 1.02, eased)})`,
+          "perspective(1800px)",
+          `rotateY(${lerp(-18, -8, eased)}deg)`,
+          `rotateX(${lerp(7, 2.5, eased)}deg)`,
+          `translateY(${lerp(4, -8, eased)}px)`,
         ].join(" ");
       }
 
@@ -79,19 +79,10 @@ export function MacBookMockup({
 
   return (
     <div className="macbook-mockup" aria-hidden={freeze}>
+      <div className="macbook-mockup__glow" aria-hidden="true" />
       <div ref={rigRef} className="macbook-mockup__rig">
-        <div className="macbook-mockup__device">
-          <Image
-            src={site.shots.macbook}
-            alt=""
-            width={2400}
-            height={1600}
-            priority
-            sizes="(min-width: 1024px) 58vw, 100vw"
-            className="macbook-mockup__frame"
-          />
-
-          <div className="macbook-mockup__screen">
+        <DeviceFrame>
+          <div className="macbook-mockup__viewport">
             {shots.map((src, index) => (
               <div
                 key={src}
@@ -103,16 +94,17 @@ export function MacBookMockup({
               >
                 <Image
                   src={src}
-                  alt=""
-                  fill
-                  sizes="(min-width: 1024px) 42vw, 88vw"
+                  alt={scenes[index].title}
+                  width={2400}
+                  height={1462}
+                  priority={index === 0}
+                  sizes="(min-width: 1024px) 62vw, 100vw"
                   className="macbook-mockup__shot"
                 />
               </div>
             ))}
-            <div className="macbook-mockup__notch" aria-hidden="true" />
           </div>
-        </div>
+        </DeviceFrame>
       </div>
     </div>
   );

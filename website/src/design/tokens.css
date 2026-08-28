@@ -53,13 +53,6 @@
   --z-nav: 40;
   --z-overlay: 50;
 
-  /* Screen inset on /product/macbook.png — tweak if you swap the mockup PNG. */
-  --mb-screen-left: 13.65%;
-  --mb-screen-top: 10.55%;
-  --mb-screen-width: 72%;
-  --mb-screen-height: 61.55%;
-  --mb-screen-radius: 0.28rem;
-
   --ease-out: cubic-bezier(0.22, 0.8, 0.2, 1);
   --shadow-cta: 0 12px 30px -12px var(--cta-glow), inset 0 1px 0 rgba(255, 255, 255, 0.95);
   --shadow-frame:
@@ -217,11 +210,16 @@ body {
 
 @media (min-width: 1024px) {
   .walk-laptop {
-    min-height: clamp(20rem, 68vh, 34rem);
+    min-height: clamp(22rem, 72vh, 38rem);
   }
 
   .macbook-mockup-wrap {
-    min-height: clamp(20rem, 68vh, 34rem);
+    min-height: clamp(22rem, 72vh, 38rem);
+  }
+
+  .macbook-mockup__rig {
+    margin-left: auto;
+    max-width: 108%;
   }
 }
 
@@ -241,39 +239,37 @@ body {
 }
 
 .macbook-mockup {
+  position: relative;
   width: 100%;
+}
+
+.macbook-mockup__glow {
+  position: absolute;
+  inset: 8% 2% 12%;
+  border-radius: 50%;
+  background: radial-gradient(
+    70% 60% at 50% 42%,
+    rgba(178, 200, 236, 0.2),
+    transparent 72%
+  );
+  pointer-events: none;
+  filter: blur(18px);
 }
 
 .macbook-mockup__rig {
-  transform-origin: 62% 42%;
-  filter: drop-shadow(0 42px 72px rgba(0, 0, 0, 0.55));
+  position: relative;
+  z-index: 1;
+  transform-origin: 72% 18%;
+  filter: drop-shadow(0 48px 80px rgba(0, 0, 0, 0.62));
   will-change: transform;
 }
 
-.macbook-mockup__device {
+.macbook-mockup__viewport {
   position: relative;
+  aspect-ratio: 2400 / 1462;
   width: 100%;
-  line-height: 0;
-}
-
-.macbook-mockup__frame {
-  display: block;
-  width: 100%;
-  height: auto;
-  user-select: none;
-  pointer-events: none;
-}
-
-.macbook-mockup__screen {
-  position: absolute;
-  left: var(--mb-screen-left);
-  top: var(--mb-screen-top);
-  width: var(--mb-screen-width);
-  height: var(--mb-screen-height);
   overflow: hidden;
-  border-radius: var(--mb-screen-radius);
-  z-index: 2;
-  background: #050608;
+  background: #07080a;
 }
 
 .macbook-mockup__layer {
@@ -282,21 +278,11 @@ body {
 }
 
 .macbook-mockup__shot {
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   object-position: top center;
-}
-
-.macbook-mockup__notch {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  z-index: 3;
-  width: 9.5%;
-  height: 3.2%;
-  transform: translateX(-50%);
-  border-radius: 0 0 0.45rem 0.45rem;
-  background: #050608;
-  pointer-events: none;
 }
 
 @media (max-width: 1023px) {
