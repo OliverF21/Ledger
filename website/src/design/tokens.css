@@ -230,11 +230,13 @@ body {
   min-height: 16rem;
 }
 
-.macbook-3d-mobile {
-  aspect-ratio: auto;
-  min-height: clamp(18rem, 58dvh, 30rem);
-  width: min(118vw, 38rem);
-  margin-inline: auto;
+@media (min-width: 1024px) {
+  .macbook-3d,
+  .macbook-3d-fallback {
+    aspect-ratio: 4 / 3.6;
+    min-height: clamp(22rem, 72vh, 36rem);
+    width: min(108%, 52rem);
+  }
 }
 
 .macbook-3d-canvas {
@@ -247,14 +249,6 @@ body {
   .hero-product-tilt {
     transform: none;
     filter: drop-shadow(0 28px 48px rgba(0, 0, 0, 0.45));
-  }
-
-  .walk-stage {
-    min-height: 100dvh;
-  }
-
-  .walk-laptop {
-    margin-top: -0.25rem;
   }
 }
 

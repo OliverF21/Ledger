@@ -14,7 +14,6 @@ import {
   walkFrame,
   walkScrollDistance,
 } from "@/components/walkProgress";
-import { useMobileWalk } from "@/components/useMobileWalk";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -30,7 +29,6 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
   const mobileBodyRef = useRef<HTMLParagraphElement>(null);
   const progressRef = useRef(0);
   const [mobileScene, setMobileScene] = useState(0);
-  const isMobile = useMobileWalk();
   const freeze = reduce === true;
 
   useEffect(() => {
@@ -101,9 +99,6 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
 
       mm.add("(max-width: 1023px)", () => {
         gsap.set(caption, { autoAlpha: 1, y: 0 });
-        if (copy) {
-          gsap.set(copy, { autoAlpha: 0, height: 0, marginTop: 0, marginBottom: 0, overflow: "hidden" });
-        }
 
         const tl = gsap.timeline({
           scrollTrigger: {
@@ -129,7 +124,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
               overflow: "hidden",
               pointerEvents: "none",
               ease: "none",
-              duration: 0.01,
+              duration: INTRO_RATIO,
             },
             0,
           );
@@ -157,29 +152,20 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
         ref={stageRef}
         className="walk-stage flex min-h-[100dvh] items-stretch overflow-x-clip"
       >
-        <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-start items-center gap-5 px-4 pt-[calc(var(--nav-h)+0.35rem)] sm:px-8 lg:content-center lg:gap-6 lg:px-8 lg:pt-[calc(var(--nav-h)+0.5rem)] lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
-          <div className="walk-laptop relative z-20 order-1 w-full lg:order-2">
-            <MacBook
-              key={isMobile ? "mobile" : "desktop"}
-              progressRef={progressRef}
-              freeze={freeze}
-              variant={isMobile ? "mobile" : "desktop"}
-            />
-          </div>
-
-          <div className="relative z-10 order-2 hidden min-h-0 max-w-[34rem] lg:order-1 lg:block lg:min-h-[22rem]">
+        <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-center items-center gap-8 px-5 pt-[calc(var(--nav-h)+1.25rem)] sm:px-8 lg:grid-cols-[minmax(0,0.64fr)_minmax(0,1.36fr)] lg:gap-5 lg:pt-[calc(var(--nav-h)+0.5rem)]">
+          <div className="relative z-10 min-h-[11rem] max-w-[34rem] lg:min-h-[22rem]">
             <div ref={copyRef}>
-              <h1 className="text-[clamp(1.85rem,8.5vw,4.35rem)] font-bold leading-[0.98] tracking-[-0.055em] lg:text-[clamp(2.4rem,6.2vw,4.35rem)]">
+              <h1 className="text-[clamp(2.4rem,6.2vw,4.35rem)] font-bold leading-[0.98] tracking-[-0.055em]">
                 {site.hero.lines.map((line) => (
-                  <span key={line} className="block lg:inline lg:after:content-['_'] last:lg:after:content-none">
+                  <span key={line} className="block">
                     {line}
                   </span>
                 ))}
               </h1>
-              <p className="mt-3 max-w-[34ch] text-[14.5px] leading-relaxed text-[var(--ink-soft)] sm:text-base lg:mt-5">
+              <p className="mt-5 max-w-[34ch] text-[15.5px] leading-relaxed text-[var(--ink-soft)] sm:text-base">
                 {site.hero.subtext}
               </p>
-              <div className="mt-5 flex flex-wrap items-center gap-3 lg:mt-8">
+              <div className="mt-8 flex flex-wrap items-center gap-3">
                 <DownloadButton release={release} />
                 <a
                   href={site.github}
@@ -220,8 +206,12 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             )}
           </div>
 
+          <div className="walk-laptop relative z-20 w-full lg:-mr-4 lg:justify-self-end">
+            <MacBook progressRef={progressRef} freeze={freeze} />
+          </div>
+
           {!freeze && (
-            <div className="relative z-10 order-2 max-w-[34rem] lg:order-3 lg:hidden">
+            <div className="relative z-10 max-w-[34rem] lg:hidden">
               <h2
                 ref={mobileTitleRef}
                 className="text-[1.65rem] font-bold tracking-[-0.04em]"

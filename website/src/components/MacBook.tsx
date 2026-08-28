@@ -11,19 +11,13 @@ const MacBookCanvas = dynamic(
 type MacBookProps = {
   progressRef: MutableRefObject<number>;
   freeze?: boolean;
-  variant?: "desktop" | "mobile";
   className?: string;
 };
 
-export function MacBook({
-  progressRef,
-  freeze = false,
-  variant = "desktop",
-  className,
-}: MacBookProps) {
+export function MacBook({ progressRef, freeze = false, className }: MacBookProps) {
   return (
-    <div className={`macbook-3d ${variant === "mobile" ? "macbook-3d-mobile" : ""} ${className ?? ""}`}>
-      <MacBookCanvas progressRef={progressRef} freeze={freeze} variant={variant} />
+    <div className={`macbook-3d ${className ?? ""}`}>
+      <MacBookCanvas progressRef={progressRef} freeze={freeze} />
     </div>
   );
 }
