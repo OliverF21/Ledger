@@ -9,7 +9,7 @@ import { MacBook } from "@/components/MacBook";
 import { site } from "@/content/site";
 import type { LatestRelease } from "@/release/github";
 import {
-  INTRO_RATIO,
+  introRatio,
   scenes,
   walkFrame,
   walkScrollDistance,
@@ -41,19 +41,22 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
 
     const syncCaptions = (progress: number) => {
       progressRef.current = progress;
-      const { scene, inIntro } = walkFrame(progress);
-      const item = scenes[scene];
+      const { scene, blend, inIntro } = walkFrame(progress);
+      const captionScene =
+        !inIntro && blend > 0.45 ? Math.min(scenes.length - 1, scene + 1) : scene;
+      const item = scenes[captionScene];
 
       if (captionTitleRef.current) captionTitleRef.current.textContent = item.title;
       if (captionBodyRef.current) captionBodyRef.current.textContent = item.body;
       if (mobileTitleRef.current) mobileTitleRef.current.textContent = item.title;
       if (mobileBodyRef.current) mobileBodyRef.current.textContent = item.body;
 
-      if (!inIntro) setMobileScene(scene);
+      if (!inIntro) setMobileScene(captionScene);
     };
 
     const ctx = gsap.context(() => {
       const distance = walkScrollDistance();
+      const intro = introRatio();
       const mm = gsap.matchMedia();
 
       mm.add("(min-width: 1024px)", () => {
@@ -65,7 +68,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             start: "top top",
             end: () => `+=${distance}vh`,
             pin: stage,
-            scrub: 4.5,
+            scrub: 5.5,
             anticipatePin: 1,
             invalidateOnRefresh: true,
             onUpdate: (self) => syncCaptions(self.progress),
@@ -80,7 +83,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
               y: -28,
               pointerEvents: "none",
               ease: "none",
-              duration: INTRO_RATIO,
+              duration: intro,
             },
             0,
           );
@@ -89,12 +92,12 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
         if (caption) {
           tl.to(
             caption,
-            { autoAlpha: 1, y: 0, ease: "none", duration: INTRO_RATIO * 0.35 },
-            INTRO_RATIO,
+            { autoAlpha: 1, y: 0, ease: "none", duration: intro * 0.35 },
+            intro,
           );
         }
 
-        tl.to({}, { duration: 1 - INTRO_RATIO }, INTRO_RATIO);
+        tl.to({}, { duration: 1 - intro }, intro);
       });
 
       mm.add("(max-width: 1023px)", () => {
@@ -104,9 +107,9 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
           scrollTrigger: {
             trigger: section,
             start: "top top",
-            end: () => `+=${Math.round(distance * 0.92)}vh`,
+            end: () => `+=${Math.round(distance * 0.95)}vh`,
             pin: stage,
-            scrub: 3.5,
+            scrub: 4.5,
             anticipatePin: 1,
             invalidateOnRefresh: true,
             onUpdate: (self) => syncCaptions(self.progress),
@@ -124,13 +127,13 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
               overflow: "hidden",
               pointerEvents: "none",
               ease: "none",
-              duration: INTRO_RATIO,
+              duration: intro,
             },
             0,
           );
         }
 
-        tl.to({}, { duration: 1 - INTRO_RATIO }, INTRO_RATIO);
+        tl.to({}, { duration: 1 - intro }, intro);
       });
 
       syncCaptions(0);
