@@ -6,7 +6,7 @@ export const scenes = site.features.scenes;
 export const INTRO_RATIO = 0.14;
 
 /** Fraction of each scene segment spent holding before crossfade begins. */
-export const SCENE_HOLD = 0.72;
+export const SCENE_HOLD = 0.86;
 
 export type WalkFrame = {
   progress: number;
@@ -36,5 +36,5 @@ export function walkFrame(progress: number): WalkFrame {
 
 /** Scroll distance for the pinned product walk (viewport heights). */
 export function walkScrollDistance() {
-  return 60 + scenes.length * 115;
+  return 140 + scenes.length * 200;
 }

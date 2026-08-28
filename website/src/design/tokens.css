@@ -109,6 +109,10 @@ body {
     linear-gradient(166deg, var(--canvas-hi) 0%, var(--canvas-mid) 48%, var(--canvas) 100%);
 }
 
+.device-frame-soft {
+  overflow: visible;
+}
+
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -205,7 +209,7 @@ body {
 
 .walk-laptop {
   pointer-events: none;
-  overflow: hidden;
+  overflow: visible;
 }
 
 @media (min-width: 1024px) {
@@ -219,7 +223,7 @@ body {
 
   .macbook-mockup__rig {
     margin-left: auto;
-    max-width: 108%;
+    max-width: 100%;
   }
 }
 
@@ -262,6 +266,16 @@ body {
   transform-origin: 72% 18%;
   filter: drop-shadow(0 48px 80px rgba(0, 0, 0, 0.62));
   will-change: transform;
+  -webkit-mask-image: radial-gradient(
+    ellipse 98% 96% at 52% 46%,
+    #000 72%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 98% 96% at 52% 46%,
+    #000 72%,
+    transparent 100%
+  );
 }
 
 .macbook-mockup__viewport {
@@ -269,20 +283,47 @@ body {
   aspect-ratio: 2400 / 1462;
   width: 100%;
   overflow: hidden;
-  background: #07080a;
+  background: transparent;
+  border-radius: calc(var(--radius-frame) - 9px);
+  padding: 5px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 100% 100% at 50% 48%,
+    #000 90%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 100% 100% at 50% 48%,
+    #000 90%,
+    transparent 100%
+  );
 }
 
 .macbook-mockup__layer {
   position: absolute;
-  inset: 0;
+  inset: 5px;
+  border-radius: calc(var(--radius-frame) - 12px);
+  overflow: hidden;
 }
 
 .macbook-mockup__shot {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: top center;
+  object-fit: contain;
+  object-position: center top;
+}
+
+.macbook-mockup__feather {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(to bottom, rgba(7, 8, 10, 0.45) 0%, transparent 5%),
+    linear-gradient(to top, rgba(7, 8, 10, 0.28) 0%, transparent 4%),
+    linear-gradient(to right, rgba(7, 8, 10, 0.2) 0%, transparent 4%),
+    linear-gradient(to left, rgba(7, 8, 10, 0.2) 0%, transparent 4%);
 }
 
 @media (max-width: 1023px) {

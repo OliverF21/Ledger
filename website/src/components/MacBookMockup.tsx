@@ -81,7 +81,7 @@ export function MacBookMockup({
     <div className="macbook-mockup" aria-hidden={freeze}>
       <div className="macbook-mockup__glow" aria-hidden="true" />
       <div ref={rigRef} className="macbook-mockup__rig">
-        <DeviceFrame>
+        <DeviceFrame softClip>
           <div className="macbook-mockup__viewport">
             {shots.map((src, index) => (
               <div
@@ -103,6 +103,7 @@ export function MacBookMockup({
                 />
               </div>
             ))}
+            <div className="macbook-mockup__feather" aria-hidden="true" />
           </div>
         </DeviceFrame>
       </div>
