@@ -18,10 +18,10 @@ const SCREEN_PATHS = scenes.map((s) => site.shots[s.shot]);
 const COPY_END = 0.16;
 
 const aluminum = {
-  metalness: 0.93,
-  roughness: 0.3,
-  clearcoat: 0.48,
-  clearcoatRoughness: 0.32,
+  metalness: 0.9,
+  roughness: 0.38,
+  clearcoat: 0.35,
+  clearcoatRoughness: 0.4,
 } as const;
 
 type Pose = {
@@ -35,10 +35,10 @@ function poseAt(progress: number): Pose {
   const t = THREE.MathUtils.clamp(progress / COPY_END, 0, 1);
   const e = t * t * (3 - 2 * t);
   return {
-    yaw: THREE.MathUtils.lerp(-0.62, -0.28, e),
-    pitch: THREE.MathUtils.lerp(0.32, 0.14, e),
-    roll: THREE.MathUtils.lerp(-0.04, -0.01, e),
-    lid: THREE.MathUtils.lerp(-0.26, -0.12, e),
+    yaw: THREE.MathUtils.lerp(-0.5, -0.24, e),
+    pitch: THREE.MathUtils.lerp(0.14, 0.07, e),
+    roll: THREE.MathUtils.lerp(-0.03, 0, e),
+    lid: THREE.MathUtils.lerp(-0.18, -0.1, e),
   };
 }
 
@@ -80,14 +80,9 @@ function Deck() {
   }, [map]);
 
   return (
-    <mesh rotation-x={-Math.PI / 2} position={[0, 0.372, 0.12]} renderOrder={1}>
+    <mesh rotation-x={-Math.PI / 2} position={[0, 0.385, 0.12]} renderOrder={1}>
       <planeGeometry args={[13.55, 8.55]} />
-      <meshPhysicalMaterial
-        map={map}
-        roughness={0.52}
-        metalness={0.18}
-        clearcoat={0.12}
-      />
+      <meshBasicMaterial map={map} toneMapped={false} />
     </mesh>
   );
 }
@@ -117,8 +112,9 @@ function LaptopBody({
   return (
     <group
       ref={rig}
-      position={[0, 0.42, 0]}
+      position={[0, 0.2, 0]}
       rotation={[rest.pitch, rest.yaw, rest.roll]}
+      scale={0.92}
     >
       <RoundedBox args={[14.42, 0.36, 9.96]} radius={0.09} smoothness={6} position={[0, 0.18, 0]}>
         <meshPhysicalMaterial color="#6e727a" {...aluminum} />
@@ -168,27 +164,27 @@ function LaptopBody({
 function Lights() {
   return (
     <>
-      <hemisphereLight args={["#c5d2e6", "#0a0c10", 0.42]} />
+      <hemisphereLight args={["#c5d2e6", "#0a0c10", 0.55]} />
       <spotLight
-        position={[7.5, 10, 7]}
-        angle={0.5}
+        position={[6, 11, 8]}
+        angle={0.55}
         penumbra={1}
-        intensity={2.4}
-        color="#f4f6fa"
+        intensity={1.35}
+        color="#eef2f7"
       />
       <spotLight
-        position={[-7, 4.5, 5]}
-        angle={0.7}
+        position={[-6.5, 5, 6]}
+        angle={0.75}
         penumbra={1}
-        intensity={0.85}
+        intensity={0.45}
         color="#8eadd8"
       />
-      <directionalLight position={[2, 3, -8]} intensity={0.7} color="#d5dde8" />
+      <directionalLight position={[2, 4, -7]} intensity={0.35} color="#d5dde8" />
       <Environment resolution={256}>
-        <Lightformer intensity={2.6} position={[0, 5, -2]} scale={[12, 2.4, 1]} />
-        <Lightformer intensity={1.4} position={[6, 2, 4]} scale={[4, 6, 1]} />
-        <Lightformer intensity={1.1} position={[-6, 1.5, 2]} scale={[3, 5, 1]} color="#9bb6dc" />
-        <Lightformer intensity={0.7} position={[0, -2, 4]} scale={[10, 1, 1]} color="#1b2230" />
+        <Lightformer intensity={1.2} position={[0, 5, -2]} scale={[12, 2.4, 1]} />
+        <Lightformer intensity={0.7} position={[6, 2, 4]} scale={[4, 6, 1]} />
+        <Lightformer intensity={0.55} position={[-6, 1.5, 2]} scale={[3, 5, 1]} color="#9bb6dc" />
+        <Lightformer intensity={0.35} position={[0, -2, 4]} scale={[10, 1, 1]} color="#1b2230" />
       </Environment>
     </>
   );
@@ -208,8 +204,14 @@ export function MacBookCanvas({
       className="macbook-3d-canvas"
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       dpr={[1, 1.75]}
-      camera={{ fov: 28, position: [0, 2.55, 17.6], near: 0.1, far: 80 }}
+      camera={{ fov: 32, position: [0, 4.6, 26], near: 0.1, far: 80 }}
       frameloop={freeze ? "demand" : "always"}
+      onCreated={({ camera, gl }) => {
+        camera.lookAt(0, 2.15, 0);
+        gl.toneMapping = THREE.ACESFilmicToneMapping;
+        gl.toneMappingExposure = 0.88;
+        gl.setClearColor(0x000000, 0);
+      }}
     >
       <Lights />
       <LaptopBody active={active} progressRef={progressRef} freeze={freeze} />

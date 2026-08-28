@@ -221,7 +221,7 @@ body {
 .macbook-3d-fallback {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 11;
+  aspect-ratio: 5 / 4;
   min-height: 16rem;
 }
 
