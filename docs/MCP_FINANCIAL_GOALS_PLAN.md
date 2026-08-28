@@ -245,15 +245,19 @@ Add `FinancialGoal` in `budgets.db` (user intent, not Plaid truth), beside `Budg
 | Tool | Type |
 | --- | --- |
 | `list_financial_goals` | Read |
-| `goal_progress` | Read — % funded, months ahead/behind vs plan |
+| `goal_progress` | Read — % funded from labeled transfers, months ahead/behind vs plan |
 
 Progress is **not** inferred from leftover income, and **not** a spend-style budget on a fake “Savings” category.
 
 Plaid (and Cash Flow) can tell you a row is a savings transfer (`TRANSFER_OUT_SAVINGS`, savings-account subtype, or a user category like “Savings”). They cannot tell you *which goal* that transfer serves. One HYSA often funds an emergency fund, a vacation sinking fund, and unallocated cash at once. Linking the whole account balance to a single goal would mis-count.
 
-**Attribution is manual:** the user flags a transfer (or a split of one) as applying to a specific goal/bucket. Progress = sum of flagged inflows − flagged withdrawals for that goal (plus an optional opening `current_amount`). Unflagged savings transfers stay generic Cash Flow “Savings,” not goal progress.
+**Savings labels (new tag type, not a spend category).** Creating a goal creates a bucket label (e.g. `Vacation`, `Emergency fund`). On a transfer, the user can attach that label — same $500 ACH stays a savings/transfer for Cash Flow and Budgets, and *also* counts toward the Vacation goal. Do **not** reuse `category_user` for this: a spend category of “Vacation” would leak into Budgets and spending rollups. Labels live on a separate field (e.g. `goal_id` / split lines).
 
-That is the only honest “savings budget”: a planned monthly contribution on the goal, compared to tagged transfers this month — not a `Budget` ceiling on a Savings category.
+**Attribution:** flag a transfer (or a split of one) with a savings label. Progress = opening `current_amount` + labeled inflows − labeled withdrawals. Unlabeled savings transfers stay generic Cash Flow “Savings,” not goal progress.
+
+**Goals tab:** each bucket shows target, labeled-to-date, planned $/mo, and TVM months remaining. Example: tag a $500 savings transfer “Vacation” → Vacation card ticks up $500.
+
+That is the only honest “savings budget”: planned monthly contribution vs labeled transfers this month — not a `Budget` ceiling.
 
 ### Phase 3 — Write-intent proposals + Advisor UI
 
@@ -398,11 +402,13 @@ After Phase 3:
 
 | Surface | Role vs goals planning |
 | --- | --- |
-| **MCP + Claude** | Primary UX for conversational planning (this feature) |
-| **Cash Flow** | Supplies surplus / (later) savings vs invest allocations |
+| **MCP + Claude** | Conversational planning (Phase 1 tools); later can suggest labels / goals |
+| **Cash Flow** | Surplus and (later) generic Savings vs Invest allocations — unlabeled |
 | **Budgets** | Spending caps; cuts free capacity; not the goal itself |
+| **Transactions** | User attaches a **savings label** (goal bucket) on a transfer; optional split |
+| **Goals tab** | Target, labeled progress, planned $/mo, TVM remaining |
 | **Investments** | Holdings/performance context; funding plans use assumed return, not live alpha |
-| **Net worth** | Optional later source for `current_amount` |
+| **Net worth** | Stock of accounts; not auto-mapped onto a goal |
 | **Advisor** | Human Apply/Dismiss for staged goal + budget proposals |
 
 Cash Flow answers: “Where did this month’s money go?”  
@@ -417,10 +423,10 @@ Budgets answer: “Am I overspending a category?”
 2. **Debt payoff:** include interest rate amortization in v1, or treat as simple remaining÷payment until a dedicated debt model exists?
 3. **Linked balances:** **locked** — do not auto-fill a goal from a whole account. One savings account can back several buckets. Progress comes from **user-flagged transfers** (plus optional opening `current_amount`). Account subtype / `TRANSFER_OUT_SAVINGS` only classifies the row as savings, not as a specific goal.
 4. **Multiple concurrent goals:** split capacity pro-rata, priority order, or leave allocation entirely to Claude’s narrative?
-5. **UI surface:** is Claude-only enough for v1, or does Ledger need a Goals page that calls the same service?
+5. **UI surface:** **locked** — Phase 2 includes a **Goals tab**. Claude remains the planning conversationalist (Phase 1 tools); the tab is where labeled transfer progress lives.
 6. **Cash-flow dependency:** ship Phase 1 on residual surplus now, or wait for Savings/Investments sinks so “invest plan” uses real investment transfers?
 
-**Recommendation:** ship Phase 1 on residual surplus immediately; treat Savings vs Investments allocation as an enhancement when that cash-flow spec lands. Keep debt simple (0% interest math) until demand appears. Defer Goals page until persisted goals (Phase 2) exist. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback. Goal progress (Phase 2+) is tagged transfers per bucket, not a Savings spend budget and not a whole-account link.
+**Recommendation:** ship Phase 1 on residual surplus immediately; treat Savings vs Investments allocation as an enhancement when that cash-flow spec lands. Keep debt simple (0% interest math) until demand appears. Phase 2 adds persisted goals, **savings labels on transfers**, and a **Goals tab**. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback. Goal progress is labeled transfers per bucket, not a Savings spend budget and not a whole-account link.
 
 ---
 
@@ -439,8 +445,10 @@ Budgets answer: “Am I overspending a category?”
 
 ### Phase 2
 
-- Goals can be listed and progress reported from `budgets.db`.
+- Goals can be listed and progress reported from labeled transfers + opening amount.
 - Progress math matches the same planner assumptions stored on the goal.
+- Savings labels are distinct from spend categories; tagging a transfer does not change Budgets/Cash Flow category rollups.
+- Goals tab shows per-bucket progress (e.g. $500 tagged Vacation).
 
 ### Phase 3
 
