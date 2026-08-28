@@ -1,8 +1,9 @@
 "use client";
 
 import { Suspense, useLayoutEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
+  ContactShadows,
   Environment,
   Lightformer,
   RoundedBox,
@@ -16,11 +17,13 @@ import { walkFrame } from "@/components/walkProgress";
 const scenes = site.features.scenes;
 
 const aluminum = {
-  metalness: 0.9,
-  roughness: 0.38,
-  clearcoat: 0.35,
-  clearcoatRoughness: 0.4,
+  metalness: 0.82,
+  roughness: 0.42,
+  clearcoat: 0.45,
+  clearcoatRoughness: 0.35,
 } as const;
+
+const SCREEN_Y = 4.88;
 
 type Pose = {
   yaw: number;
@@ -29,15 +32,45 @@ type Pose = {
   lid: number;
 };
 
-function poseAt(progress: number): Pose {
+function smooth(progress: number) {
   const t = THREE.MathUtils.clamp(progress, 0, 1);
-  const e = t * t * (3 - 2 * t);
+  return t * t * (3 - 2 * t);
+}
+
+/** Balanced 3/4 angle: screen readable, chassis still visible. */
+function poseAt(progress: number): Pose {
+  const e = smooth(progress);
   return {
-    yaw: THREE.MathUtils.lerp(-0.52, -0.08, e),
-    pitch: THREE.MathUtils.lerp(0.16, 0.035, e),
-    roll: THREE.MathUtils.lerp(-0.035, 0, e),
-    lid: THREE.MathUtils.lerp(-0.2, -0.075, e),
+    yaw: THREE.MathUtils.lerp(-0.28, -0.06, e),
+    pitch: THREE.MathUtils.lerp(0.24, 0.1, e),
+    roll: THREE.MathUtils.lerp(-0.02, 0, e),
+    lid: THREE.MathUtils.lerp(-0.11, -0.06, e),
   };
+}
+
+function CameraRig({
+  progressRef,
+  freeze,
+}: {
+  progressRef: MutableRefObject<number>;
+  freeze: boolean;
+}) {
+  const { camera } = useThree();
+
+  useFrame(() => {
+    const e = smooth(freeze ? 1 : progressRef.current);
+    const cam = camera as THREE.PerspectiveCamera;
+    cam.position.set(
+      0,
+      THREE.MathUtils.lerp(5.05, 4.82, e),
+      THREE.MathUtils.lerp(16.8, 18.8, e),
+    );
+    cam.fov = THREE.MathUtils.lerp(24, 26, e);
+    cam.lookAt(0, THREE.MathUtils.lerp(SCREEN_Y, 4.78, e), 0);
+    cam.updateProjectionMatrix();
+  });
+
+  return null;
 }
 
 function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
@@ -58,7 +91,9 @@ function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
   useLayoutEffect(() => {
     for (const tex of textures) {
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = 8;
+      tex.anisotropy = 16;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
       tex.needsUpdate = true;
     }
   }, [textures]);
@@ -87,12 +122,7 @@ function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
     <group>
       <mesh renderOrder={1}>
         <planeGeometry args={[13.28, 8.28]} />
-        <meshBasicMaterial
-          ref={backMat}
-          toneMapped={false}
-          transparent
-          opacity={0}
-        />
+        <meshBasicMaterial ref={backMat} toneMapped={false} transparent opacity={0} />
       </mesh>
       <mesh position={[0, 0, 0.001]} renderOrder={2}>
         <planeGeometry args={[13.28, 8.28]} />
@@ -105,32 +135,6 @@ function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
         />
       </mesh>
     </group>
-  );
-}
-
-function Deck() {
-  const map = useTexture(site.shots.deck);
-
-  useLayoutEffect(() => {
-    map.colorSpace = THREE.SRGBColorSpace;
-    map.anisotropy = 8;
-    map.needsUpdate = true;
-  }, [map]);
-
-  return (
-    <mesh rotation-x={-Math.PI / 2} position={[0, 0.392, 0.06]} renderOrder={1}>
-      <planeGeometry args={[12.6, 7.6]} />
-      <meshBasicMaterial map={map} toneMapped={false} transparent opacity={0.94} />
-    </mesh>
-  );
-}
-
-function GroundShadow() {
-  return (
-    <mesh rotation-x={-Math.PI / 2} position={[0, 0.005, 0.35]}>
-      <circleGeometry args={[6.8, 48]} />
-      <meshBasicMaterial color="#000000" transparent opacity={0.22} />
-    </mesh>
   );
 }
 
@@ -157,49 +161,46 @@ function LaptopBody({
   return (
     <group
       ref={rig}
-      position={[0, 0.2, 0]}
+      position={[0, 0.08, 0]}
       rotation={[rest.pitch, rest.yaw, rest.roll]}
-      scale={0.92}
+      scale={1.02}
     >
-      <RoundedBox args={[14.42, 0.36, 9.96]} radius={0.09} smoothness={6} position={[0, 0.18, 0]}>
-        <meshPhysicalMaterial color="#6e727a" {...aluminum} />
+      {/* Minimal base — no keyboard texture, keeps focus on the display */}
+      <RoundedBox
+        args={[14.1, 0.28, 9.6]}
+        radius={0.08}
+        smoothness={8}
+        position={[0, 0.14, 0.35]}
+      >
+        <meshPhysicalMaterial color="#3a3d44" {...aluminum} roughness={0.55} />
       </RoundedBox>
-      <RoundedBox args={[14.42, 0.1, 0.42]} radius={0.04} smoothness={4} position={[0, 0.14, 4.86]}>
-        <meshPhysicalMaterial color="#868a92" {...aluminum} roughness={0.22} />
-      </RoundedBox>
-      <mesh position={[0, 0.2, 5.05]}>
-        <boxGeometry args={[1.7, 0.05, 0.16]} />
-        <meshStandardMaterial color="#16181c" roughness={0.7} />
-      </mesh>
-      <Suspense fallback={null}>
-        <Deck />
-      </Suspense>
 
-      <mesh rotation={[0, 0, Math.PI / 2]} position={[0, 0.4, -4.86]}>
-        <cylinderGeometry args={[0.085, 0.085, 13.5, 20]} />
-        <meshPhysicalMaterial color="#4e5258" {...aluminum} roughness={0.2} />
+      <mesh rotation={[0, 0, Math.PI / 2]} position={[0, 0.36, -4.72]}>
+        <cylinderGeometry args={[0.07, 0.07, 13.2, 24]} />
+        <meshPhysicalMaterial color="#454850" {...aluminum} roughness={0.28} />
       </mesh>
 
-      <group ref={lid} position={[0, 0.42, -4.86]} rotation-x={rest.lid}>
-        <RoundedBox args={[14.42, 9.28, 0.13]} radius={0.09} smoothness={6} position={[0, 4.64, 0]}>
-          <meshPhysicalMaterial color="#5d6168" {...aluminum} />
+      <group ref={lid} position={[0, 0.36, -4.72]} rotation-x={rest.lid}>
+        <RoundedBox
+          args={[14.1, 9.1, 0.11]}
+          radius={0.08}
+          smoothness={8}
+          position={[0, 4.55, 0]}
+        >
+          <meshPhysicalMaterial color="#52565e" {...aluminum} />
         </RoundedBox>
-        <mesh position={[0, 4.56, 0.068]}>
-          <planeGeometry args={[13.95, 8.9]} />
-          <meshStandardMaterial color="#090a0c" roughness={0.85} />
+        <mesh position={[0, 4.48, 0.058]}>
+          <planeGeometry args={[13.72, 8.72]} />
+          <meshStandardMaterial color="#07080a" roughness={0.92} metalness={0.05} />
         </mesh>
-        <group position={[0, 4.42, 0.075]}>
+        <group position={[0, 4.34, 0.064]}>
           <Suspense fallback={null}>
             <Screen progressRef={progressRef} />
           </Suspense>
         </group>
-        <mesh position={[0, 8.68, 0.08]}>
-          <boxGeometry args={[1.12, 0.26, 0.03]} />
-          <meshStandardMaterial color="#050608" />
-        </mesh>
-        <mesh position={[0, 8.68, 0.1]}>
-          <circleGeometry args={[0.04, 20]} />
-          <meshStandardMaterial color="#142032" emissive="#0b1a28" emissiveIntensity={0.4} />
+        <mesh position={[0, 8.56, 0.066]}>
+          <boxGeometry args={[0.95, 0.2, 0.025]} />
+          <meshStandardMaterial color="#040506" roughness={0.95} />
         </mesh>
       </group>
     </group>
@@ -209,27 +210,14 @@ function LaptopBody({
 function Lights() {
   return (
     <>
-      <hemisphereLight args={["#c5d2e6", "#0a0c10", 0.55]} />
-      <spotLight
-        position={[6, 11, 8]}
-        angle={0.55}
-        penumbra={1}
-        intensity={1.35}
-        color="#eef2f7"
-      />
-      <spotLight
-        position={[-6.5, 5, 6]}
-        angle={0.75}
-        penumbra={1}
-        intensity={0.45}
-        color="#8eadd8"
-      />
-      <directionalLight position={[2, 4, -7]} intensity={0.35} color="#d5dde8" />
-      <Environment resolution={256}>
-        <Lightformer intensity={1.2} position={[0, 5, -2]} scale={[12, 2.4, 1]} />
-        <Lightformer intensity={0.7} position={[6, 2, 4]} scale={[4, 6, 1]} />
-        <Lightformer intensity={0.55} position={[-6, 1.5, 2]} scale={[3, 5, 1]} color="#9bb6dc" />
-        <Lightformer intensity={0.35} position={[0, -2, 4]} scale={[10, 1, 1]} color="#1b2230" />
+      <ambientLight intensity={0.35} color="#b8c4d8" />
+      <hemisphereLight args={["#d8e2f0", "#0a0c10", 0.45]} />
+      <directionalLight position={[4, 8, 6]} intensity={0.55} color="#eef2f8" />
+      <directionalLight position={[-5, 4, 3]} intensity={0.22} color="#9eb8dc" />
+      <Environment resolution={512}>
+        <Lightformer intensity={0.9} position={[0, 6, 2]} scale={[14, 3, 1]} />
+        <Lightformer intensity={0.5} position={[5, 2, 5]} scale={[5, 5, 1]} />
+        <Lightformer intensity={0.35} position={[-4, 1, 3]} scale={[4, 4, 1]} color="#a8bce0" />
       </Environment>
     </>
   );
@@ -245,20 +233,33 @@ export function MacBookCanvas({
   return (
     <Canvas
       className="macbook-3d-canvas"
-      gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
-      dpr={[1, 1.75]}
-      camera={{ fov: 32, position: [0, 4.6, 26], near: 0.1, far: 80 }}
+      gl={{
+        antialias: true,
+        alpha: true,
+        powerPreference: "high-performance",
+        stencil: false,
+      }}
+      dpr={[1, 2]}
+      camera={{ fov: 24, position: [0, 5.05, 16.8], near: 0.1, far: 80 }}
       frameloop={freeze ? "demand" : "always"}
       onCreated={({ camera, gl }) => {
-        camera.lookAt(0, 2.15, 0);
+        camera.lookAt(0, SCREEN_Y, 0);
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 0.88;
+        gl.toneMappingExposure = 0.92;
         gl.setClearColor(0x000000, 0);
       }}
     >
+      <CameraRig progressRef={progressRef} freeze={freeze} />
       <Lights />
       <LaptopBody progressRef={progressRef} freeze={freeze} />
-      <GroundShadow />
+      <ContactShadows
+        position={[0, 0, 0]}
+        opacity={0.32}
+        scale={22}
+        blur={2.8}
+        far={8}
+        color="#000000"
+      />
     </Canvas>
   );
 }

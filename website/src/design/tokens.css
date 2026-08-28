@@ -211,6 +211,19 @@ body {
 
 .walk-laptop {
   pointer-events: none;
+  overflow: hidden;
+}
+
+@media (min-width: 1024px) {
+  .walk-laptop {
+    min-height: clamp(20rem, 68vh, 34rem);
+  }
+
+  .macbook-3d,
+  .macbook-3d-fallback {
+    aspect-ratio: 4 / 3.2;
+    min-height: clamp(20rem, 68vh, 34rem);
+  }
 }
 
 .walk-caption {
