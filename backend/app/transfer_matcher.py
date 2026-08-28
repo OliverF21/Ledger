@@ -32,7 +32,7 @@ _TOLERANCE_PCT = 0.01
 
 def _within_tolerance(amount_a: float, amount_b: float) -> bool:
     diff = abs(abs(amount_a) - abs(amount_b))
-    tolerance = max(_TOLERANCE_FLOOR, abs(amount_a) * _TOLERANCE_PCT)
+    tolerance = max(_TOLERANCE_FLOOR, max(abs(amount_a), abs(amount_b)) * _TOLERANCE_PCT)
     return diff <= tolerance
 
 
@@ -87,17 +87,22 @@ def match_transfers(db: Session, lookback_days: int = 10) -> dict:
         .order_by(Transaction.date.asc(), Transaction.id.asc())
         .all()
     )
-    investment_candidates = (
-        db.query(InvestmentTransaction)
-        .filter(
-            InvestmentTransaction.type.in_(EXTERNAL_CASH_FLOW_TYPES),
-            InvestmentTransaction.subtype.in_(EXTERNAL_CASH_FLOW_SUBTYPES),
-            InvestmentTransaction.date >= cutoff,
-            InvestmentTransaction.matched_transaction_id.is_(None),
+    investment_candidates = [
+        itxn
+        for itxn in (
+            db.query(InvestmentTransaction)
+            .filter(
+                InvestmentTransaction.type.in_(EXTERNAL_CASH_FLOW_TYPES),
+                InvestmentTransaction.date >= cutoff,
+                InvestmentTransaction.matched_transaction_id.is_(None),
+            )
+            .order_by(InvestmentTransaction.date.asc(), InvestmentTransaction.id.asc())
+            .all()
         )
-        .order_by(InvestmentTransaction.date.asc(), InvestmentTransaction.id.asc())
-        .all()
-    )
+        # Plaid's subtype casing isn't guaranteed; normalize like
+        # app.services.returns_service.external_cash_flows does.
+        if (itxn.subtype or "").strip().lower() in EXTERNAL_CASH_FLOW_SUBTYPES
+    ]
 
     unclaimed_bank = {txn.id: txn for txn in bank_candidates}
     unclaimed_investment = {itxn.id: itxn for itxn in investment_candidates}

@@ -221,6 +221,62 @@ def test_tie_break_prefers_closer_amount_over_closer_date(db):
     assert checking_out.transfer_match_transaction_id == closer_amount.id
 
 
+def test_tolerance_uses_larger_leg_not_scanned_leg(db):
+    # Regression test for the tolerance-base bug: _within_tolerance used to
+    # compute `max($5, 1% of amount_a)` where amount_a is whichever bank
+    # Transaction the outer loop in match_transfers happens to be scanning
+    # (here, checking_out — inserted first, so it gets the lower id and is
+    # visited first per the `.order_by(date.asc(), id.asc())` ordering).
+    # That under-tolerates whenever the scanned leg is the SMALLER of the two
+    # amounts, contradicting the spec: "max($5, 1% of the larger leg's
+    # amount)".
+    #
+    # Let S = 10000 (scanned/smaller leg), L = 10101 (counterparty/larger
+    # leg). diff = |S - L| = 101.
+    #   Old (buggy) tolerance = max(5, 0.01 * S) = max(5, 100) = 100
+    #     -> diff (101) > 100 -> OLD CODE REJECTS THE MATCH.
+    #   New (fixed) tolerance = max(5, 0.01 * max(S, L)) = max(5, 101.01) = 101.01
+    #     -> diff (101) <= 101.01 -> NEW CODE ACCEPTS THE MATCH.
+    checking_out = _txn(account_id=1, amount=10000.0, date=date(2026, 8, 14))
+    counterparty = _txn(account_id=2, amount=-10101.0, date=date(2026, 8, 14))
+    db.add_all([checking_out, counterparty])
+    db.commit()
+
+    match_transfers(db)
+
+    db.refresh(checking_out)
+    assert checking_out.transfer_match_transaction_id == counterparty.id
+
+
+def test_investment_subtype_matched_despite_case_and_whitespace(db):
+    # Regression test: the SQL filter used to compare
+    # InvestmentTransaction.subtype.in_(EXTERNAL_CASH_FLOW_SUBTYPES) directly,
+    # which is case/whitespace-sensitive and silently excluded any row whose
+    # subtype wasn't already lowercased/trimmed exactly like the constant set
+    # (e.g. Plaid returning "Deposit" instead of "deposit"). The fix filters
+    # by `type` in SQL but normalizes `subtype` in Python — mirroring
+    # app.services.returns_service.external_cash_flows's
+    # `(t.subtype or "").strip().lower() in EXTERNAL_CASH_FLOW_SUBTYPES` — so
+    # this mixed-case, whitespace-padded subtype must still match.
+    checking_out = _txn(account_id=1, amount=500.0, date=date(2026, 8, 14))
+    deposit = _investment_txn(
+        account_id=3,
+        amount=-500.0,
+        date=date(2026, 8, 14),
+        subtype=" Deposit ",
+        plaid_investment_transaction_id="itx_case",
+    )
+    db.add_all([checking_out, deposit])
+    db.commit()
+
+    match_transfers(db)
+
+    db.refresh(checking_out)
+    db.refresh(deposit)
+    assert checking_out.transfer_match_investment_txn_id == deposit.id
+    assert deposit.matched_transaction_id == checking_out.id
+
+
 def test_tie_break_prefers_closer_date_when_amounts_tie(db):
     checking_out = _txn(account_id=1, amount=500.0, date=date(2026, 8, 14))
     # Both exact-amount matches; only the date differs.
