@@ -195,3 +195,79 @@ code {
   background: rgba(255,255,255,0.22);
   background-clip: padding-box;
 }
+
+/* Optimizer panel — ported from the V2 OptimizerPanel (stroke draw, primary
+   CTA, dashed add slot, gradient range track). Scoped utilities; they don't
+   restyle the rest of the app. */
+@keyframes ledger-draw {
+  from { stroke-dashoffset: 1500; }
+  to { stroke-dashoffset: 0; }
+}
+
+.ledger-draw-short {
+  stroke-dasharray: 900;
+  animation: ledger-draw 1.4s cubic-bezier(.22, .8, .2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ledger-draw-short {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+.solid-cta {
+  color: #0a0c10;
+  background: linear-gradient(150deg, #ffffff, #dbe4f2);
+  box-shadow:
+    0 12px 30px -12px rgba(210, 226, 255, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.solid-cta:hover:not(:disabled) { filter: brightness(1.05); }
+.solid-cta:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.ghost-add {
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.ghost-add:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.ledger-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+}
+
+.ledger-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.ledger-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+.ledger-range::-moz-range-track { background: transparent; }
+.ledger-range:focus-visible { box-shadow: 0 0 0 2px rgba(130, 169, 242, 0.55); }

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
 import {
   useSectorConstraints, useTickerConstraints,
   type OptimizationSettings, type SectorConstraint,
@@ -19,31 +18,37 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
 // `referenceValue` renders a small static tick on the track (e.g. an S&P 500
 // sector weight) purely as a visual anchor -- it never affects `value` and
 // nothing is persisted from it. Dragging still only writes `value`.
-function RangeSlider({ label, value, min, max, step, onChange, referenceValue, referenceLabel }: {
+function RangeSlider({ label, value, min, max, step, onChange, referenceValue, referenceLabel, size = 'md' }: {
   label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void
   referenceValue?: number; referenceLabel?: string
+  size?: 'sm' | 'md'
 }) {
-  const pct = ((value - min) / (max - min)) * 100
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
   const refPct = referenceValue !== undefined ? ((referenceValue - min) / (max - min)) * 100 : null
   return (
-    <div className="group/slider">
-      <div className="flex justify-between text-[11px] text-ledger-text-secondary mb-[2px]">
-        <span>{label}</span><span>{value}%</span>
+    <div>
+      <div className={`flex justify-between items-baseline gap-2 ${size === 'sm' ? 'text-[10.5px] mb-[5px]' : 'text-[12px] mb-2'}`}>
+        <span className={size === 'sm' ? 'text-white/50' : 'font-semibold'}>{label}</span>
+        <span className="text-white/50 tabular-nums">{value}%</span>
       </div>
-      <div className="relative h-[3px] rounded-full bg-ledger-track">
-        <div className="absolute h-full rounded-full bg-ledger-accent" style={{ width: `${pct}%` }} />
+      <div className="relative">
+        <input
+          type="range" min={min} max={max} step={step} value={value} aria-label={label}
+          onChange={e => onChange(Number(e.target.value))}
+          className="ledger-range"
+          style={{
+            background:
+              `linear-gradient(to right, #82a9f2 0%, #82a9f2 ${pct}%, ` +
+              `rgba(255,255,255,0.1) ${pct}%, rgba(255,255,255,0.1) 100%)`,
+          }}
+        />
         {refPct !== null && (
           <div
             title={referenceLabel ?? `Reference: ~${referenceValue}%`}
-            className="absolute top-1/2 w-[2px] h-[9px] -translate-y-1/2 bg-ledger-text-faint/70 rounded-full pointer-events-none"
+            className="absolute top-1/2 w-[2px] h-[9px] -translate-y-1/2 bg-white/40 rounded-full pointer-events-none"
             style={{ left: `${refPct}%` }}
           />
         )}
-        <input
-          type="range" min={min} max={max} step={step} value={value}
-          onChange={e => onChange(Number(e.target.value))}
-          className="absolute inset-0 w-full opacity-0 cursor-pointer"
-        />
       </div>
     </div>
   )
@@ -101,9 +106,9 @@ function ConstraintRow({ name, floorPct, capPct, removing, onFloorChange, onCapC
   onRemove: () => void
 }) {
   return (
-    <div className="border border-ledger-border-subtle rounded-[9px] p-[12px] group">
-      <div className="flex items-start justify-between gap-[10px] mb-[10px]">
-        <span className="glass-chip px-[10px] py-[7px] text-[12px] text-ledger-text-primary font-medium truncate">
+    <div className="glass-chip px-3 py-2.5 mb-2.5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="inline-flex items-center px-3 py-[5px] rounded-[8px] bg-white/[0.09] border border-white/[0.16] text-[12px] font-bold">
           {name}
         </span>
         <button
@@ -111,15 +116,15 @@ function ConstraintRow({ name, floorPct, capPct, removing, onFloorChange, onCapC
           title="Remove constraint"
           onClick={onRemove}
           disabled={removing}
-          className="text-ledger-text-faint hover:text-ledger-negative transition-colors disabled:opacity-40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          className="text-[11px] font-semibold text-white/60 hover:text-white disabled:opacity-40"
         >
-          <X className="w-[14px] h-[14px]" strokeWidth={2} />
+          Remove
         </button>
       </div>
-      <div className="space-y-[10px]">
-        <RangeSlider label="Floor" value={floorPct} min={0} max={100} step={1} onChange={onFloorChange} />
-        <RangeSlider label="Cap" value={capPct} min={0} max={100} step={1} onChange={onCapChange} />
+      <div className="mb-2">
+        <RangeSlider size="sm" label="Floor" value={floorPct} min={0} max={100} step={1} onChange={onFloorChange} />
       </div>
+      <RangeSlider size="sm" label="Cap" value={capPct} min={0} max={100} step={1} onChange={onCapChange} />
     </div>
   )
 }
@@ -127,8 +132,9 @@ function ConstraintRow({ name, floorPct, capPct, removing, onFloorChange, onCapC
 // Small add-row form, collapsed to a "+ Add ... constraint" glass-chip button
 // until clicked -- mirrors Settings.tsx's "+ New rule" / rule-form pattern
 // exactly (same border/spacing/Save-Cancel button styling). Ticker-only now.
-function AddTickerConstraintForm({ onCreate }: {
+function AddTickerConstraintForm({ onCreate, availableTickers }: {
   onCreate: (ticker: string, floorPct: number, capPct: number) => Promise<unknown>
+  availableTickers: string[]
 }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -169,11 +175,32 @@ function AddTickerConstraintForm({ onCreate }: {
   }
 
   if (!open) {
+    if (availableTickers.length > 0) {
+      return (
+        <label className="ghost-add flex items-center justify-center gap-[7px] h-10 text-[12.5px] font-semibold cursor-pointer">
+          <span>+ Add ticker constraint</span>
+          <select
+            value=""
+            aria-label="Add ticker constraint"
+            onChange={e => {
+              if (!e.target.value) return
+              onCreate(e.target.value, 0, 100).catch(() => undefined)
+            }}
+            className="bg-transparent border-none outline-none text-white/70 cursor-pointer"
+          >
+            <option value="">Pick…</option>
+            {availableTickers.map(ticker => (
+              <option key={ticker} value={ticker}>{ticker}</option>
+            ))}
+          </select>
+        </label>
+      )
+    }
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-full glass-chip px-[12px] py-[8px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors"
+        className="ghost-add w-full h-10 text-[12.5px] font-semibold"
       >
         + Add ticker constraint
       </button>
@@ -231,46 +258,46 @@ function SectorConstraintsGrid({ constraints, resettingId, onFloorChange, onCapC
 }) {
   const bySector = new Map(constraints.map(c => [c.sector, c]))
   return (
-    <div className="space-y-[6px]">
+    <>
       {SECTORS.map(s => {
         const existing = bySector.get(s.key)
         const floorPct = existing?.floor_pct ?? 0
         const capPct = existing?.cap_pct ?? 100
         const referenceLabel = `S&P 500: ~${s.sp500WeightPct}%`
         return (
-          <div key={s.key} className="border border-ledger-border-subtle rounded-[8px] p-[8px]">
-            <div className="flex items-center justify-between gap-[8px] mb-[5px]">
-              <span className="text-[11.5px] font-medium text-ledger-text-primary">{s.label}</span>
-              <div className="flex items-center gap-[8px] shrink-0">
-                <span className="text-[10px] text-ledger-text-faintest">~{s.sp500WeightPct}%</span>
+          <div key={s.key} className="glass-chip px-3 py-2.5 mb-2.5">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-[13px] font-bold">{s.label}</span>
+              <div className="flex items-center gap-2.5">
+                <span className="text-[11px] text-white/40">~{s.sp500WeightPct}%</span>
                 {existing && (
                   <button
                     type="button"
                     disabled={resettingId === existing.id}
                     onClick={() => onReset(existing)}
-                    className="text-[10px] font-semibold text-ledger-text-faint hover:text-ledger-negative transition-colors disabled:opacity-40"
+                    className="text-[11px] font-semibold text-white/60 hover:text-white disabled:opacity-40"
                   >
                     Reset
                   </button>
                 )}
               </div>
             </div>
-            <div className="space-y-[5px]">
+            <div className="mb-2">
               <RangeSlider
-                label="Floor" value={floorPct} min={0} max={100} step={1}
+                size="sm" label="Floor" value={floorPct} min={0} max={100} step={1}
                 referenceValue={s.sp500WeightPct} referenceLabel={referenceLabel}
                 onChange={v => onFloorChange(s.key, existing, v)}
               />
-              <RangeSlider
-                label="Cap" value={capPct} min={0} max={100} step={1}
-                referenceValue={s.sp500WeightPct} referenceLabel={referenceLabel}
-                onChange={v => onCapChange(s.key, existing, v)}
-              />
             </div>
+            <RangeSlider
+              size="sm" label="Cap" value={capPct} min={0} max={100} step={1}
+              referenceValue={s.sp500WeightPct} referenceLabel={referenceLabel}
+              onChange={v => onCapChange(s.key, existing, v)}
+            />
           </div>
         )
       })}
-    </div>
+    </>
   )
 }
 
@@ -286,11 +313,13 @@ function SectorConstraintsGrid({ constraints, resettingId, onFloorChange, onCapC
 // full backend re-solve (two SLSQP objectives + a 20-point frontier sweep)
 // on every tick of a native <input type="range">, which is many times per
 // second while dragging; this also fixes that.
-export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun, running }: {
+export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun, running, heldTickers = [], className = '' }: {
   prefs: OptimizationSettings | null
   updatePrefs: (patch: Partial<OptimizationSettings>) => Promise<OptimizationSettings>
   onRun: () => void
   running: boolean
+  heldTickers?: string[]
+  className?: string
 }) {
   const { data: sectorConstraints, create: createSector, update: updateSector, remove: removeSector } = useSectorConstraints()
   const { data: tickerConstraints, create: createTicker, update: updateTicker, remove: removeTicker } = useTickerConstraints()
@@ -314,6 +343,8 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
   }
 
   if (!prefs) return null
+
+  const availableTickers = heldTickers.filter(t => !tickerConstraints.some(c => c.ticker === t))
 
   const handleSectorFloorChange = (sectorKey: string, existing: SectorConstraint | undefined, v: number) =>
     runMutation(
@@ -344,83 +375,77 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
   }
 
   return (
-    <div className="glass-card p-[13px]">
-      <div className="flex items-center justify-between mb-[3px]">
-        <div className="text-[13px] text-ledger-text-primary font-medium">Advanced optimization</div>
+    <div className={`glass-card flex flex-col px-[22px] pt-5 pb-[18px] ${prefs.advanced_enabled ? 'max-h-[760px]' : ''} ${className}`}>
+      <div className="flex items-center justify-between shrink-0">
+        <div className="text-[15px] font-bold tracking-[-0.02em]">Advanced optimization</div>
         <Toggle enabled={prefs.advanced_enabled} onToggle={() => runMutation(
           updatePrefs({ advanced_enabled: !prefs.advanced_enabled }),
           'Failed to update optimization preferences',
         )} />
       </div>
       {prefs.advanced_enabled && (
-        <div className="space-y-[10px] mt-[10px]">
-          {error && (
-            <div className="text-[11.5px] text-ledger-negative bg-[rgba(231,112,95,0.1)] border border-ledger-negative/30 rounded-[7px] px-[9px] py-[6px]">
-              {error}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-[10px]">
-            <RangeSlider label="Position cap" value={prefs.position_cap_pct} min={2} max={50} step={1}
-              onChange={v => runMutation(
-                updatePrefs({ position_cap_pct: v }), 'Failed to update optimization preferences',
-              )} />
-            <RangeSlider label="Diversification" value={prefs.concentration_strength * 100} min={0} max={100} step={5}
-              onChange={v => runMutation(
-                updatePrefs({ concentration_strength: v / 100 }), 'Failed to update optimization preferences',
-              )} />
-          </div>
-
-          <div>
-            <div className="text-[11.5px] font-semibold text-ledger-text-primary mb-[6px]">
-              Sector constraints <span className="font-normal text-ledger-text-faint">— S&P 500 weight marked for reference</span>
-            </div>
-            {/* Capped height + internal scroll rather than letting 11 sectors push
-                this column's height far past the chart column beside it -- see
-                Investments.tsx's two-column layout comment. */}
-            <div className="max-h-[280px] overflow-y-auto pr-[4px] -mr-[4px]">
-              <SectorConstraintsGrid
-                constraints={sectorConstraints}
-                resettingId={resettingSectorId}
-                onFloorChange={handleSectorFloorChange}
-                onCapChange={handleSectorCapChange}
-                onReset={handleResetSector}
-              />
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[11.5px] font-semibold text-ledger-text-primary mb-[6px]">
-              Ticker constraints <span className="font-normal text-ledger-text-faint">— overrides the position cap for that ticker</span>
-            </div>
-            {tickerConstraints.length === 0 ? (
-              <div className="text-center py-3 text-ledger-text-faint text-[11.5px] mb-[8px]">
-                No ticker constraints yet.
-              </div>
-            ) : (
-              <div className="space-y-[6px] mb-[8px] max-h-[160px] overflow-y-auto pr-[4px] -mr-[4px]">
-                {tickerConstraints.map(c => (
-                  <ConstraintRow
-                    key={c.id}
-                    name={c.ticker}
-                    floorPct={c.floor_pct}
-                    capPct={c.cap_pct}
-                    removing={removingTickerId === c.id}
-                    onFloorChange={v => runMutation(
-                      updateTicker(c.id, { ticker: c.ticker, floor_pct: v, cap_pct: c.cap_pct }),
-                      'Failed to update ticker constraint',
-                    )}
-                    onCapChange={v => runMutation(
-                      updateTicker(c.id, { ticker: c.ticker, floor_pct: c.floor_pct, cap_pct: v }),
-                      'Failed to update ticker constraint',
-                    )}
-                    onRemove={() => handleRemoveTicker(c.id)}
-                  />
-                ))}
+        <>
+          <div className="flex-1 min-h-0 overflow-y-auto soft-scrollbar mt-4 pr-1">
+            {error && (
+              <div className="text-[11.5px] text-ledger-negative mb-3">
+                {error}
               </div>
             )}
+
+            <div className="grid grid-cols-2 gap-5 mb-[18px]">
+              <RangeSlider label="Position cap" value={prefs.position_cap_pct} min={2} max={50} step={1}
+                onChange={v => runMutation(
+                  updatePrefs({ position_cap_pct: v }), 'Failed to update optimization preferences',
+                )} />
+              <RangeSlider label="Diversification" value={prefs.concentration_strength * 100} min={0} max={100} step={5}
+                onChange={v => runMutation(
+                  updatePrefs({ concentration_strength: v / 100 }), 'Failed to update optimization preferences',
+                )} />
+            </div>
+
+            <div className="text-[12px] font-bold mb-2.5">
+              Sector constraints{' '}
+              <span className="text-white/40 font-medium">— S&amp;P 500 weight marked for reference</span>
+            </div>
+            <SectorConstraintsGrid
+              constraints={sectorConstraints}
+              resettingId={resettingSectorId}
+              onFloorChange={handleSectorFloorChange}
+              onCapChange={handleSectorCapChange}
+              onReset={handleResetSector}
+            />
+
+            <div className="text-[12px] font-bold mt-3.5 mb-2.5">
+              Ticker constraints{' '}
+              <span className="text-white/40 font-medium">— overrides the position cap for that ticker</span>
+            </div>
+            {tickerConstraints.map(c => (
+              <ConstraintRow
+                key={c.id}
+                name={c.ticker}
+                floorPct={c.floor_pct}
+                capPct={c.cap_pct}
+                removing={removingTickerId === c.id}
+                onFloorChange={v => runMutation(
+                  updateTicker(c.id, { ticker: c.ticker, floor_pct: v, cap_pct: c.cap_pct }),
+                  'Failed to update ticker constraint',
+                )}
+                onCapChange={v => runMutation(
+                  updateTicker(c.id, { ticker: c.ticker, floor_pct: c.floor_pct, cap_pct: v }),
+                  'Failed to update ticker constraint',
+                )}
+                onRemove={() => handleRemoveTicker(c.id)}
+              />
+            ))}
             <AddTickerConstraintForm
-              onCreate={(ticker, floor_pct, cap_pct) => createTicker({ ticker, floor_pct, cap_pct })}
+              availableTickers={availableTickers}
+              onCreate={async (ticker, floor_pct, cap_pct) => {
+                const created = await runMutation(
+                  createTicker({ ticker, floor_pct, cap_pct }),
+                  'Failed to create ticker constraint',
+                )
+                if (!created) throw new Error('Failed to create ticker constraint')
+              }}
             />
           </div>
 
@@ -428,11 +453,11 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
             type="button"
             onClick={onRun}
             disabled={running}
-            className="w-full bg-ledger-accent text-ledger-accent-on rounded-[8px] py-[9px] text-[12.5px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="solid-cta rounded-[13px] flex items-center justify-center gap-2 h-11 mt-3.5 text-[13.5px] font-bold shrink-0"
           >
-            {running ? 'Running optimization…' : 'Run optimization'}
+            {running ? 'Optimizing…' : 'Run optimization'}
           </button>
-        </div>
+        </>
       )}
     </div>
   )

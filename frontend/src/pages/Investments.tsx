@@ -65,6 +65,15 @@ function StatTile({ label, value, delta, deltaGoodDirection }: {
   )
 }
 
+function LegendDot({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-[7px] text-[12px] font-semibold text-white/60">
+      <span className="w-[9px] h-[9px] rounded-full inline-block border-[1.5px] border-white/70" style={{ background: color }} />
+      {children}
+    </div>
+  )
+}
+
 function formatActivityDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -89,11 +98,28 @@ const OBJECTIVE_LABELS: Record<string, string> = {
   max_quadratic_utility: 'Max Quadratic Utility',
 }
 
-function buildMarkers(objectives: ObjectiveResponse[]): ObjectiveMarker[] {
-  const colors: Record<string, string> = { max_sharpe: '#e7705f', max_quadratic_utility: '#d9a85b' }
-  return objectives
+function buildMarkers(optimization: {
+  objectives: ObjectiveResponse[]
+  current_volatility_pct: number | null
+  current_expected_return_pct: number | null
+}): ObjectiveMarker[] {
+  const colors: Record<string, string> = {
+    max_sharpe: '#f4907f',
+    max_quadratic_utility: '#e6bd79',
+    current: '#adb8cb',
+  }
+  const markers: ObjectiveMarker[] = optimization.objectives
     .filter(o => o.volatility_pct != null && o.expected_return_pct != null)
     .map(o => ({ name: o.name, volatility_pct: o.volatility_pct!, return_pct: o.expected_return_pct!, color: colors[o.name] ?? '#5b8def' }))
+  if (optimization.current_volatility_pct != null && optimization.current_expected_return_pct != null) {
+    markers.push({
+      name: 'current',
+      volatility_pct: optimization.current_volatility_pct,
+      return_pct: optimization.current_expected_return_pct,
+      color: colors.current,
+    })
+  }
+  return markers
 }
 
 type AllocationView = 'type' | 'security'
@@ -618,65 +644,83 @@ export default function Investments() {
         </div>
       )}
 
-      {/* Suggested allocation — depends only on Holding + MarketPrice data (populated
-          after the first nightly sync), not on the BalanceSnapshot history the risk
-          card above needs, so it's gated independently rather than nested inside it.
-          There is exactly one optimizer engine (Black-Litterman); the preferences
-          panel's toggle turns its output on/off entirely rather than choosing between
-          engines. The panel itself (which owns that toggle) always renders here so
-          it's reachable from a cold start. Settings/constraint edits inside the panel
-          persist immediately but do NOT recompute a suggestion by themselves -- only
-          the panel's own "Run optimization" button (onRun below) does, via
-          handleRunOptimization.
-
-          Toggle OFF: just the (collapsed) settings card, full width -- no second
-          column, since there's nothing to show there yet. Toggle ON: grows into two
-          side-by-side halves -- settings (left, self-contained height via its own
-          internal scroll on the sector grid) and the frontier chart or a "run it"
-          placeholder (right) -- so configuring and seeing the result read as one
-          glance rather than a long vertical scroll. The detail tables (objective
-          comparison, per-objective suggested weights, clip-log) run full-width below
-          both, since they're read top-to-bottom rather than side-by-side with
-          anything. */}
+      {/* Suggested allocation — Black-Litterman engine; the panel toggle
+          gates output. Layout matches the V2 OptimizerPanel: constraints left,
+          frontier right, detail tables full-width below. */}
       {!optimizationLoading && optimization && (
         optimizationPrefs?.advanced_enabled ? (
-          <div className="grid grid-cols-2 gap-3 items-stretch">
+          <div className="flex gap-4 items-stretch">
             <OptimizationPreferencesPanel
+              className="w-[520px] shrink-0"
               prefs={optimizationPrefs}
               updatePrefs={updateOptimizationPrefs}
               onRun={handleRunOptimization}
               running={runningOptimization}
+              heldTickers={optimization.tickers.map(t => t.ticker)}
             />
-            {showOptimizationResults && optimization.insufficient_data && (
-              <div className="glass-card p-4 flex items-center justify-center text-center text-[12px] text-ledger-text-faint">
-                Not enough price history yet to run the optimizer. This needs at least 30 days
-                of overlapping synced price data across your held tickers.
-              </div>
-            )}
-            {showOptimizationResults && !optimization.insufficient_data && (
-              <div className="glass-card p-4 flex flex-col">
-                <div className="text-[15px] font-semibold mb-1">Efficient frontier</div>
-                <div className="text-[12px] text-ledger-text-secondary mb-3 leading-snug">
-                  The line shows the best return possible at each level of risk, given your
-                  position cap ({optimization.position_cap_pct.toFixed(0)}%) and sector limits.
-                  The two markers are the portfolios suggested below. The faint dots are
-                  thousands of random portfolios shown only for comparison. They ignore your
-                  limits, so they're not suggestions, just a sense of scale.
+            <div className="glass-card flex-1 min-w-0 flex flex-col px-6 py-5 max-h-[760px]">
+              <div className="shrink-0">
+                <div className="text-[15px] font-bold tracking-[-0.02em]">Efficient frontier</div>
+                <div className="text-[12px] text-white/50 mt-2 max-w-[640px] leading-relaxed">
+                  The line is the best return available at each level of risk given your position cap ({optimization.position_cap_pct.toFixed(0)}%)
+                  and sector limits. The markers are the suggested portfolios. The faint dots are random portfolios
+                  shown only for scale — they ignore your limits.
                 </div>
-                <div className="flex-1 min-h-0">
+              </div>
+              <div className="flex items-center gap-[22px] mt-4 shrink-0 flex-wrap">
+                <div className="flex items-center gap-[7px] text-[12px] font-semibold text-white/60">
+                  <svg width="16" height="10" viewBox="0 0 16 10"><path d="M1 8 L15 2" stroke="#82a9f2" strokeWidth="2" strokeLinecap="round" /></svg>
+                  Efficient frontier
+                </div>
+                <LegendDot color="#f4907f">Max Sharpe</LegendDot>
+                <LegendDot color="#e6bd79">Max quadratic utility</LegendDot>
+                <LegendDot color="#adb8cb">Current</LegendDot>
+              </div>
+              {runningOptimization && !showOptimizationResults ? (
+                <div className="flex items-center justify-center h-[420px] text-[12.5px] text-ledger-text-faint">
+                  Sweeping the frontier…
+                </div>
+              ) : !showOptimizationResults ? (
+                <div className="flex flex-col items-center justify-center text-center px-6 h-[420px]">
+                  <div className="text-[14px] font-semibold">Set your constraints, then run</div>
+                  <div className="mt-1.5 text-[12.5px] text-ledger-text-faint max-w-[380px] leading-relaxed">
+                    The frontier is a constrained sweep, so it runs on demand rather than on every slider move.
+                  </div>
+                </div>
+              ) : optimization.insufficient_data ? (
+                <div className="flex flex-col items-center justify-center text-center px-6 h-[420px]">
+                  <div className="text-[14px] font-semibold">Not enough price history</div>
+                  <div className="mt-1.5 text-[12.5px] text-ledger-text-faint max-w-[380px] leading-relaxed">
+                    The optimizer needs at least 30 days of daily closes across two or more priced holdings.
+                  </div>
+                </div>
+              ) : (
+                <>
                   <EfficientFrontierChart
                     frontierPoints={optimization.frontier_points ?? []}
-                    markers={buildMarkers(optimization.objectives)}
+                    markers={buildMarkers(optimization)}
                     randomPortfolios={optimization.random_portfolios ?? []}
                   />
-                </div>
-              </div>
-            )}
-            {!showOptimizationResults && (
-              <div className="glass-card p-4 flex items-center justify-center text-center text-[12px] text-ledger-text-faint">
-                Click "Run optimization" to see the efficient frontier.
-              </div>
-            )}
+                  <div className="grid grid-cols-3 gap-2.5 mt-3 shrink-0">
+                    {[
+                      { label: 'Current', ret: optimization.current_expected_return_pct, vol: optimization.current_volatility_pct, sharpe: optimization.current_sharpe },
+                      { label: 'Max Sharpe', ret: optimization.objectives.find(o => o.name === 'max_sharpe')?.expected_return_pct ?? null, vol: optimization.objectives.find(o => o.name === 'max_sharpe')?.volatility_pct ?? null, sharpe: optimization.objectives.find(o => o.name === 'max_sharpe')?.sharpe ?? null },
+                      { label: 'Max utility', ret: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.expected_return_pct ?? null, vol: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.volatility_pct ?? null, sharpe: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.sharpe ?? null },
+                    ].map(({ label, ret, vol, sharpe }) => (
+                      <div key={label} className="glass-chip px-3 py-2">
+                        <div className="text-[9.5px] uppercase tracking-[0.14em] font-semibold text-white/40">{label}</div>
+                        <div className="mt-1 text-[13px] font-bold tabular-nums">
+                          {ret != null && vol != null ? `${ret.toFixed(1)}% / ${vol.toFixed(1)}%` : '—'}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-white/40">
+                          return / vol{sharpe != null ? ` · Sharpe ${sharpe.toFixed(2)}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <OptimizationPreferencesPanel
@@ -684,6 +728,7 @@ export default function Investments() {
             updatePrefs={updateOptimizationPrefs}
             onRun={handleRunOptimization}
             running={runningOptimization}
+            heldTickers={optimization.tickers.map(t => t.ticker)}
           />
         )
       )}
