@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useReducedMotion } from "motion/react";
+import { Atmosphere } from "@/components/Atmosphere";
 import { site } from "@/content/site";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -59,9 +60,9 @@ export function HowItWorks() {
         {site.how.steps.map((step, i) => (
           <div
             key={step.title}
-            className="stack-card sticky top-0 flex min-h-[100dvh] items-end md:items-center"
-            style={{ background: "var(--canvas)" }}
+            className="stack-card relative sticky top-0 flex min-h-[100dvh] items-end overflow-hidden md:items-center"
           >
+            <Atmosphere mode="fill" />
             <div
               className="pointer-events-none absolute inset-0"
               style={{ background: tints[i] }}

@@ -7,6 +7,7 @@ export const site = {
   github: "https://github.com/OliverF21/Ledger",
   releasesLatest: "https://github.com/OliverF21/Ledger/releases/latest",
   sourceInstall: "https://github.com/OliverF21/Ledger#running-from-source",
+  mcpDocs: "https://github.com/OliverF21/Ledger/blob/main/docs/MCP_SETUP.md",
 
   meta: {
     title: "Ledger - personal finance on your computer",
@@ -42,7 +43,7 @@ export const site = {
     facts: [
       { title: "Local SQLite", body: "Transactions and budgets sit in app-data on disk." },
       { title: "Your Plaid keys", body: "Ledger never holds a bank connection for you." },
-      { title: "No Ledger servers", body: "Updates come from GitHub Releases. That is it." },
+      { title: "Local MCP", body: "Claude Desktop talks to a read-only server on this machine. You Apply or Dismiss every proposal." },
     ],
   },
 
@@ -60,6 +61,8 @@ export const site = {
         body: "Daily snapshots across banks, brokerages, and optional crypto wallets.",
         shot: "netWorth" as const,
         objectPosition: "left top",
+        pictured: true,
+        tint: "none" as const,
       },
       {
         key: "budgets",
@@ -67,27 +70,44 @@ export const site = {
         body: "Category limits that carry into the next month, with overage alerts.",
         shot: "budgets" as const,
         objectPosition: "right bottom",
+        pictured: true,
+        tint: "none" as const,
+      },
+      {
+        key: "sync",
+        title: "Automated transaction pulling",
+        body: "New transactions come in on a schedule, every six hours by default. Sync now is still there when you want them sooner.",
+        shot: "activity" as const,
+        objectPosition: "left bottom",
+        pictured: false,
+        tint: "cool" as const,
+      },
+      {
+        key: "risk",
+        title: "Risk and optimization",
+        body: "Volatility, Sharpe, drawdown, VaR, and beta on holdings you already have, plus a max-Sharpe mix you can take or leave.",
+        shot: "product" as const,
+        objectPosition: "center",
+        pictured: false,
+        tint: "mint" as const,
+      },
+      {
+        key: "mcp",
+        title: "MCP for Claude Desktop",
+        body: "A local, read-only Model Context Protocol server. It can propose a budget. Only you Apply or Dismiss it in Advisor.",
+        shot: "product" as const,
+        objectPosition: "center",
+        pictured: false,
+        tint: "teal" as const,
       },
       {
         key: "activity",
         title: "Activity",
-        body: "Search, recategorize, split, hide, and export CSV.",
+        body: "Search, recategorize, split, hide, export CSV, and catch recurring charges.",
         shot: "activity" as const,
         objectPosition: "left bottom",
-      },
-      {
-        key: "investments",
-        title: "Investments",
-        body: "Holdings and performance when Plaid Investments is enabled.",
-        shot: "product" as const,
-        objectPosition: "center",
-      },
-      {
-        key: "subscriptions",
-        title: "Subscriptions",
-        body: "Recurring charges detected from the transaction stream.",
-        shot: "product" as const,
-        objectPosition: "right center",
+        pictured: true,
+        tint: "none" as const,
       },
     ],
   },
@@ -105,7 +125,7 @@ export const site = {
       },
       {
         title: "Link a bank",
-        body: "Plaid Link runs locally. Access tokens are encrypted on disk, not sent to a Ledger server.",
+        body: "Plaid Link runs locally. After that, transactions pull on a schedule. Access tokens stay encrypted on disk.",
       },
     ],
   },
@@ -139,6 +159,7 @@ export const site = {
     links: [
       { label: "GitHub", href: "https://github.com/OliverF21/Ledger" },
       { label: "Releases", href: "https://github.com/OliverF21/Ledger/releases/latest" },
+      { label: "MCP", href: "https://github.com/OliverF21/Ledger/blob/main/docs/MCP_SETUP.md" },
       {
         label: "Disclaimer",
         href: "https://github.com/OliverF21/Ledger/blob/main/DISCLAIMER.md",
@@ -153,3 +174,4 @@ export const site = {
 
 export type Site = typeof site;
 export type ShotKey = keyof typeof site.shots;
+export type FeatureCell = (typeof site.features.cells)[number];

@@ -103,6 +103,12 @@ body {
   -webkit-backdrop-filter: blur(34px) saturate(150%);
 }
 
+.atmosphere-wash {
+  background:
+    radial-gradient(1200px 860px at 90% -14%, var(--glow-cool), transparent 66%),
+    linear-gradient(166deg, var(--canvas-hi) 0%, var(--canvas-mid) 48%, var(--canvas) 100%);
+}
+
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -180,6 +186,11 @@ body {
   to { background-position: -100% 0; }
 }
 
+@keyframes ledger-float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -10px, 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn-primary,
   .btn-ghost {
@@ -188,6 +199,10 @@ body {
 
   .btn-skeleton {
     animation: none;
+  }
+
+  .float-card {
+    animation: none !important;
   }
 }
 

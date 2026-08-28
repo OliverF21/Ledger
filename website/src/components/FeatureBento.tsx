@@ -1,13 +1,21 @@
 import Image from "next/image";
+import { FloatCard } from "@/components/FloatCard";
 import { Reveal } from "@/components/Reveal";
 import { site } from "@/content/site";
 
 const span: Record<string, string> = {
   netWorth: "md:col-span-7 md:row-span-2 min-h-[420px]",
   budgets: "md:col-span-5 min-h-[240px]",
-  activity: "md:col-span-5 min-h-[240px]",
-  investments: "md:col-span-6 min-h-[220px]",
-  subscriptions: "md:col-span-6 min-h-[220px]",
+  sync: "md:col-span-5 min-h-[240px]",
+  risk: "md:col-span-4 min-h-[240px]",
+  mcp: "md:col-span-4 min-h-[240px]",
+  activity: "md:col-span-4 min-h-[240px]",
+};
+
+const tints: Record<string, string> = {
+  cool: "radial-gradient(90% 80% at 8% 100%, color-mix(in srgb, var(--glow-cool) 55%, transparent), transparent 62%)",
+  mint: "radial-gradient(90% 80% at 92% 8%, color-mix(in srgb, var(--positive) 22%, transparent), transparent 62%)",
+  teal: "radial-gradient(90% 80% at 88% 100%, color-mix(in srgb, var(--glow-teal) 42%, transparent), transparent 62%)",
 };
 
 export function FeatureBento() {
@@ -23,21 +31,16 @@ export function FeatureBento() {
           </h2>
         </Reveal>
 
-        <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-12">
-          {site.features.cells.map((cell, i) => {
-            const pictured =
-              cell.key === "netWorth" ||
-              cell.key === "budgets" ||
-              cell.key === "activity";
-
-            return (
-              <Reveal
-                key={cell.key}
-                delay={0.05 * i}
-                className={span[cell.key] ?? "md:col-span-6"}
-              >
+        <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-12 md:[perspective:1200px]">
+          {site.features.cells.map((cell, i) => (
+            <Reveal
+              key={cell.key}
+              delay={0.05 * i}
+              className={span[cell.key] ?? "md:col-span-6"}
+            >
+              <FloatCard delay={0.12 * i} className="h-full">
                 <article className="glass-frame relative h-full min-h-[220px] overflow-hidden">
-                  {pictured ? (
+                  {cell.pictured ? (
                     <>
                       <Image
                         src={site.shots[cell.shot]}
@@ -58,12 +61,7 @@ export function FeatureBento() {
                   ) : (
                     <div
                       className="pointer-events-none absolute inset-0"
-                      style={{
-                        background:
-                          cell.key === "investments"
-                            ? "radial-gradient(90% 80% at 92% 8%, color-mix(in srgb, var(--positive) 22%, transparent), transparent 62%)"
-                            : "radial-gradient(90% 80% at 8% 100%, color-mix(in srgb, var(--glow-cool) 55%, transparent), transparent 62%)",
-                      }}
+                      style={{ background: tints[cell.tint] }}
                     />
                   )}
                   <div className="relative z-[1] flex h-full min-h-[220px] flex-col justify-end p-6 sm:p-7">
@@ -75,9 +73,9 @@ export function FeatureBento() {
                     </p>
                   </div>
                 </article>
-              </Reveal>
-            );
-          })}
+              </FloatCard>
+            </Reveal>
+          ))}
         </div>
       </div>
     </section>
