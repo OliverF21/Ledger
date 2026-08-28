@@ -4,7 +4,7 @@ Shared analytics helpers for API routes and the MCP server.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
@@ -21,7 +21,7 @@ from app.analytics_shared import (
     month_bounds,
 )
 from app.enrichment import parse_enrichment_json
-from app.models import Account, BalanceSnapshot, Item, Transaction
+from app.models import Account, BalanceSnapshot, GoalAttribution, Item, Transaction
 from app.txn_classifier import classify_orm_transaction
 
 LIABILITY_TYPES = frozenset({"credit", "loan"})
@@ -119,9 +119,10 @@ class CashFlowData:
     month: str
     total_income: float
     total_spending: float
-    savings: float
+    savings: float  # unallocated leftover (not labeled savings transfers)
     income_sources: list[CashFlowNodeItem]
     spending_categories: list[CashFlowNodeItem]
+    allocation_nodes: list[CashFlowNodeItem] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -524,8 +525,12 @@ def build_trends(db: Session, months: int = 6) -> TrendsData:
     )
 
 
-def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
-    """Return the monthly income/spending buckets used by the spending view."""
+def build_cash_flow(
+    db: Session,
+    month: str | None = None,
+    goals_db: Session | None = None,
+) -> CashFlowData:
+    """Return monthly income, consumptive spending, and allocation sinks."""
     _, _, start, end, month_key = resolve_month_window(month)
 
     month_txns = (
@@ -533,9 +538,6 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
         .options(joinedload(Transaction.account))
         .filter(
             Transaction.removed.is_(False),
-            # Pending transactions ARE counted so purchases show up immediately.
-            # Plaid links a pending txn to its posted version and marks the
-            # pending one `removed` on the next sync, so this doesn't double-count.
             Transaction.hidden.is_(False),
             Transaction.date >= start,
             Transaction.date < end,
@@ -546,6 +548,7 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
     income_pool: list[Transaction] = []
     spend_pool: list[Transaction] = []
     investment_pool: list[Transaction] = []
+    savings_pool: list[Transaction] = []
 
     for txn in month_txns:
         role = classify_orm_transaction(txn)
@@ -555,7 +558,8 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
             spend_pool.append(txn)
         elif role == "investments":
             investment_pool.append(txn)
-        # transfer / exclude → omitted from cash-flow sinks
+        elif role == "savings":
+            savings_pool.append(txn)
 
     income_buckets: dict[str, float] = {}
     for txn in income_pool:
@@ -566,10 +570,6 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
     for txn in spend_pool:
         category = _display_rollup_category(txn, "Uncategorized")
         spend_buckets[category] = spend_buckets.get(category, 0.0) + _effective_amount(txn)
-
-    investment_total = round(sum(_effective_amount(txn) for txn in investment_pool), 2)
-    if investment_total > 0:
-        spend_buckets["Investments"] = spend_buckets.get("Investments", 0.0) + investment_total
 
     income_sources = [
         CashFlowNodeItem(
@@ -589,27 +589,164 @@ def build_cash_flow(db: Session, month: str | None = None) -> CashFlowData:
             label=category,
             amount=round(total, 2),
             color=CATEGORY_COLORS[index % len(CATEGORY_COLORS)],
-            top_transactions=(
-                _top_investment_txns(investment_pool)
-                if category == "Investments"
-                else _top_spending_txns(spend_pool, category)
-            ),
+            top_transactions=_top_spending_txns(spend_pool, category),
         )
         for index, (category, total) in enumerate(
             sorted(spend_buckets.items(), key=lambda item: item[1], reverse=True)
         )
     ]
 
+    allocation_nodes = _allocation_nodes(
+        db,
+        goals_db,
+        savings_pool=savings_pool,
+        investment_pool=investment_pool,
+    )
+
     total_income = round(sum(item.amount for item in income_sources), 2)
     total_spending = round(sum(item.amount for item in spending_categories), 2)
+    allocated = round(sum(item.amount for item in allocation_nodes), 2)
+    unallocated = max(round(total_income - total_spending - allocated, 2), 0.0)
+    if unallocated > 0.01:
+        allocation_nodes.append(
+            CashFlowNodeItem(
+                id="__unallocated__",
+                label="Unallocated",
+                amount=unallocated,
+                color="#7a808c",
+                top_transactions=[],
+            )
+        )
+
     return CashFlowData(
         month=month_key,
         total_income=total_income,
         total_spending=total_spending,
-        savings=max(round(total_income - total_spending, 2), 0.0),
+        savings=unallocated,
         income_sources=income_sources,
         spending_categories=spending_categories,
+        allocation_nodes=allocation_nodes,
     )
+
+
+SAVINGS_NODE_ID = "__savings__"
+INVESTMENTS_NODE_ID = "Investments"
+UNALLOCATED_NODE_ID = "__unallocated__"
+SAVINGS_COLOR = "#4ec38a"
+INVESTMENTS_COLOR = "#8a7df0"
+UNALLOCATED_COLOR = "#7a808c"
+
+
+def _allocation_nodes(
+    ledger_db: Session,
+    goals_db: Session | None,
+    *,
+    savings_pool: list[Transaction],
+    investment_pool: list[Transaction],
+) -> list[CashFlowNodeItem]:
+    alloc_pool = savings_pool + investment_pool
+    if not alloc_pool:
+        return []
+
+    txn_ids = [txn.id for txn in alloc_pool]
+    attrs = (
+        ledger_db.query(GoalAttribution)
+        .filter(GoalAttribution.transaction_id.in_(txn_ids))
+        .all()
+    )
+    by_txn: dict[int, list[GoalAttribution]] = {}
+    for row in attrs:
+        by_txn.setdefault(row.transaction_id, []).append(row)
+
+    goal_map = {}
+    if goals_db is not None:
+        from app.services.goals_service import goal_name_map
+
+        goal_map = goal_name_map(goals_db)
+
+    named: dict[int, dict[str, Any]] = {}
+    unlabeled_savings = 0.0
+    unlabeled_investments = 0.0
+    named_txns: dict[int, list[Transaction]] = {}
+    unlabeled_save_txns: list[Transaction] = []
+    unlabeled_invest_txns: list[Transaction] = []
+
+    savings_ids = {txn.id for txn in savings_pool}
+
+    for txn in alloc_pool:
+        labeled = by_txn.get(txn.id, [])
+        cap = _effective_amount(txn)
+        used = 0.0
+        for attr in labeled:
+            amt = min(float(attr.amount), max(cap - used, 0.0))
+            if amt <= 0.005:
+                continue
+            used += amt
+            goal = goal_map.get(attr.goal_id)
+            label = goal.name if goal is not None else f"Goal {attr.goal_id}"
+            color = (goal.color if goal is not None and goal.color else CATEGORY_COLORS[attr.goal_id % len(CATEGORY_COLORS)])
+            bucket = named.setdefault(
+                attr.goal_id,
+                {"label": label, "color": color, "amount": 0.0},
+            )
+            bucket["amount"] += amt
+            named_txns.setdefault(attr.goal_id, []).append(txn)
+        leftover = max(cap - used, 0.0)
+        if leftover <= 0.005:
+            continue
+        if txn.id in savings_ids:
+            unlabeled_savings += leftover
+            unlabeled_save_txns.append(txn)
+        else:
+            unlabeled_investments += leftover
+            unlabeled_invest_txns.append(txn)
+
+    nodes: list[CashFlowNodeItem] = []
+    for goal_id, bucket in sorted(named.items(), key=lambda item: item[1]["amount"], reverse=True):
+        if bucket["amount"] <= 0.01:
+            continue
+        nodes.append(
+            CashFlowNodeItem(
+                id=f"goal:{goal_id}",
+                label=bucket["label"],
+                amount=round(bucket["amount"], 2),
+                color=bucket["color"] or CATEGORY_COLORS[0],
+                top_transactions=_top_pool_txns(named_txns.get(goal_id, [])),
+            )
+        )
+    if unlabeled_savings > 0.01:
+        nodes.append(
+            CashFlowNodeItem(
+                id=SAVINGS_NODE_ID,
+                label="Savings",
+                amount=round(unlabeled_savings, 2),
+                color=SAVINGS_COLOR,
+                top_transactions=_top_pool_txns(unlabeled_save_txns),
+            )
+        )
+    if unlabeled_investments > 0.01:
+        nodes.append(
+            CashFlowNodeItem(
+                id=INVESTMENTS_NODE_ID,
+                label="Investments",
+                amount=round(unlabeled_investments, 2),
+                color=INVESTMENTS_COLOR,
+                top_transactions=_top_pool_txns(unlabeled_invest_txns),
+            )
+        )
+    return nodes
+
+
+def _top_pool_txns(pool: list[Transaction], limit: int = 3) -> list[CashFlowTxnItem]:
+    matching = sorted(pool, key=_effective_amount, reverse=True)
+    return [
+        CashFlowTxnItem(
+            merchant=txn.merchant or "",
+            amount=round(_effective_amount(txn), 2),
+            date=txn.date.isoformat(),
+        )
+        for txn in matching[:limit]
+    ]
 
 
 def build_recurring_spend(db: Session, months: int = TRAILING_MONTHS) -> RecurringSpendData:

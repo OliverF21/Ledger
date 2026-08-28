@@ -99,3 +99,5 @@ CHANGES.md
 AGENTS.md
 GEMINI.md
 .claude/
+example_var.py
+example_portfolio_optimization.py

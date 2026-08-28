@@ -108,7 +108,16 @@ Then open **[http://127.0.0.1:8000](http://127.0.0.1:8000)** and follow the firs
 
 **Windows service:** `scripts/install_ledger_service.ps1` installs Ledger as a boot-time service that restarts on crash. Handy if you run the AI Advisor on a box that should stay up. For frontend hot reload, run `uvicorn main:app --reload` and `npm run dev` separately and use `http://localhost:5173`.
 
-**Data files:** `backend/ledger.db` (transactions, accounts) and `backend/budgets.db` (budgets). Copy them while the app is stopped to back up.
+**Dev against the desktop app’s live data** (hot reload + real Application Support DBs): quit the Ledger desktop app first, then:
+
+```bash
+./scripts/dev-live-data.sh          # uvicorn on :8000, LEDGER_USE_APPDATA=1
+cd frontend && npm run dev          # Vite → http://localhost:5173
+```
+
+That points source mode at `~/Library/Application Support/Ledger/` (macOS) without turning on packaged-desktop behavior. Do not run the desktop app and this server at the same time — SQLite is one writer at a time.
+
+**Data files (source):** `backend/ledger.db` (transactions, accounts) and `backend/budgets.db` (budgets). Copy them while the app is stopped to back up. **Desktop** stores the same filenames under Application Support (see `desktop/README.md`).
 
 ### Env vars (source / self-hosted)
 

@@ -1,11 +1,8 @@
 # Privacy & Data Handling
 
-_Last updated: 2026-07-15_
+*Last updated: 2026-07-15*
 
-**Short version: the Ledger project cannot leak data it never receives.** Ledger is
-self-hosted software that runs entirely on your computer. The project operates no
-server, runs no database, includes no analytics or telemetry, and has no way to see,
-collect, or access your data or your usage.
+**Short version: the Ledger project cannot leak data it never receives.** Ledger is self-hosted software that runs entirely on your computer. The project operates no server, runs no database except for the one you run off your machine, includes no analytics or telemetry, and has no way to see, collect, or access your data or your usage.
 
 This notice explains where your data lives and which third parties **your own copy**
 of Ledger talks to. It describes the software as of the date above; a future version
@@ -24,7 +21,7 @@ All of your data is stored in local database files on your own disk (the Plaid
 access tokens inside them are individually encrypted at rest):
 
 - **Desktop app:** the OS application-data directory —
-  `~/Library/Application Support/Ledger/` (macOS) or `%APPDATA%\Ledger\` (Windows).
+`~/Library/Application Support/Ledger/` (macOS) or `%APPDATA%\Ledger\` (Windows).
 - **Running from source:** `backend/ledger.db` and `backend/budgets.db`.
 
 It never leaves your machine except to the third parties listed below, and only for
@@ -32,15 +29,17 @@ the features you use.
 
 ## Third parties your instance contacts
 
-| Service | When | What leaves your machine | Whose account |
-|---------|------|--------------------------|---------------|
-| **Plaid** | Linking a bank and every sync | Requests using *your* Plaid keys; Plaid returns your transactions/balances | Your Plaid account |
-| **Your bank / brokerage** | Via Plaid, when linking/syncing | Handled by Plaid; Ledger never sees your bank login | Yours |
-| **GitHub** | Desktop app launch (update check) and downloads | A version check and, if updating, the download request — exposes your IP to GitHub | n/a |
-| **Google Fonts** (`fonts.googleapis.com`) | Loading the web UI | A font request — exposes your IP to Google | n/a |
-| **Resend** (optional) | Only if you enable the weekly email or email password-reset | The email and *your* Resend API key | Your Resend account |
-| **Alert webhook** (optional) | Only if you set `ALERT_WEBHOOK_URL` | Alert text to the Slack/Discord/ntfy URL you chose | Yours |
-| **Anthropic / Claude** (optional) | Only if you use the AI Advisor via Claude Desktop | Whatever your local Claude Desktop sends; the Ledger backend sends nothing to Anthropic itself | Your Claude account |
+
+| Service                                   | When                                                        | What leaves your machine                                                                       | Whose account       |
+| ----------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------- |
+| **Plaid**                                 | Linking a bank and every sync                               | Requests using *your* Plaid keys; Plaid returns your transactions/balances                     | Your Plaid account  |
+| **Your bank / brokerage**                 | Via Plaid, when linking/syncing                             | Handled by Plaid; Ledger never sees your bank login                                            | Yours               |
+| **GitHub**                                | Desktop app launch (update check) and downloads             | A version check and, if updating, the download request — exposes your IP to GitHub             | n/a                 |
+| **Google Fonts** (`fonts.googleapis.com`) | Loading the web UI                                          | A font request — exposes your IP to Google                                                     | n/a                 |
+| **Resend** (optional)                     | Only if you enable the weekly email or email password-reset | The email and *your* Resend API key                                                            | Your Resend account |
+| **Alert webhook** (optional)              | Only if you set `ALERT_WEBHOOK_URL`                         | Alert text to the Slack/Discord/ntfy URL you chose                                             | Yours               |
+| **Anthropic / Claude** (optional)         | Only if you use the AI Advisor via Claude Desktop           | Whatever your local Claude Desktop sends; the Ledger backend sends nothing to Anthropic itself | Your Claude account |
+
 
 Ledger sets no tracking cookies and embeds no third-party advertising or analytics.
 Outbound *links* you choose to click (documentation, the donation link) take you to

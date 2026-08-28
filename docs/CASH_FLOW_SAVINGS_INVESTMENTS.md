@@ -262,7 +262,8 @@ If we keep a single "Savings" label for residual (compatibility with today’s c
 | Surface | Role |
 | --- | --- |
 | **Cash Flow** | This month’s earned money and how it was used: spend, save, invest |
-| **Budgets** | Caps on *spending* categories. Do not budget Transfers. Optional later: savings/investing targets as non-spend goals |
+| **Budgets** | Caps on *spending* categories. Do not budget Transfers. Savings/investing targets are goal **labels**, not spend budgets |
+| **Goals tab** | Named buckets; labeled transfers count as progress *and* as Cash Flow sinks |
 | **Net worth** | Stock of assets/liabilities over time (includes savings balances + brokerage holdings + crypto) |
 | **Investments tab** | Portfolio composition and investment_transactions |
 | **Overview** | Can summarize “saved $X / invested $Y this month” using the same allocator |
@@ -275,17 +276,20 @@ Net worth answers: “What am I worth over time?”
 
 ## UI / copy changes
 
-1. Replace today’s sole **Savings** sink with either:
-   - **Savings** + **Investments** + **Unallocated**, or
-   - **Savings** (explicit only) + **Investments**, and rename residual to **Unallocated**.
+1. Replace today’s sole **Savings** sink with:
+   - **Named goal sinks** for labeled transfers (Vacation, Emergency fund, Retirement, …)
+   - Generic **Savings** / **Investments** only for unlabeled allocation transfers
+   - **Unallocated** for residual leftover (never a goal)
 2. Header line should not say “Saved $X” if $X is only residual. Prefer:
-   - `Spent $A · Saved $B · Invested $C · Left $D`
-3. Clicking Savings / Investments should list the underlying transfer transactions (unlike today’s empty residual tooltip).
+   - `Spent $A · Vacation $B · Emergency $C · Saved $D · Invested $E · Left $F`
+   (named sinks that have activity this month; collapse unused labels)
+3. Clicking a named sink or Savings / Investments should list the underlying transfer transactions (labeled vs unlabeled).
 4. Category picker: add clear allocation labels (or a small “Treat as” control):
    - Spending (default for merchants)
    - Savings
    - Investments
    - Transfer (exclude)
+   Plus **goal label** (Vacation, …) on savings/investment transfers — orthogonal to the above, drives the named sink.
 
 ---
 
@@ -315,19 +319,21 @@ Likely touch points:
 ## Open questions
 
 1. **Netting:** For a month with $1,000 to brokerage and $200 back from brokerage, is Investments sink `$800` net, or show `$1000` out and handle the `$200` separately?
-2. **Unallocated node:** Keep residual folded into Savings for fewer nodes, or always show Unallocated once Investments exists?
+2. **Unallocated node:** **locked** — always show Unallocated for residual leftover once named/generic allocation sinks exist. Do not fold leftover into Savings.
 3. **External brokers:** If the brokerage is not linked, is merchant/memo enough to mark Investments, or require manual category?
 4. **Paycheck 401(k) deferrals:** Often invisible in bank feeds. Out of scope unless they appear as transfers.
 5. **Crypto buys from checking:** Treat as Investments allocation, Spending, or a fourth sink? Recommendation: Investments (or “Assets”) if user-directed capital allocation; otherwise manual.
-6. **Budgets:** Should “Investments $500/mo” be a budget goal separate from spend budgets?
+6. **Budgets / goals:** **locked** — do not add an “Investments $500/mo” spend budget. Targets are goal **labels**. Labeled transfers become named Cash Flow sinks; unlabeled keep generic Savings/Investments.
 
 ---
 
 ## Acceptance criteria
 
 - Cash Flow can show **Savings** and **Investments** as different sinks in the same month.
-- A checking → HYSA transfer increases Savings, not Spending, not Investments.
-- A checking → brokerage transfer increases Investments, not Savings, not Spending.
+- A labeled savings transfer (e.g. Vacation) appears as a **named sink**, not generic Savings.
+- Unlabeled checking → HYSA still increases generic Savings, not Spending, not Investments, not a goal.
+- A checking → brokerage transfer increases Investments (or a named invest goal if labeled), not Savings, not Spending.
+- Residual leftover is **Unallocated**, never a goal and never Investments.
 - A credit card payment does not appear in Spending, Savings, or Investments.
 - A savings → checking or brokerage → checking transfer does not appear as earned income.
 - Residual leftover never appears under Investments unless explicitly classified.
@@ -338,7 +344,8 @@ Likely touch points:
 
 | Concept | Today | Target |
 | --- | --- | --- |
-| Savings node | Residual `income − spend` | Explicit savings transfers (+ optional residual/unallocated) |
-| Investments on Cash Flow | Absent | Explicit funding transfers as their own sink |
-| Transfers | Excluded (good) but undifferentiated | Still excluded from spend/income; classified into savings / investments / internal |
+| Savings node | Residual `income − spend` | Unlabeled savings transfers; leftover is Unallocated |
+| Named goal sinks | Absent | Labeled transfers (Vacation, Emergency, …) as their own Cash Flow nodes |
+| Investments on Cash Flow | Absent | Unlabeled funding transfers as Investments; labeled invest goals as named sinks |
+| Transfers | Excluded (good) but undifferentiated | Still excluded from spend/income; classified into savings / investments / internal / labeled goal |
 | Brokerage activity | Investments tab only | Still Investments tab; Cash Flow only sees cash funding/withdrawals |

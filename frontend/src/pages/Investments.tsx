@@ -138,6 +138,7 @@ export default function Investments() {
   const [refreshing, setRefreshing] = useState(false)
   const [runningOptimization, setRunningOptimization] = useState(false)
   const [selectedObjective, setSelectedObjective] = useState<string>('max_sharpe')
+  const [varUnit, setVarUnit] = useState<'pct' | 'dollar'>('pct')
 
   // Distinct from optimizationLoading, which useInvestmentsOptimization only
   // ever sets true for the INITIAL mount fetch (deliberately -- flipping it
@@ -516,7 +517,7 @@ export default function Investments() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 mb-3">
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-2.5 mb-3">
             <div className="glass-chip px-3 py-2">
               <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Volatility</div>
               <div className="text-[15px] font-bold tabular-nums mt-0.5">{fmtPct(risk.volatility_pct)}</div>
@@ -532,10 +533,6 @@ export default function Investments() {
               </div>
             </div>
             <div className="glass-chip px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">VaR (95%, 1d)</div>
-              <div className="text-[15px] font-bold tabular-nums mt-0.5">{fmtPct(risk.var_95_pct)}</div>
-            </div>
-            <div className="glass-chip px-3 py-2">
               <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Beta vs. SPY</div>
               <div className="text-[15px] font-bold tabular-nums mt-0.5">{risk.beta_vs_spy === null ? '—' : risk.beta_vs_spy.toFixed(2)}</div>
             </div>
@@ -546,6 +543,61 @@ export default function Investments() {
               </div>
             </div>
           </div>
+
+          {/* VaR — separate backtest of today's holdings vs. real price history,
+              independent of the TWR-based tiles above. See risk_service.py's
+              VaR section. */}
+          {risk.var_horizons.length > 0 && (
+            <div className="glass-chip px-3 py-2.5 mb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">
+                  Value at risk (backtest)
+                </div>
+                <div className="flex text-[10px] rounded-md overflow-hidden border border-ledger-border">
+                  <button
+                    onClick={() => setVarUnit('pct')}
+                    className={`px-2 py-0.5 font-medium ${varUnit === 'pct' ? 'bg-ledger-accent/20 text-ledger-text' : 'text-ledger-text-faint'}`}
+                  >
+                    %
+                  </button>
+                  <button
+                    onClick={() => setVarUnit('dollar')}
+                    className={`px-2 py-0.5 font-medium ${varUnit === 'dollar' ? 'bg-ledger-accent/20 text-ledger-text' : 'text-ledger-text-faint'}`}
+                  >
+                    $
+                  </button>
+                </div>
+              </div>
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="text-left text-ledger-text-faint">
+                    <th className="font-medium pb-1">Horizon</th>
+                    <th className="font-medium pb-1 text-right">95%</th>
+                    <th className="font-medium pb-1 text-right">99%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {risk.var_horizons.map(h => (
+                    <tr key={h.days}>
+                      <td className="py-0.5 text-ledger-text-faint">{h.days}d</td>
+                      <td className="py-0.5 text-right tabular-nums font-medium">
+                        {varUnit === 'pct' ? fmtPct(h.var_95_pct) : (h.var_95_dollar === null ? '—' : `$${fmt(h.var_95_dollar)}`)}
+                      </td>
+                      <td className="py-0.5 text-right tabular-nums font-medium">
+                        {varUnit === 'pct' ? fmtPct(h.var_99_pct) : (h.var_99_dollar === null ? '—' : `$${fmt(h.var_99_dollar)}`)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="text-[10px] text-ledger-text-faint mt-1.5">
+                Backtested from current holdings across {risk.var_data_points} days of price history
+                {risk.var_coverage_pct !== null && risk.var_coverage_pct < 99.5 && (
+                  <> · covers {risk.var_coverage_pct.toFixed(0)}% of portfolio value ({risk.var_excluded_tickers.join(', ')} excluded — no price history)</>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2.5 mb-3">
             <div className="glass-chip px-3 py-2">

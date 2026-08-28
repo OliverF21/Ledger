@@ -18,8 +18,8 @@ import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
-from app.models import Account, BalanceSnapshot, Base, Item, MarketPrice, User  # noqa: E402
-from app.services.risk_service import build_risk_metrics  # noqa: E402
+from app.models import Account, BalanceSnapshot, Base, Holding, Item, MarketPrice, Security, User  # noqa: E402
+from app.services.risk_service import MIN_BACKTEST_DATA_POINTS, build_risk_metrics  # noqa: E402
 
 
 @pytest.fixture
@@ -79,14 +79,15 @@ def test_known_series_max_drawdown_and_volatility(db_session, account):
     # while max drawdown (which degrades more gracefully) still computes.
     assert data.volatility_pct is None
     assert data.sharpe_ratio is None
-    assert data.var_95_pct is None
-    assert data.var_99_pct is None
     assert data.risk_free_rate_pct > 0  # falls back to DEFAULT_RISK_FREE_RATE_PCT
+    # VaR is independent of this BalanceSnapshot series (see the VaR section
+    # of tests below) -- no Holdings exist in this fixture, so it's empty.
+    assert data.var_horizons == []
 
 
 def test_annualized_metrics_populate_past_min_points_floor(db_session, account):
     # 25 daily snapshots (above MIN_ANNUALIZED_METRICS_POINTS=21) with mild
-    # noise so volatility/Sharpe/VaR are well-defined and should populate.
+    # noise so Sharpe is well-defined and should populate.
     d0 = date.today() - timedelta(days=24)
     values = [100, 101, 100, 102, 103, 102, 104, 105, 104, 106, 107, 106, 108,
               109, 108, 110, 111, 110, 112, 113, 112, 114, 115, 114, 116]
@@ -97,10 +98,12 @@ def test_annualized_metrics_populate_past_min_points_floor(db_session, account):
     data = build_risk_metrics(db_session, lookback_days=30)
 
     assert data.data_points == 25
-    assert data.volatility_pct is not None and data.volatility_pct > 0
     assert data.sharpe_ratio is not None
-    assert data.var_95_pct is not None
-    assert data.var_99_pct is not None
+    # Volatility and VaR no longer come from this BalanceSnapshot series --
+    # see the Backtest section of tests below for their own data
+    # requirements (Holdings + MarketPrice), which this fixture doesn't set up.
+    assert data.volatility_pct is None
+    assert data.var_horizons == []
 
 
 def test_beta_uses_market_price_spy_series(db_session, account):
@@ -154,3 +157,135 @@ def test_beta_matches_hand_computed_value(db_session, account):
     data = build_risk_metrics(db_session, lookback_days=10)
 
     assert data.beta_vs_spy == pytest.approx(2.0, abs=0.05)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Backtest (volatility + VaR) -- independent of the tests above, which only
+# set up BalanceSnapshot/TWR data. These need Holding + Security + MarketPrice
+# instead, since the backtest reads current Plaid holdings, not the real
+# account's balance history.
+# ════════════════════════════════════════════════════════════════════════════
+
+def _add_holding(db_session, account, ticker: str, value: float) -> None:
+    security = Security(plaid_security_id=f"sec-{ticker}", ticker_symbol=ticker, is_cash_equivalent=False)
+    db_session.add(security)
+    db_session.flush()
+    db_session.add(Holding(account_id=account.id, security_id=security.id, quantity=1, institution_value=value))
+
+
+def _add_prices(db_session, ticker: str, start: date, n: int, base: float = 100.0) -> None:
+    for i in range(n):
+        # small deterministic wobble so returns aren't degenerately zero
+        price = base + (i % 5) - 2
+        db_session.add(MarketPrice(ticker=ticker, price_date=start + timedelta(days=i), close_price=price))
+
+
+def test_backtest_returns_empty_when_no_holdings(db_session, account):
+    data = build_risk_metrics(db_session, lookback_days=365)
+    assert data.volatility_pct is None
+    assert data.var_horizons == []
+    assert data.var_data_points == 0
+    assert data.var_excluded_tickers == []
+    assert data.var_coverage_pct is None
+    assert data.portfolio_value_used is None
+
+
+def test_backtest_populates_with_sufficient_price_history(db_session, account):
+    account.current_balance = 1000
+    _add_holding(db_session, account, "AAPL", 1000)
+    _add_prices(db_session, "AAPL", date.today() - timedelta(days=100), n=100)
+    db_session.commit()
+
+    data = build_risk_metrics(db_session, lookback_days=365)
+
+    assert data.var_excluded_tickers == []
+    assert data.var_coverage_pct == pytest.approx(100.0)
+    assert data.portfolio_value_used == pytest.approx(1000.0)
+    assert data.var_data_points >= MIN_BACKTEST_DATA_POINTS
+    assert data.volatility_pct is not None and data.volatility_pct > 0
+    days_present = {h.days for h in data.var_horizons}
+    assert days_present == {1, 5, 30}
+    for h in data.var_horizons:
+        assert h.var_95_pct is not None and h.var_95_pct >= 0
+        assert h.var_99_pct is not None and h.var_99_pct >= h.var_95_pct
+        # pct and dollar are rounded independently from the same unrounded
+        # value, so allow a couple cents of double-rounding slack.
+        assert h.var_95_dollar == pytest.approx(h.var_95_pct / 100 * 1000, abs=0.05)
+
+
+def test_volatility_independent_of_sharpe_series(db_session, account):
+    """
+    volatility_pct (backtest) and sharpe_ratio's own internal volatility (real
+    short-window series) are deliberately different calculations -- adding
+    backtest-only data (Holding/MarketPrice) must change volatility_pct
+    without moving sharpe_ratio at all, and vice versa. This is the
+    regression test for that intentional divergence (see module docstring).
+    """
+    d0 = date.today() - timedelta(days=24)
+    values = [100, 101, 100, 102, 103, 102, 104, 105, 104, 106, 107, 106, 108,
+              109, 108, 110, 111, 110, 112, 113, 112, 114, 115, 114, 116]
+    for i, v in enumerate(values):
+        db_session.add(BalanceSnapshot(account_id=account.id, balance=v, snapshot_date=d0 + timedelta(days=i)))
+    db_session.commit()
+
+    before = build_risk_metrics(db_session, lookback_days=30)
+    assert before.sharpe_ratio is not None
+    assert before.volatility_pct is None  # no Holdings/MarketPrice yet
+
+    account.current_balance = 1000
+    _add_holding(db_session, account, "AAPL", 1000)
+    _add_prices(db_session, "AAPL", date.today() - timedelta(days=100), n=100)
+    db_session.commit()
+
+    after = build_risk_metrics(db_session, lookback_days=30)
+    assert after.volatility_pct is not None and after.volatility_pct > 0
+    # Backtest data appearing must not move Sharpe -- it's computed purely
+    # from the real BalanceSnapshot series, untouched by this change.
+    assert after.sharpe_ratio == before.sharpe_ratio
+
+
+def test_backtest_excludes_tickers_with_no_price_history(db_session, account):
+    account.current_balance = 1500
+    _add_holding(db_session, account, "AAPL", 1000)
+    _add_holding(db_session, account, "NOPRICE", 500)
+    _add_prices(db_session, "AAPL", date.today() - timedelta(days=100), n=100)
+    db_session.commit()
+
+    data = build_risk_metrics(db_session, lookback_days=365)
+
+    assert data.var_excluded_tickers == ["NOPRICE"]
+    # Coverage = priceable (AAPL, $1000) / total ($1500)
+    assert data.var_coverage_pct == pytest.approx(1000 / 1500 * 100, abs=0.1)
+    assert data.var_horizons  # still populates from the priceable subset
+    assert data.volatility_pct is not None
+
+
+def test_var_gates_each_horizon_independently(db_session, account):
+    # 40 raw days -> 39 daily returns: enough for 1d/5d (>=30 obs after
+    # rolling) but not 30d (39-29=10 obs, below MIN_BACKTEST_DATA_POINTS).
+    account.current_balance = 1000
+    _add_holding(db_session, account, "AAPL", 1000)
+    _add_prices(db_session, "AAPL", date.today() - timedelta(days=40), n=40)
+    db_session.commit()
+
+    data = build_risk_metrics(db_session, lookback_days=365)
+
+    days_present = {h.days for h in data.var_horizons}
+    assert days_present == {1, 5}
+    assert 30 not in days_present
+    # Volatility uses the same overall gate as VaR (39 obs >= 30), so it
+    # still populates even though the 30d VaR horizon specifically doesn't.
+    assert data.volatility_pct is not None
+
+
+def test_backtest_insufficient_history_returns_empty(db_session, account):
+    account.current_balance = 1000
+    _add_holding(db_session, account, "AAPL", 1000)
+    _add_prices(db_session, "AAPL", date.today() - timedelta(days=10), n=10)
+    db_session.commit()
+
+    data = build_risk_metrics(db_session, lookback_days=365)
+
+    assert data.var_horizons == []
+    assert data.var_data_points < MIN_BACKTEST_DATA_POINTS
+    assert data.volatility_pct is None

@@ -7,19 +7,25 @@ Transaction management endpoints.
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, date
 from typing import Optional
 import csv
 import io
 
 from app.analytics_shared import month_bounds
+from app.budgets_db import get_budgets_db
 from app.categorization import apply_category_to_transactions, find_similar_transactions
 from app.csv_import import REQUIRED_COLUMNS, get_or_create_manual_item, import_rows
 from app.database import get_db
 from app.enrichment import parse_enrichment_json
 from app.errors import log_and_raise
 from app.models import Transaction, Account, User
+from app.services.goals_service import (
+    attributions_by_transaction_ids,
+    goal_name_map,
+    replace_txn_attributions,
+)
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -31,6 +37,13 @@ class TransactionEnrichment(BaseModel):
     pfc_confidence: str | None = None
     category_icon_url: str | None = None
     description_raw: str | None = None
+
+
+class GoalLabelOut(BaseModel):
+    goal_id: int
+    name: str
+    amount: float
+    color: str | None = None
 
 
 class TransactionResponse(BaseModel):
@@ -55,6 +68,7 @@ class TransactionResponse(BaseModel):
     pending: bool = False
     manual_override: bool = False
     hidden: bool = False
+    goal_labels: list[GoalLabelOut] = []
 
 
 def _transaction_response(
@@ -62,6 +76,7 @@ def _transaction_response(
     account_name: str | None,
     account_type: str | None = None,
     account_subtype: str | None = None,
+    goal_labels: list[GoalLabelOut] | None = None,
 ) -> TransactionResponse:
     extra = parse_enrichment_json(txn.enrichment_json) or {}
     enrichment = TransactionEnrichment(
@@ -104,6 +119,7 @@ def _transaction_response(
         pending=bool(txn.pending or False),
         manual_override=bool(txn.manual_override or False),
         hidden=bool(txn.hidden or False),
+        goal_labels=goal_labels or [],
     )
 
 
@@ -118,6 +134,15 @@ class UpdateCategoryRequest(BaseModel):
 
 class SplitRequest(BaseModel):
     pct: float  # 0.0–1.0, e.g. 0.5 for splitting 50/50
+
+
+class GoalAttributionIn(BaseModel):
+    goal_id: int
+    amount: float = Field(..., gt=0)
+
+
+class GoalLabelsWrite(BaseModel):
+    attributions: list[GoalAttributionIn] = Field(default_factory=list)
 
 
 class ImportStats(BaseModel):
@@ -139,7 +164,8 @@ async def list_transactions(
     limit: int = 100,
     month: Optional[str] = Query(None, description="YYYY-MM, optional month filter"),
     exclude_hidden: bool = Query(False, description="Omit user-hidden transactions"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bdb: Session = Depends(get_budgets_db),
 ):
     """List non-removed transactions with pagination. Hidden transactions are included unless exclude_hidden=true."""
     try:
@@ -168,10 +194,25 @@ async def list_transactions(
             .all()
         )
         total = db.query(Transaction).filter(Transaction.removed == False).count()
-        result = [
-            _transaction_response(txn, account_name, account_type, account_subtype)
-            for txn, account_name, account_type, account_subtype in rows
-        ]
+        txn_ids = [txn.id for txn, *_ in rows]
+        attr_map = attributions_by_transaction_ids(db, txn_ids)
+        goals = goal_name_map(bdb)
+        result = []
+        for txn, account_name, account_type, account_subtype in rows:
+            labels = [
+                GoalLabelOut(
+                    goal_id=attr.goal_id,
+                    name=goals[attr.goal_id].name if attr.goal_id in goals else f"Goal {attr.goal_id}",
+                    amount=round(float(attr.amount), 2),
+                    color=goals[attr.goal_id].color if attr.goal_id in goals else None,
+                )
+                for attr in attr_map.get(txn.id, [])
+            ]
+            result.append(
+                _transaction_response(
+                    txn, account_name, account_type, account_subtype, goal_labels=labels
+                )
+            )
         return TransactionsListResponse(transactions=result, total=total)
     except Exception as e:
         log_and_raise(e, status_code=400)
@@ -202,6 +243,42 @@ async def update_transaction_category(
             "category": transaction.display_category,
             "manual_override": transaction.manual_override
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        log_and_raise(e, status_code=400)
+
+
+@router.put("/{transaction_id}/goal-labels")
+async def update_transaction_goal_labels(
+    transaction_id: int,
+    request: GoalLabelsWrite,
+    db: Session = Depends(get_db),
+    bdb: Session = Depends(get_budgets_db),
+):
+    """Replace savings-label attributions on a transaction. Empty list clears labels.
+
+    Does not change category_user — goal buckets are a separate tag type.
+    """
+    try:
+        items = [(row.goal_id, row.amount) for row in request.attributions]
+        replace_txn_attributions(db, bdb, transaction_id, items)
+        db.commit()
+        goals = goal_name_map(bdb)
+        labels = [
+            GoalLabelOut(
+                goal_id=gid,
+                name=goals[gid].name if gid in goals else f"Goal {gid}",
+                amount=round(float(amt), 2),
+                color=goals[gid].color if gid in goals else None,
+            )
+            for gid, amt in items
+        ]
+        return {"success": True, "transaction_id": transaction_id, "goal_labels": labels}
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:

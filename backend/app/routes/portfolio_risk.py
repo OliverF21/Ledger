@@ -20,13 +20,19 @@ from app.services.optimization_service import DEFAULT_LOOKBACK_DAYS, build_optim
 router = APIRouter(prefix="/investments/risk", tags=["investments"])
 
 
+class VarHorizonResponse(BaseModel):
+    days: int
+    var_95_pct: Optional[float]
+    var_95_dollar: Optional[float]
+    var_99_pct: Optional[float]
+    var_99_dollar: Optional[float]
+
+
 class RiskMetricsResponse(BaseModel):
     lookback_days: int
     as_of: str
     volatility_pct: Optional[float]
     sharpe_ratio: Optional[float]
-    var_95_pct: Optional[float]
-    var_99_pct: Optional[float]
     max_drawdown_pct: Optional[float]
     drawdown_duration_days: Optional[int]
     beta_vs_spy: Optional[float]
@@ -35,13 +41,22 @@ class RiskMetricsResponse(BaseModel):
     mwr_pct: Optional[float]
     risk_free_rate_pct: float
     data_points: int
+    # VaR — independent backtest of current holdings, see risk_service.py
+    var_horizons: list[VarHorizonResponse]
+    var_data_points: int
+    var_excluded_tickers: list[str]
+    var_coverage_pct: Optional[float]
+    portfolio_value_used: Optional[float]
 
 
 @router.get("/metrics", response_model=RiskMetricsResponse)
 async def get_risk_metrics(lookback_days: int = Query(365, ge=30, le=1825), db: Session = Depends(get_db)):
     try:
         data = build_risk_metrics(db, lookback_days=lookback_days)
-        return RiskMetricsResponse(**vars(data))
+        return RiskMetricsResponse(
+            **{k: v for k, v in vars(data).items() if k != "var_horizons"},
+            var_horizons=[VarHorizonResponse(**vars(h)) for h in data.var_horizons],
+        )
     except Exception as e:
         log_and_raise(e)
 

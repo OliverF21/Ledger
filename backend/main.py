@@ -5,9 +5,10 @@ FastAPI application entry point
 
 import os
 
-# Desktop bootstrap MUST run before importing any module that reads env at
+# App-data bootstrap MUST run before importing any module that reads env at
 # import time (app.security raises without ENCRYPTION_KEY; app.database builds
-# its engine from DATABASE_URL at import). No-op unless LEDGER_DESKTOP is set.
+# its engine from DATABASE_URL at import). No-op unless LEDGER_DESKTOP or
+# LEDGER_USE_APPDATA is set.
 from app.bootstrap import bootstrap_desktop
 bootstrap_desktop()
 
@@ -21,7 +22,7 @@ from app.database import init_db, SessionLocal
 from app.models import User
 
 # Import routes
-from app.routes import plaid, transactions, analytics, budgets, categories, settings, subscriptions, investments, portfolio_risk, optimization_settings, weekly_email, proposals, crypto
+from app.routes import plaid, transactions, analytics, budgets, categories, settings, subscriptions, investments, portfolio_risk, optimization_settings, weekly_email, proposals, crypto, goals
 from app.routes import auth as auth_routes
 
 from app.auth import require_auth
@@ -56,6 +57,15 @@ async def lifespan(app: FastAPI):
     init_scheduler()
 
     print("[OK] Ledger backend started")
+    # Make it obvious which SQLite files are open (dev + desktop debugging).
+    try:
+        from app.database import DATABASE_URL
+        from app.budgets_db import BUDGETS_DB_URL
+
+        print(f"[DB] ledger:  {DATABASE_URL}")
+        print(f"[DB] budgets: {BUDGETS_DB_URL}")
+    except Exception as exc:  # pragma: no cover — never block startup on logging
+        print(f"[DB] (could not report paths: {exc})")
 
     yield
 
@@ -106,6 +116,7 @@ app.include_router(investments.router, prefix="/api", dependencies=_auth)
 app.include_router(portfolio_risk.router, prefix="/api", dependencies=_auth)
 app.include_router(optimization_settings.router, prefix="/api", dependencies=_auth)
 app.include_router(crypto.router, prefix="/api", dependencies=_auth)
+app.include_router(goals.router, prefix="/api", dependencies=_auth)
 app.include_router(weekly_email.router, prefix="/api", dependencies=_auth)
 
 # Proposals carry per-route auth (create = MCP service key; the rest = user
