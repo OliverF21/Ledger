@@ -15,7 +15,6 @@ import { site } from "@/content/site";
 
 const scenes = site.features.scenes;
 const SCREEN_PATHS = scenes.map((s) => site.shots[s.shot]);
-const COPY_END = 0.16;
 
 const aluminum = {
   metalness: 0.9,
@@ -32,13 +31,13 @@ type Pose = {
 };
 
 function poseAt(progress: number): Pose {
-  const t = THREE.MathUtils.clamp(progress / COPY_END, 0, 1);
+  const t = THREE.MathUtils.clamp(progress, 0, 1);
   const e = t * t * (3 - 2 * t);
   return {
-    yaw: THREE.MathUtils.lerp(-0.5, -0.24, e),
-    pitch: THREE.MathUtils.lerp(0.14, 0.07, e),
-    roll: THREE.MathUtils.lerp(-0.03, 0, e),
-    lid: THREE.MathUtils.lerp(-0.18, -0.1, e),
+    yaw: THREE.MathUtils.lerp(-0.52, -0.1, e),
+    pitch: THREE.MathUtils.lerp(0.16, 0.04, e),
+    roll: THREE.MathUtils.lerp(-0.035, 0, e),
+    lid: THREE.MathUtils.lerp(-0.2, -0.08, e),
   };
 }
 
