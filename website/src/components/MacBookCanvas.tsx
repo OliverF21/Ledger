@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useLayoutEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   Environment,
   Lightformer,
@@ -27,17 +27,60 @@ type Pose = {
   pitch: number;
   roll: number;
   lid: number;
+  scale: number;
 };
 
-function poseAt(progress: number): Pose {
+type WalkVariant = "desktop" | "mobile";
+
+function smooth(progress: number) {
   const t = THREE.MathUtils.clamp(progress, 0, 1);
-  const e = t * t * (3 - 2 * t);
+  return t * t * (3 - 2 * t);
+}
+
+function poseAt(progress: number, variant: WalkVariant): Pose {
+  const e = smooth(progress);
+
+  if (variant === "mobile") {
+    return {
+      yaw: THREE.MathUtils.lerp(-0.04, 0.06, e),
+      pitch: THREE.MathUtils.lerp(0.38, 0.26, e),
+      roll: THREE.MathUtils.lerp(-0.006, 0, e),
+      lid: THREE.MathUtils.lerp(-0.04, -0.025, e),
+      scale: THREE.MathUtils.lerp(1.24, 1.12, e),
+    };
+  }
+
   return {
     yaw: THREE.MathUtils.lerp(-0.52, -0.08, e),
     pitch: THREE.MathUtils.lerp(0.16, 0.035, e),
     roll: THREE.MathUtils.lerp(-0.035, 0, e),
     lid: THREE.MathUtils.lerp(-0.2, -0.075, e),
+    scale: 0.92,
   };
+}
+
+function CameraRig({
+  progressRef,
+  variant,
+  freeze,
+}: {
+  progressRef: MutableRefObject<number>;
+  variant: WalkVariant;
+  freeze: boolean;
+}) {
+  const { camera } = useThree();
+
+  useFrame(() => {
+    if (variant !== "mobile") return;
+    const e = smooth(freeze ? 1 : progressRef.current);
+    const cam = camera as THREE.PerspectiveCamera;
+    cam.position.set(0, THREE.MathUtils.lerp(5.62, 5.35, e), THREE.MathUtils.lerp(7.8, 9.1, e));
+    cam.fov = THREE.MathUtils.lerp(17.5, 20, e);
+    cam.lookAt(0, THREE.MathUtils.lerp(5.08, 4.92, e), 0);
+    cam.updateProjectionMatrix();
+  });
+
+  return null;
 }
 
 function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
@@ -87,12 +130,7 @@ function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
     <group>
       <mesh renderOrder={1}>
         <planeGeometry args={[13.28, 8.28]} />
-        <meshBasicMaterial
-          ref={backMat}
-          toneMapped={false}
-          transparent
-          opacity={0}
-        />
+        <meshBasicMaterial ref={backMat} toneMapped={false} transparent opacity={0} />
       </mesh>
       <mesh position={[0, 0, 0.001]} renderOrder={2}>
         <planeGeometry args={[13.28, 8.28]} />
@@ -108,7 +146,7 @@ function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
   );
 }
 
-function Deck() {
+function Deck({ visible }: { visible: boolean }) {
   const map = useTexture(site.shots.deck);
 
   useLayoutEffect(() => {
@@ -116,6 +154,8 @@ function Deck() {
     map.anisotropy = 8;
     map.needsUpdate = true;
   }, [map]);
+
+  if (!visible) return null;
 
   return (
     <mesh rotation-x={-Math.PI / 2} position={[0, 0.392, 0.06]} renderOrder={1}>
@@ -125,7 +165,9 @@ function Deck() {
   );
 }
 
-function GroundShadow() {
+function GroundShadow({ mobile }: { mobile: boolean }) {
+  if (mobile) return null;
+
   return (
     <mesh rotation-x={-Math.PI / 2} position={[0, 0.005, 0.35]}>
       <circleGeometry args={[6.8, 48]} />
@@ -137,42 +179,53 @@ function GroundShadow() {
 function LaptopBody({
   progressRef,
   freeze,
+  variant,
 }: {
   progressRef: MutableRefObject<number>;
   freeze: boolean;
+  variant: WalkVariant;
 }) {
   const rig = useRef<THREE.Group>(null);
   const lid = useRef<THREE.Group>(null);
-  const rest = useMemo(() => poseAt(freeze ? 1 : 0), [freeze]);
+  const scaleRef = useRef(0.92);
+  const rest = useMemo(() => poseAt(freeze ? 1 : 0, variant), [freeze, variant]);
 
   useFrame(() => {
     if (!rig.current || !lid.current) return;
-    const next = freeze ? rest : poseAt(progressRef.current);
+    const next = freeze ? rest : poseAt(progressRef.current, variant);
     rig.current.rotation.y = next.yaw;
     rig.current.rotation.x = next.pitch;
     rig.current.rotation.z = next.roll;
     lid.current.rotation.x = next.lid;
+    scaleRef.current = next.scale;
+    rig.current.scale.setScalar(next.scale);
   });
+
+  const showDeck = variant === "desktop";
 
   return (
     <group
       ref={rig}
-      position={[0, 0.2, 0]}
+      position={[0, variant === "mobile" ? 0.05 : 0.2, 0]}
       rotation={[rest.pitch, rest.yaw, rest.roll]}
-      scale={0.92}
+      scale={rest.scale}
     >
       <RoundedBox args={[14.42, 0.36, 9.96]} radius={0.09} smoothness={6} position={[0, 0.18, 0]}>
         <meshPhysicalMaterial color="#6e727a" {...aluminum} />
       </RoundedBox>
-      <RoundedBox args={[14.42, 0.1, 0.42]} radius={0.04} smoothness={4} position={[0, 0.14, 4.86]}>
-        <meshPhysicalMaterial color="#868a92" {...aluminum} roughness={0.22} />
-      </RoundedBox>
-      <mesh position={[0, 0.2, 5.05]}>
-        <boxGeometry args={[1.7, 0.05, 0.16]} />
-        <meshStandardMaterial color="#16181c" roughness={0.7} />
-      </mesh>
+      {showDeck && (
+        <>
+          <RoundedBox args={[14.42, 0.1, 0.42]} radius={0.04} smoothness={4} position={[0, 0.14, 4.86]}>
+            <meshPhysicalMaterial color="#868a92" {...aluminum} roughness={0.22} />
+          </RoundedBox>
+          <mesh position={[0, 0.2, 5.05]}>
+            <boxGeometry args={[1.7, 0.05, 0.16]} />
+            <meshStandardMaterial color="#16181c" roughness={0.7} />
+          </mesh>
+        </>
+      )}
       <Suspense fallback={null}>
-        <Deck />
+        <Deck visible={showDeck} />
       </Suspense>
 
       <mesh rotation={[0, 0, Math.PI / 2]} position={[0, 0.4, -4.86]}>
@@ -210,20 +263,8 @@ function Lights() {
   return (
     <>
       <hemisphereLight args={["#c5d2e6", "#0a0c10", 0.55]} />
-      <spotLight
-        position={[6, 11, 8]}
-        angle={0.55}
-        penumbra={1}
-        intensity={1.35}
-        color="#eef2f7"
-      />
-      <spotLight
-        position={[-6.5, 5, 6]}
-        angle={0.75}
-        penumbra={1}
-        intensity={0.45}
-        color="#8eadd8"
-      />
+      <spotLight position={[6, 11, 8]} angle={0.55} penumbra={1} intensity={1.35} color="#eef2f7" />
+      <spotLight position={[-6.5, 5, 6]} angle={0.75} penumbra={1} intensity={0.45} color="#8eadd8" />
       <directionalLight position={[2, 4, -7]} intensity={0.35} color="#d5dde8" />
       <Environment resolution={256}>
         <Lightformer intensity={1.2} position={[0, 5, -2]} scale={[12, 2.4, 1]} />
@@ -238,27 +279,40 @@ function Lights() {
 export function MacBookCanvas({
   progressRef,
   freeze,
+  variant = "desktop",
 }: {
   progressRef: MutableRefObject<number>;
   freeze: boolean;
+  variant?: WalkVariant;
 }) {
+  const mobile = variant === "mobile";
+
   return (
     <Canvas
       className="macbook-3d-canvas"
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
-      dpr={[1, 1.75]}
-      camera={{ fov: 32, position: [0, 4.6, 26], near: 0.1, far: 80 }}
+      dpr={mobile ? [1, 2] : [1, 1.75]}
+      camera={
+        mobile
+          ? { fov: 17.5, position: [0, 5.62, 7.8], near: 0.1, far: 80 }
+          : { fov: 32, position: [0, 4.6, 26], near: 0.1, far: 80 }
+      }
       frameloop={freeze ? "demand" : "always"}
       onCreated={({ camera, gl }) => {
-        camera.lookAt(0, 2.15, 0);
+        if (mobile) {
+          camera.lookAt(0, 5.08, 0);
+        } else {
+          camera.lookAt(0, 2.15, 0);
+        }
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 0.88;
         gl.setClearColor(0x000000, 0);
       }}
     >
+      <CameraRig progressRef={progressRef} variant={variant} freeze={freeze} />
       <Lights />
-      <LaptopBody progressRef={progressRef} freeze={freeze} />
-      <GroundShadow />
+      <LaptopBody progressRef={progressRef} freeze={freeze} variant={variant} />
+      <GroundShadow mobile={mobile} />
     </Canvas>
   );
 }

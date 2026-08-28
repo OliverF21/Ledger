@@ -230,6 +230,13 @@ body {
   min-height: 16rem;
 }
 
+.macbook-3d-mobile {
+  aspect-ratio: auto;
+  min-height: clamp(18rem, 58dvh, 30rem);
+  width: min(118vw, 38rem);
+  margin-inline: auto;
+}
+
 .macbook-3d-canvas {
   width: 100% !important;
   height: 100% !important;
@@ -240,6 +247,14 @@ body {
   .hero-product-tilt {
     transform: none;
     filter: drop-shadow(0 28px 48px rgba(0, 0, 0, 0.45));
+  }
+
+  .walk-stage {
+    min-height: 100dvh;
+  }
+
+  .walk-laptop {
+    margin-top: -0.25rem;
   }
 }
 
