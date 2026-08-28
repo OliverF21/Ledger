@@ -13,7 +13,9 @@ class CategorySpendResult(BaseModel):
     name: str
     value: float
     color: str
-    transaction_count: int = Field(description="How many transactions contributed to this category total")
+    transaction_count: int = Field(
+        description="How many transactions contributed to this category total"
+    )
 
 
 class RecentTransactionResult(BaseModel):
@@ -94,6 +96,7 @@ class CashFlowResult(BaseModel):
     savings: float
     income_sources: list[CashFlowNodeResult]
     spending_categories: list[CashFlowNodeResult]
+    allocation_nodes: list[CashFlowNodeResult] = Field(default_factory=list)
 
 
 class SankeyLinkResult(BaseModel):
@@ -113,7 +116,9 @@ class CashFlowSankeyResult(BaseModel):
     uses: list[CashFlowNodeResult]
     sankey_links: list[SankeyLinkResult]
     svg: str = Field(description="Ribbon Sankey SVG matching the OpenTrack Cash Flow page.")
-    mermaid: str = Field(description="Mermaid sankey-beta source (for debugging; prefer chart_cash_flow image).")
+    mermaid: str = Field(
+        description="Mermaid sankey-beta source (for debugging; prefer chart_cash_flow image)."
+    )
 
 
 class RecurringSpendItemResult(BaseModel):
@@ -205,16 +210,124 @@ class InvestmentPerformanceResult(BaseModel):
 
 
 class ProposalResult(BaseModel):
-    """Result of staging a budget proposal for the user to apply in Ledger."""
+    """Result of staging a proposal for the user to apply in Ledger."""
 
     ok: bool
     proposal_id: int | None = None
     status: str | None = None
     summary: str | None = None
+    kind: str | None = None
     month: str | None = None
     category_name: str | None = None
     category_key: str | None = None
     basis_limit: float | None = None
     proposed_limit: float | None = None
+    goal_id: int | None = None
+    goal_name: str | None = None
+    transaction_id: int | None = None
     apply_url: str | None = None
     message: str = ""
+
+
+class ResidualMonthResult(BaseModel):
+    month: str
+    residual: float
+    income: float
+    spending: float
+    is_partial: bool
+
+
+class PlanningCapacityResult(BaseModel):
+    month: str
+    lookback_months: int
+    residual_this_month: float
+    residual_lookback_avg: float | None = None
+    recommended_available: float
+    policy: str
+    series: list[ResidualMonthResult]
+    notes: list[str]
+
+
+class GoalSpendCutInput(BaseModel):
+    monthly_delta: float = Field(
+        description=(
+            "Change in monthly spending for this category. Negative reduces spend "
+            "and frees capacity (e.g. -150 cuts $150/mo)."
+        )
+    )
+    category_key: str | None = Field(
+        default=None,
+        description="Plaid PFC parent key, e.g. FOOD_AND_DRINK. Preferred when known.",
+    )
+    category_name: str | None = Field(
+        default=None,
+        description="Display name, e.g. 'Food & Drink' or 'Dining Out'.",
+    )
+
+
+class AppliedCutResult(BaseModel):
+    category_key: str | None = None
+    category_name: str
+    monthly_delta: float
+    matched_spend: float | None = None
+    matched: bool
+    note: str | None = None
+
+
+class GoalScheduleRowResult(BaseModel):
+    month_index: int
+    month: str
+    contribution: float
+    interest: float
+    balance: float
+    contribution_cumulative: float
+    interest_cumulative: float
+
+
+class GoalPlanResult(BaseModel):
+    mode: str
+    target_amount: float
+    current_amount: float
+    remaining: float
+    monthly_contribution: float
+    months: int | None = None
+    months_exact: float | None = None
+    projected_end_month: str | None = None
+    annual_return: float
+    monthly_rate: float
+    affordable: bool
+    assumed_monthly_capacity: float | None = None
+    capacity: PlanningCapacityResult | None = None
+    schedule_summary: list[GoalScheduleRowResult]
+    notes: list[str]
+    assumptions: list[str]
+    cuts: list[AppliedCutResult] = Field(default_factory=list)
+    contribution_before_cuts: float | None = None
+    months_before_cuts: int | None = None
+    affordable_before_cuts: bool | None = None
+
+
+class GoalProgressResult(BaseModel):
+    id: int
+    name: str
+    kind: str
+    kind_label: str
+    target_amount: float
+    opening_amount: float
+    labeled_in: float
+    labeled_out: float
+    progress: float
+    remaining: float
+    monthly_contribution: float | None = None
+    annual_return: float
+    target_date: str | None = None
+    status: str
+    color: str
+    months_remaining: int | None = None
+    months_exact: float | None = None
+    projected_end_month: str | None = None
+    percent_funded: float
+
+
+class GoalListResult(BaseModel):
+    goals: list[GoalProgressResult]

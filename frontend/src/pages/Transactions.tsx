@@ -24,11 +24,20 @@ type ActionState =
   | { type: 'recategorize'; id: number; draft: string }
   | { type: 'split'; id: number; draft: string; originalAbs: number }
   | { type: 'similar-prompt'; id: number; merchant: string; category: string; similarIds: number[]; makeRule: boolean }
+  | { type: 'goal-label'; id: number }
   | null
+
+interface GoalOption {
+  id: number
+  name: string
+  color: string
+  status: string
+}
 
 export default function Transactions() {
   const [transactions, setTransactions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [goals, setGoals] = useState<GoalOption[]>([])
 
   // Filters
   const [search, setSearch] = useState('')
@@ -62,6 +71,10 @@ export default function Transactions() {
       }
     }
     fetchTransactions()
+    apiFetch('/api/goals')
+      .then(r => r.json())
+      .then(d => setGoals((d.goals || []).filter((g: GoalOption) => g.status !== 'dismissed')))
+      .catch(() => setGoals([]))
   }, [])
 
   useOnSyncComplete(useCallback(() => {
@@ -263,6 +276,26 @@ export default function Transactions() {
     }
   }
 
+  const handleGoalLabel = async (id: number, goalId: number | null) => {
+    const txn = transactions.find(t => t.id === id)
+    if (!txn) return
+    const amount = Math.abs(txn.amount)
+    const attributions = goalId == null ? [] : [{ goal_id: goalId, amount }]
+    try {
+      const res = await apiFetch(`/api/transactions/${id}/goal-labels`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attributions }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.detail || 'Failed to save label')
+      setTransactions(ts => ts.map(t => t.id === id ? { ...t, goal_labels: json.goal_labels || [] } : t))
+      setAction(null)
+    } catch (e) {
+      console.error('Goal label failed', e)
+    }
+  }
+
   const handleSplit = async (id: number, dollarStr: string, originalAbs: number) => {
     const dollars = parseFloat(dollarStr)
     if (isNaN(dollars) || dollars <= 0 || dollars > originalAbs) return
@@ -392,6 +425,9 @@ export default function Transactions() {
                   <ThBtn field="category" label="Category" />
                 </th>
                 <th className="text-left px-[20px] py-[12px]">
+                  <span className="text-[11px] uppercase tracking-widest text-ledger-text-faintest font-semibold">Goal</span>
+                </th>
+                <th className="text-left px-[20px] py-[12px]">
                   <ThBtn field="date" label="Date" />
                 </th>
                 <th className="text-right px-[20px] py-[12px]">
@@ -405,13 +441,13 @@ export default function Transactions() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-[20px] py-[40px] text-center text-ledger-text-faint text-[13px]">
+                  <td colSpan={7} className="px-[20px] py-[40px] text-center text-ledger-text-faint text-[13px]">
                     Loading…
                   </td>
                 </tr>
               ) : paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-[20px] py-[40px] text-center text-ledger-text-faint text-[13px]">
+                  <td colSpan={7} className="px-[20px] py-[40px] text-center text-ledger-text-faint text-[13px]">
                     {transactions.length === 0
                       ? 'No transactions yet. Link an account or import a CSV.'
                       : 'No transactions match your filters.'}
@@ -422,6 +458,7 @@ export default function Transactions() {
                   const isRecat = action?.type === 'recategorize' && action.id === txn.id
                   const isSplit = action?.type === 'split' && action.id === txn.id
                   const isSimilarPrompt = action?.type === 'similar-prompt' && action.id === txn.id
+                  const isGoalLabel = action?.type === 'goal-label' && action.id === txn.id
                   const recatDraft = isRecat ? action.draft : categoryPickerDraft(txn)
                   const recatExpandedPrimary = isRecat
                     ? primaryForCategoryLabel(recatDraft) ?? primaryForCategoryLabel(formatCategory(recatDraft))
@@ -458,6 +495,25 @@ export default function Transactions() {
                           >
                             <span className="truncate">{formatTransactionCategory(txn)}</span>
                             <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 transition-transform ${isRecat ? 'rotate-180 text-ledger-accent' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
+                          </button>
+                        </td>
+                        <td className="px-[20px] py-[11px]">
+                          <button
+                            onClick={() => setAction(isGoalLabel ? null : { type: 'goal-label', id: txn.id })}
+                            className={`inline-flex max-w-full items-center gap-[6px] text-[11px] px-[9px] py-[3px] rounded-[7px] border transition-all ${
+                              isGoalLabel
+                                ? 'bg-ledger-accent/18 text-ledger-text-primary border-ledger-accent/40'
+                                : txn.goal_labels?.length
+                                  ? 'glass-chip text-ledger-text-muted border-white/15 hover:text-ledger-text-primary hover:border-ledger-accent/30'
+                                  : 'text-ledger-text-faintest border-transparent hover:text-ledger-text-muted'
+                            }`}
+                          >
+                            <span className="truncate">
+                              {txn.goal_labels?.length
+                                ? txn.goal_labels.map((l: { name: string }) => l.name).join(', ')
+                                : 'Label'}
+                            </span>
+                            <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 ${isGoalLabel ? 'rotate-180 text-ledger-accent' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
                           </button>
                         </td>
                         <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-faintest tabular-nums">
@@ -502,7 +558,7 @@ export default function Transactions() {
                       {/* Inline: Re-categorize */}
                       {isRecat && (
                         <tr className="bg-ledger-inset border-b border-ledger-border-subtle">
-                          <td colSpan={6} className="px-[20px] py-[10px]">
+                          <td colSpan={7} className="px-[20px] py-[10px]">
                             <div className="glass-chip rounded-[12px] px-[12px] py-[12px]">
                               <div className="flex items-center gap-[8px] mb-[10px]">
                                 <span className="text-[12px] text-ledger-text-faint flex-shrink-0">New category</span>
@@ -547,10 +603,53 @@ export default function Transactions() {
                         </tr>
                       )}
 
+                      {isGoalLabel && (
+                        <tr className="bg-ledger-inset border-b border-ledger-border-subtle">
+                          <td colSpan={7} className="px-[20px] py-[10px]">
+                            <div className="flex items-center gap-[8px] flex-wrap">
+                              <span className="text-[12px] text-ledger-text-faint">Savings label</span>
+                              {goals.length === 0 ? (
+                                <span className="text-[12px] text-ledger-text-faintest">
+                                  Add a goal on the Goals tab first. Labels do not change spend category.
+                                </span>
+                              ) : (
+                                goals.map(g => (
+                                  <button
+                                    key={g.id}
+                                    onClick={() => handleGoalLabel(txn.id, g.id)}
+                                    className="glass-chip rounded-[7px] px-[10px] py-[5px] text-[12px] text-ledger-text-secondary hover:text-ledger-text-heading"
+                                  >
+                                    <span
+                                      className="inline-block w-[8px] h-[8px] rounded-full mr-[6px]"
+                                      style={{ backgroundColor: g.color }}
+                                    />
+                                    {g.name}
+                                  </button>
+                                ))
+                              )}
+                              {txn.goal_labels?.length > 0 && (
+                                <button
+                                  onClick={() => handleGoalLabel(txn.id, null)}
+                                  className="text-[12px] text-ledger-text-faint hover:text-ledger-negative px-[8px]"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setAction(null)}
+                                className="ml-auto p-[6px] rounded-[7px] text-ledger-text-faint hover:bg-white/10"
+                              >
+                                <X className="w-[14px] h-[14px]" strokeWidth={2} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+
                       {/* Inline: apply new category to similar transactions */}
                       {isSimilarPrompt && action?.type === 'similar-prompt' && (
                         <tr className="bg-ledger-inset border-b border-ledger-border-subtle">
-                          <td colSpan={6} className="px-[20px] py-[10px]">
+                          <td colSpan={7} className="px-[20px] py-[10px]">
                             <div className="flex items-center gap-[12px] flex-wrap">
                               <span className="text-[12px] text-ledger-text-secondary">
                                 Apply <span className="font-semibold text-ledger-text-primary">{formatCategory(action.category)}</span> to{' '}

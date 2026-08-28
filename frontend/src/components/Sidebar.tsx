@@ -1,4 +1,4 @@
-import { Grid3x3, List, Workflow, BarChart3, PieChart, TrendingUp, Repeat, Sparkles, Settings, BookOpen, LogOut } from 'lucide-react'
+import { Grid3x3, List, Workflow, BarChart3, PieChart, TrendingUp, Repeat, Sparkles, Settings, BookOpen, LogOut, Target } from 'lucide-react'
 import { type AccountItem } from '../hooks/useAccounts'
 import InstitutionAvatar from './InstitutionAvatar'
 
@@ -16,6 +16,7 @@ const navItems = [
   { id: 'spending', label: 'Cash Flow', icon: Workflow },
   { id: 'investments', label: 'Investments', icon: PieChart },
   { id: 'budgets', label: 'Budgets', icon: BarChart3 },
+  { id: 'goals', label: 'Goals', icon: Target },
   { id: 'trends', label: 'Trends', icon: TrendingUp },
   { id: 'subscriptions', label: 'Subscriptions', icon: Repeat },
   { id: 'advisor', label: 'AI Advisor', icon: Sparkles },

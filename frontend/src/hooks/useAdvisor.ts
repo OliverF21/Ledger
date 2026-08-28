@@ -22,11 +22,14 @@ export interface Proposal {
 export interface ApplyResult {
   success: boolean
   proposal_id: number
-  budget_id: number
-  category_name: string
-  prev_limit: number | null
-  new_limit: number
+  kind?: string
+  entity_id?: number | null
+  summary?: string
   created: boolean
+  budget_id?: number | null
+  category_name?: string | null
+  prev_limit?: number | null
+  new_limit?: number | null
 }
 
 const POLL_MS = 30_000

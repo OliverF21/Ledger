@@ -114,11 +114,35 @@ class Proposal(BudgetsBase):
     undone_at = Column(DateTime, nullable=True)
 
 
+GOAL_KINDS = ("emergency_fund", "sinking_fund", "debt_payoff", "invest", "custom")
+GOAL_STATUSES = ("active", "paused", "completed", "dismissed")
+
+
+class FinancialGoal(BudgetsBase):
+    """User savings/invest target. Progress comes from labeled transfers, not spend budgets."""
+
+    __tablename__ = "financial_goals"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False, default=1)
+    name = Column(String(255), nullable=False)
+    kind = Column(String(32), nullable=False, default="custom")
+    target_amount = Column(Numeric(19, 4), nullable=False)
+    current_amount = Column(Numeric(19, 4), nullable=False, default=0)  # opening balance
+    target_date = Column(String(10), nullable=True)  # YYYY-MM-DD
+    monthly_contribution = Column(Numeric(19, 4), nullable=True)
+    annual_return_assumption = Column(Numeric(8, 6), nullable=True)
+    status = Column(String(32), nullable=False, default="active")
+    color = Column(String(7), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 BudgetsSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=budgets_engine)
 
 
 def init_budgets_db():
-    """Create the budgets + proposals tables if they don't exist yet."""
+    """Create the budgets, proposals, and financial_goals tables if needed."""
     BudgetsBase.metadata.create_all(bind=budgets_engine)
 
 

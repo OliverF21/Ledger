@@ -148,14 +148,22 @@ UI: `#investments` tab between Budgets and Trends.
 ## AI Advisor (MCP)
 
 ```
-Claude Desktop → MCP tools (read analytics, propose_budget)
+Claude Desktop → MCP tools (read analytics, plan_goal / TVM,
+                 list_financial_goals, propose_budget / propose_goal /
+                 propose_goal_contribution / propose_transfer_label)
             → POST /api/proposals  (PROPOSAL_SERVICE_KEY)
             → pending row in budgets.db
             → user reviews in Advisor UI → Apply or Dismiss
+            → Budget / FinancialGoal / goal_attributions
 ```
 
 MCP reads SQLite directly for analytics; only proposal **creation** goes through
-the API with the scoped service key. See `backend/MCP_SETUP.md`.
+the API with the scoped service key. Goal planning (`planning_capacity`,
+`plan_goal`, `plan_goal_from_expenses`) runs time-value-of-money math in
+`app/services/tvm.py` — Claude calls those tools and does not invent NPER/PMT/FV.
+Persisted goals live in `budgets.db`; labeled transfers live in
+`ledger.db.goal_attributions`. See `docs/MCP_SETUP.md` and
+`docs/MCP_FINANCIAL_GOALS_PLAN.md`.
 
 ---
 
@@ -169,6 +177,7 @@ the API with the scoped service key. See `backend/MCP_SETUP.md`.
 | `items` | Encrypted Plaid tokens, sync cursor, institution metadata |
 | `accounts` | Linked accounts and current balances |
 | `transactions` | Spending data; PFC + user category; splits; hidden flag |
+| `goal_attributions` | Savings labels: `(transaction_id, goal_id, amount)` — not a spend category |
 | `categories`, `category_rules` | User taxonomy and merchant rules |
 | `balance_snapshots` | Daily balance history for net-worth chart |
 | `securities`, `holdings`, `investment_transactions` | Brokerage data |
@@ -179,6 +188,7 @@ the API with the scoped service key. See `backend/MCP_SETUP.md`.
 |-------|-------|
 | `budgets` | Monthly limits per category (no FK to ledger — joined in Python) |
 | `proposals` | Pending/applied/dismissed AI advisor suggestions |
+| `financial_goals` | Savings/invest targets; progress from labeled transfers + opening amount |
 
 ### Migrations
 
