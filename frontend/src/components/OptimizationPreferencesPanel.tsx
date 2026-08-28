@@ -8,7 +8,7 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
   return (
     <button
       onClick={onToggle}
-      className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${enabled ? 'bg-ledger-accent' : 'bg-[#23262f]'}`}
+      className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${enabled ? 'bg-white' : 'bg-[#23262f]'}`}
     >
       <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${enabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
     </button>
@@ -38,7 +38,7 @@ function RangeSlider({ label, value, min, max, step, onChange, referenceValue, r
           className="ledger-range"
           style={{
             background:
-              `linear-gradient(to right, #82a9f2 0%, #82a9f2 ${pct}%, ` +
+              `linear-gradient(to right, #ffffff 0%, #ffffff ${pct}%, ` +
               `rgba(255,255,255,0.1) ${pct}%, rgba(255,255,255,0.1) 100%)`,
           }}
         />
@@ -221,7 +221,7 @@ function AddTickerConstraintForm({ onCreate, availableTickers, defaultCapPct }: 
         onChange={e => setName(e.target.value)}
         onBlur={() => setName(prev => normalizeTicker(prev))}
         placeholder="e.g. VOO"
-        className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+        className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
       />
       <RangeSlider label="Floor" value={floor} min={0} max={100} step={1} onChange={setFloor} />
       <RangeSlider label="Cap" value={cap} min={0} max={100} step={1} onChange={setCap} />

@@ -1,9 +1,17 @@
-import { useState, useEffect } from 'react'
-import { X, Pencil, Trash2, Sparkles } from 'lucide-react'
-import { PieChart, Pie, Cell, Sector, ResponsiveContainer } from 'recharts'
+import { useState, useEffect, useRef } from 'react'
+import {
+  X, Pencil, Trash2, Sparkles, ChevronRight, TrendingUp, Check,
+  Repeat, UtensilsCrossed, ShoppingBasket, ShoppingBag, Home, Car,
+  Plane, Heart, Film, Gift, Wallet, Zap, Wifi, Phone, Coffee, Music,
+  Gamepad2, Shirt, Fuel, Stethoscope, Building2, GraduationCap, PawPrint,
+  Briefcase, Circle, type LucideIcon,
+} from 'lucide-react'
 import { apiFetch } from '../api/client'
 import { formatCategory } from '../utils/categories'
-import { getMonthOptions } from '../utils/months'
+import { getMonthOptions, currentMonthValue } from '../utils/months'
+import { alphaColor } from '../utils/color'
+import { useSubscriptions, type SubscriptionItem } from '../hooks/useSubscriptions'
+import { Eyebrow, GlassCard, ProgressBar, InitialsChip } from '../components/ui/primitives'
 
 interface BudgetItem {
   id: number
@@ -25,315 +33,73 @@ function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function fmtWhole(n: number) {
+  return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
+const TRACK_OK = '#63cfcc'
+const TRACK_OVER = '#f4907f'
+
+function daysLeftInMonth(month: string): number | null {
+  if (month !== currentMonthValue()) return null
+  const now = new Date()
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  return lastDay - now.getDate()
+}
+
+function formatDate(iso: string) {
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function formatCadence(cadence: string) {
+  if (cadence === 'weekly') return 'Weekly'
+  if (cadence === 'monthly') return 'Monthly'
+  if (cadence === 'annual') return 'Annual'
+  return cadence
+}
+
+function monthlyCost(sub: SubscriptionItem): number {
+  if (sub.cadence === 'monthly') return sub.average_amount
+  if (sub.cadence === 'weekly') return sub.average_amount * 4.33
+  if (sub.cadence === 'annual') return sub.average_amount / 12
+  return sub.average_amount
+}
+
+function categoryIcon(category: string): LucideIcon {
+  const c = category.toLowerCase()
+  if (/dining|restaurant|food.?and.?drink|fast.?food|alcohol|bar/.test(c)) return UtensilsCrossed
+  if (/coffee/.test(c)) return Coffee
+  if (/grocer/.test(c)) return ShoppingBasket
+  if (/shop|merchandise|clothing|electronics|sporting/.test(c)) return ShoppingBag
+  if (/rent|hous|home|utilit|mortgage/.test(c)) return Home
+  if (/gas|fuel/.test(c) && !/electric/.test(c)) return Fuel
+  if (/car|transport|rideshare|transit|parking/.test(c)) return Car
+  if (/travel|flight|lodging|hotel/.test(c)) return Plane
+  if (/medical|health|doctor|pharm/.test(c)) return Stethoscope
+  if (/gym|fitness|personal.?care|beauty/.test(c)) return Heart
+  if (/stream|entertainment|video.?game/.test(c)) return Gamepad2
+  if (/music/.test(c)) return Music
+  if (/film|movie/.test(c)) return Film
+  if (/gift|donat/.test(c)) return Gift
+  if (/pet/.test(c)) return PawPrint
+  if (/educat|tuition/.test(c)) return GraduationCap
+  if (/internet|cable|wifi/.test(c)) return Wifi
+  if (/phone|telephone/.test(c)) return Phone
+  if (/loan|credit.?card|bank.?fee|transfer/.test(c)) return Building2
+  if (/income|wage/.test(c)) return Wallet
+  if (/business/.test(c)) return Briefcase
+  if (/shirt/.test(c)) return Shirt
+  if (/electric|power/.test(c)) return Zap
+  return Circle
+}
+
 const MONTH_OPTIONS = getMonthOptions(6)
 
-interface Suggestion {
-  category: string
-  label: string
-  suggested: number
-  actual_avg: number
-  color: string
-}
-
-interface SuggestData {
-  avg_monthly_income: number
-  months_sampled: number
-  suggestions: Suggestion[]
-}
-
 const PALETTE = [
-  '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
-  '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
+  '#82a9f2', '#63cfcc', '#a196fa', '#74d8a8', '#e6bd79',
+  '#f4907f', '#f4a97f', '#95c8ff', '#a3dfc0', '#b9a8ff',
 ]
-
-interface SuggestPanelProps {
-  month: string
-  onClose: () => void
-  onApplied: () => void
-}
-
-const UNALLOCATED_COLOR = '#2a2e38'
-
-function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
-  const [data, setData] = useState<SuggestData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [amounts, setAmounts] = useState<Record<string, string>>({})
-  const [activeSlice, setActiveSlice] = useState<number | null>(null)
-  const [applying, setApplying] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    apiFetch('/api/budgets/suggest')
-      .then(r => r.json())
-      .then(d => {
-        setData(d)
-        setSelected(new Set(d.suggestions.map((s: Suggestion) => s.category)))
-        const init: Record<string, string> = {}
-        d.suggestions.forEach((s: Suggestion) => { init[s.category] = String(Math.round(s.suggested)) })
-        setAmounts(init)
-      })
-      .catch(() => setError('Failed to load suggestions'))
-      .finally(() => setLoading(false))
-  }, [])
-
-  const toggle = (cat: string) => {
-    setSelected(prev => {
-      const next = new Set(prev)
-      next.has(cat) ? next.delete(cat) : next.add(cat)
-      return next
-    })
-  }
-
-  const setAmount = (cat: string, val: string) => {
-    setAmounts(prev => ({ ...prev, [cat]: val }))
-  }
-
-  const handleApply = async () => {
-    if (!data) return
-    setApplying(true)
-    setError(null)
-    const toApply = data.suggestions.filter(s => selected.has(s.category))
-    let failed = 0
-    for (const s of toApply) {
-      const limit = parseFloat(amounts[s.category] ?? String(s.suggested))
-      if (isNaN(limit) || limit <= 0) { failed++; continue }
-      try {
-        const res = await apiFetch('/api/budgets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category_name: s.label, category_key: s.category, limit, month, color: s.color }),
-        })
-        const json = await res.json()
-        if (!res.ok && !json.detail?.includes('already exists')) failed++
-      } catch { failed++ }
-    }
-    setApplying(false)
-    if (failed > 0) setError(`${failed} budget(s) failed to save`)
-    else { onApplied(); onClose() }
-  }
-
-  // Build pie data from selected suggestions + unallocated remainder
-  const pieData = data ? (() => {
-    const slices = data.suggestions
-      .filter(s => selected.has(s.category))
-      .map(s => {
-        const value = Math.max(0, parseFloat(amounts[s.category] ?? String(s.suggested)) || 0)
-        return {
-          name: s.label,
-          value,
-          pct: data.avg_monthly_income > 0 ? (value / data.avg_monthly_income) * 100 : 0,
-          color: s.color,
-          category: s.category,
-        }
-      })
-    const allocated = slices.reduce((sum, s) => sum + s.value, 0)
-    const unallocated = Math.max(0, data.avg_monthly_income - allocated)
-    if (unallocated > 0) {
-      slices.push({ name: 'Unallocated', value: unallocated, pct: (unallocated / data.avg_monthly_income) * 100, color: UNALLOCATED_COLOR, category: '__unallocated__' })
-    }
-    return slices
-  })() : []
-
-  const hoveredSlice = activeSlice !== null ? pieData[activeSlice] : null
-
-  return (
-    <div className="glass-overlay fixed inset-0 z-50 flex items-center justify-center">
-      <div className="glass-modal w-[820px] max-h-[88vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-[26px] py-[20px] border-b border-white/8">
-          <div>
-            <h3 className="text-[15px] font-semibold">Suggested budget breakdown</h3>
-            {data && (
-              <p className="text-[12px] text-ledger-text-faint mt-[2px]">
-                ${fmt(data.avg_monthly_income)}/mo avg income · {data.months_sampled}-month history
-              </p>
-            )}
-          </div>
-          <button onClick={onClose} className="text-ledger-text-faint hover:text-ledger-text-primary">
-            <X className="w-[16px] h-[16px]" />
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center text-ledger-text-faint text-[13px]">
-            Analysing your income and spending…
-          </div>
-        ) : error && !data ? (
-          <div className="flex-1 flex items-center justify-center text-ledger-negative text-[13px]">{error}</div>
-        ) : data ? (
-          <div className="flex flex-1 overflow-hidden">
-            {/* Pie chart */}
-            <div className="flex flex-col items-center justify-center w-[320px] flex-shrink-0 py-[24px] border-r border-white/8">
-              <div className="relative w-[230px] h-[230px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%" cy="50%"
-                      innerRadius={68} outerRadius={102}
-                      paddingAngle={2} dataKey="value"
-                      activeIndex={activeSlice ?? undefined}
-                      activeShape={(props: any) => <Sector {...props} outerRadius={props.outerRadius + 5} style={{ outline: 'none' }} />}
-                      onMouseEnter={(_, i) => setActiveSlice(i)}
-                      onMouseLeave={() => setActiveSlice(null)}
-                      style={{ outline: 'none' }}
-                    >
-                      {pieData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} style={{ outline: 'none', cursor: 'default' }} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                {/* Center label */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  {hoveredSlice ? (
-                    <>
-                      <span className="text-[11px] text-ledger-text-faint w-[90px] text-center leading-tight break-words">{hoveredSlice.name}</span>
-                      <span className="text-[18px] font-bold tabular-nums mt-[2px]">{hoveredSlice.pct.toFixed(0)}%</span>
-                      <span className="text-[11px] text-ledger-text-faint tabular-nums">${fmt(hoveredSlice.value)}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-[10px] text-ledger-text-faintest">allocated</span>
-                      <span className="text-[17px] font-bold tabular-nums">
-                        {data.avg_monthly_income > 0
-                          ? `${Math.round((pieData.filter(s => s.category !== '__unallocated__').reduce((a, s) => a + s.value, 0) / data.avg_monthly_income) * 100)}%`
-                          : '—'}
-                      </span>
-                      <span className="text-[10px] text-ledger-text-faintest">of income</span>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="mt-[14px] text-center">
-                <div className="text-[11px] text-ledger-text-faintest">Savings target</div>
-                <div className="text-[14px] font-bold tabular-nums text-ledger-positive mt-[1px]">
-                  {data.avg_monthly_income > 0
-                    ? `$${fmt(Math.max(0, data.avg_monthly_income - pieData.filter(s => s.category !== '__unallocated__').reduce((a, s) => a + s.value, 0)))}`
-                    : '—'}
-                </div>
-              </div>
-            </div>
-
-            {/* Category list */}
-            <div className="soft-scrollbar flex-1 overflow-y-auto py-[16px] px-[20px]">
-              <div className="flex flex-col gap-[6px]">
-                {data.suggestions.map((s) => {
-                  const isSelected = selected.has(s.category)
-                  const currentAmt = Math.max(0, parseFloat(amounts[s.category] ?? String(s.suggested)) || 0)
-                  const pct = data.avg_monthly_income > 0 ? (currentAmt / data.avg_monthly_income) * 100 : 0
-                  const sliderMax = Math.max(Math.ceil(s.suggested * 2 / 50) * 50, Math.ceil(s.actual_avg * 2 / 50) * 50, 200)
-                  const sliderPct = Math.min((currentAmt / sliderMax) * 100, 100)
-                  const avgPct = s.actual_avg > 0 ? Math.min((s.actual_avg / sliderMax) * 100, 100) : 0
-                  const pieIdx = pieData.findIndex(p => p.category === s.category)
-                  const isHovered = activeSlice === pieIdx && pieIdx !== -1
-                  return (
-                    <div
-                      key={s.category}
-                      onMouseEnter={() => pieIdx !== -1 && setActiveSlice(pieIdx)}
-                      onMouseLeave={() => setActiveSlice(null)}
-                      className={`w-full rounded-[9px] border px-[12px] py-[10px] transition-all ${
-                        isHovered ? 'border-ledger-accent/60 bg-ledger-inset' :
-                        isSelected ? 'border-ledger-border-subtle bg-ledger-inset/60' :
-                        'border-transparent bg-transparent opacity-40'
-                      }`}
-                    >
-                      <div className="flex items-center gap-[9px]">
-                        {/* Checkbox — only toggle target */}
-                        <button
-                          onClick={() => toggle(s.category)}
-                          className="w-[15px] h-[15px] rounded-[4px] border flex-shrink-0 flex items-center justify-center transition-colors"
-                          style={{
-                            backgroundColor: isSelected ? s.color : 'transparent',
-                            borderColor: isSelected ? s.color : '#3a4050',
-                          }}
-                        >
-                          {isSelected && (
-                            <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                              <path d="M1.5 4L3.2 5.8L6.5 2.2" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          )}
-                        </button>
-                        <span className="text-[13px] font-medium flex-1">{s.label}</span>
-                        <span className="text-[12px] text-ledger-text-faint tabular-nums w-[32px] text-right">{pct.toFixed(0)}%</span>
-                        <div className="flex items-center gap-[2px] flex-shrink-0">
-                          <span className="text-[12px] text-ledger-text-faint">$</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={amounts[s.category] ?? ''}
-                            onChange={e => setAmount(s.category, e.target.value.replace(/[^0-9.]/g, ''))}
-                            disabled={!isSelected}
-                            className="w-[52px] bg-transparent border-b border-transparent hover:border-ledger-border-input focus:border-ledger-accent/60 text-[13px] font-semibold tabular-nums text-right focus:outline-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          />
-                        </div>
-                      </div>
-                      {/* Interactive slider */}
-                      <div className="mt-[6px] ml-[24px] flex items-center gap-[8px]">
-                        <div className="flex-1 relative h-[16px] group/slider">
-                          {/* Native range — invisible, handles all interaction */}
-                          <input
-                            type="range"
-                            min={0}
-                            max={sliderMax}
-                            step={10}
-                            value={currentAmt}
-                            onChange={e => setAmount(s.category, e.target.value)}
-                            disabled={!isSelected}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize disabled:cursor-not-allowed"
-                          />
-                          {/* Track */}
-                          <div className="absolute inset-y-0 flex items-center w-full pointer-events-none">
-                            <div className="w-full h-[3px] rounded-full bg-ledger-track">
-                              <div
-                                className="h-full rounded-full"
-                                style={{ width: `${sliderPct}%`, backgroundColor: isSelected ? s.color : '#374151' }}
-                              />
-                            </div>
-                          </div>
-                          {/* Avg marker tick */}
-                          {avgPct > 0 && (
-                            <div
-                              className="absolute top-[3px] bottom-[3px] w-[1.5px] rounded-full pointer-events-none"
-                              style={{ left: `${avgPct}%`, backgroundColor: '#4a5060' }}
-                            />
-                          )}
-                          {/* Thumb — only visible on hover */}
-                          <div
-                            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[10px] h-[10px] rounded-full pointer-events-none opacity-0 group-hover/slider:opacity-100 transition-opacity duration-100"
-                            style={{ left: `${sliderPct}%`, backgroundColor: isSelected ? s.color : '#374151' }}
-                          />
-                        </div>
-                        {s.actual_avg > 0 && (
-                          <span className="text-[10.5px] text-ledger-text-faintest tabular-nums whitespace-nowrap flex-shrink-0">
-                            avg ${fmt(s.actual_avg)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Footer */}
-        <div className="px-[26px] py-[14px] border-t border-white/8 flex items-center justify-between gap-[12px]">
-          {error ? <p className="text-[12px] text-ledger-negative">{error}</p> : <span className="text-[12px] text-ledger-text-faint">{selected.size} of {data?.suggestions.length ?? 0} categories selected</span>}
-          <button
-            onClick={handleApply}
-            disabled={applying || selected.size === 0}
-            className="bg-ledger-accent text-ledger-accent-on rounded-[9px] px-[18px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity disabled:opacity-40"
-          >
-            {applying ? 'Applying…' : `Apply ${selected.size} budget${selected.size !== 1 ? 's' : ''}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 interface ModalProps {
   month: string
@@ -402,7 +168,7 @@ function BudgetModal({ month, editing, onClose, onSaved }: ModalProps) {
                 value={category}
                 onChange={e => setCategory(e.target.value)}
                 placeholder="e.g. Groceries, Dining Out…"
-                className="w-full glass-chip px-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                className="w-full glass-chip px-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
               />
             </div>
           )}
@@ -418,7 +184,7 @@ function BudgetModal({ month, editing, onClose, onSaved }: ModalProps) {
                 value={limit}
                 onChange={e => setLimit(e.target.value)}
                 placeholder="0.00"
-                className="w-full glass-chip pl-[24px] pr-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                className="w-full glass-chip pl-[24px] pr-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
               />
             </div>
           </div>
@@ -448,7 +214,7 @@ function BudgetModal({ month, editing, onClose, onSaved }: ModalProps) {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="mt-[4px] w-full bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="mt-[4px] w-full solid-cta rounded-[9px] py-[9px] font-semibold text-[13px] disabled:opacity-50"
           >
             {saving ? 'Saving…' : editing ? 'Save changes' : 'Add budget'}
           </button>
@@ -460,23 +226,23 @@ function BudgetModal({ month, editing, onClose, onSaved }: ModalProps) {
 
 const ONBOARDING_KEY = 'ledger_budgets_onboarded'
 
-function OnboardingPrompt({ onSuggest, onDismiss }: { onSuggest: () => void; onDismiss: () => void }) {
+function OnboardingPrompt({ onAskAdvisor, onDismiss }: { onAskAdvisor: () => void; onDismiss: () => void }) {
   return (
     <div className="glass-overlay fixed inset-0 z-50 flex items-center justify-center">
       <div className="glass-modal w-[420px] p-[32px] flex flex-col items-center text-center">
-        <div className="w-[48px] h-[48px] rounded-[14px] bg-ledger-accent/15 border border-ledger-accent/30 flex items-center justify-center mb-[18px]">
-          <Sparkles className="w-[22px] h-[22px] text-ledger-accent" strokeWidth={1.6} />
+        <div className="icon-well w-[48px] h-[48px] rounded-[14px] flex items-center justify-center mb-[18px]">
+          <Sparkles className="w-[22px] h-[22px]" strokeWidth={1.6} />
         </div>
         <h3 className="text-[17px] font-bold mb-[8px]">Set up your budgets</h3>
         <p className="text-[13px] text-ledger-text-faint leading-relaxed mb-[24px]">
-          Ledger can analyse your income and spending history to suggest a personalised monthly budget — or you can set one up manually.
+          Add monthly limits by category, or ask the AI Advisor to propose them from your spending.
         </p>
         <div className="flex flex-col gap-[10px] w-full">
           <button
-            onClick={onSuggest}
-            className="w-full bg-ledger-accent text-ledger-accent-on rounded-[10px] py-[11px] font-semibold text-[13px] hover:opacity-90 transition-opacity"
+            onClick={onAskAdvisor}
+            className="w-full solid-cta rounded-[10px] py-[11px] font-semibold text-[13px]"
           >
-            Suggest budgets from my income
+            Open AI Advisor
           </button>
           <button
             onClick={onDismiss}
@@ -490,6 +256,14 @@ function OnboardingPrompt({ onSuggest, onDismiss }: { onSuggest: () => void; onD
   )
 }
 
+type Insight = {
+  id: string
+  kind: 'over' | 'ok' | 'remaining'
+  title: string
+  detail: string
+  budgetId?: number
+}
+
 export default function Budgets() {
   // Default to the current month so budgets set for "this month" (incl. ones
   // applied from the AI Advisor) are visible immediately.
@@ -497,12 +271,14 @@ export default function Budgets() {
   const [data, setData] = useState<BudgetsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [showSuggest, setShowSuggest] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [editing, setEditing] = useState<BudgetItem | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [focusId, setFocusId] = useState<number | null>(null)
+  const focusTimer = useRef<number | null>(null)
+  const { subscriptions, loading: subsLoading } = useSubscriptions()
 
   const fetchBudgets = (checkOnboarding = false) => {
     setLoading(true)
@@ -520,6 +296,12 @@ export default function Budgets() {
 
   useEffect(() => { fetchBudgets(true) }, [selectedMonth])
 
+  useEffect(() => {
+    return () => {
+      if (focusTimer.current) window.clearTimeout(focusTimer.current)
+    }
+  }, [])
+
   const handleDelete = async (id: number) => {
     setDeletingId(id)
     setDeleteError(null)
@@ -532,12 +314,12 @@ export default function Budgets() {
       setConfirmingDeleteId(null)
       setData(prev => {
         if (!prev) return prev
-        const remaining = prev.budgets.filter(b => b.id !== id)
+        const remainingBudgets = prev.budgets.filter(b => b.id !== id)
         return {
           ...prev,
-          budgets: remaining,
-          total_limit: remaining.reduce((sum, b) => sum + b.limit, 0),
-          total_spent: remaining.reduce((sum, b) => sum + b.spent, 0),
+          budgets: remainingBudgets,
+          total_limit: remainingBudgets.reduce((sum, b) => sum + b.limit, 0),
+          total_spent: remainingBudgets.reduce((sum, b) => sum + b.spent, 0),
         }
       })
     } catch (e: any) {
@@ -548,19 +330,90 @@ export default function Budgets() {
     }
   }
 
+  const focusBudget = (id: number) => {
+    setFocusId(id)
+    requestAnimationFrame(() => {
+      document.getElementById(`budget-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    if (focusTimer.current) window.clearTimeout(focusTimer.current)
+    focusTimer.current = window.setTimeout(() => setFocusId(null), 1600)
+  }
+
   const budgets = data?.budgets ?? []
   const totalBudget = data?.total_limit ?? 0
   const totalSpent = data?.total_spent ?? 0
   const remaining = totalBudget - totalSpent
+  const totalOver = remaining < 0
+  const totalPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0
+  const daysLeft = daysLeftInMonth(selectedMonth)
+
+  const sortedBudgets = [...budgets].sort((a, b) => {
+    const aVirtual = Boolean(a.virtual)
+    const bVirtual = Boolean(b.virtual)
+    if (aVirtual !== bVirtual) return aVirtual ? 1 : -1
+    const aOver = !aVirtual && a.spent > a.limit
+    const bOver = !bVirtual && b.spent > b.limit
+    if (aOver !== bOver) return aOver ? -1 : 1
+    const aPct = a.limit > 0 ? a.spent / a.limit : 0
+    const bPct = b.limit > 0 ? b.spent / b.limit : 0
+    if (bPct !== aPct) return bPct - aPct
+    return a.category.localeCompare(b.category)
+  })
+
+  const overBudgets = budgets.filter(b => !b.virtual && b.spent > b.limit)
+  const insights: Insight[] = overBudgets.map(b => ({
+    id: `over-${b.id}`,
+    kind: 'over' as const,
+    title: `${formatCategory(b.category)} is over budget`,
+    detail: `You've spent $${fmt(b.spent - b.limit)} more than planned`,
+    budgetId: b.id,
+  }))
+
+  if (overBudgets.length === 0) {
+    const best = budgets
+      .filter(b => !b.virtual && b.limit > 0 && b.spent / b.limit <= 0.85)
+      .sort((a, b) => (a.spent / a.limit) - (b.spent / b.limit))[0]
+    if (best) {
+      insights.push({
+        id: `ok-${best.id}`,
+        kind: 'ok',
+        title: `${formatCategory(best.category)}: You're doing great`,
+        detail: `$${fmt(best.limit - best.spent)} remaining in this category`,
+        budgetId: best.id,
+      })
+    }
+  }
+
+  if (remaining > 0 && totalBudget > 0) {
+    insights.push({
+      id: 'remaining',
+      kind: 'remaining',
+      title: `$${fmtWhole(remaining)} left to budget`,
+      detail: 'You can still reach your goals',
+    })
+  }
+
+  const recurring = [...subscriptions].sort((a, b) => a.next_expected_date.localeCompare(b.next_expected_date))
+  const recurringMonthly = subscriptions.reduce((sum, s) => sum + monthlyCost(s), 0)
+
+  let remainingCopy = ''
+  if (!loading && totalBudget > 0) {
+    const money = totalOver
+      ? `$${fmtWhole(Math.abs(remaining))} over`
+      : `$${fmtWhole(remaining)} left`
+    if (daysLeft === null) remainingCopy = money
+    else if (daysLeft === 0) remainingCopy = `${money} · last day`
+    else remainingCopy = `${money} · ${daysLeft} day${daysLeft === 1 ? '' : 's'} to go`
+  }
 
   return (
-    <div className="flex flex-col gap-[18px]">
+    <div className="flex flex-col gap-[14px]">
       {showOnboarding && (
         <OnboardingPrompt
-          onSuggest={() => {
+          onAskAdvisor={() => {
             localStorage.setItem(ONBOARDING_KEY, '1')
             setShowOnboarding(false)
-            setShowSuggest(true)
+            window.location.hash = 'advisor'
           }}
           onDismiss={() => {
             localStorage.setItem(ONBOARDING_KEY, '1')
@@ -576,172 +429,286 @@ export default function Budgets() {
           onSaved={fetchBudgets}
         />
       )}
-      {showSuggest && (
-        <SuggestPanel
-          month={selectedMonth}
-          onClose={() => setShowSuggest(false)}
-          onApplied={fetchBudgets}
-        />
-      )}
-
-      {/* Summary bar */}
-      <div className="glass-card p-[22px]">
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto_auto] gap-[24px] items-center">
-          <div>
-            <div className="text-[12.5px] text-ledger-text-faint">Total budget</div>
-            <div className="text-[25px] font-bold mt-[6px] tabular-nums">
-              {loading ? '—' : `$${fmt(totalBudget)}`}
-            </div>
-          </div>
-          <div>
-            <div className="text-[12.5px] text-ledger-text-faint">Spent</div>
-            <div className="text-[25px] font-bold mt-[6px] tabular-nums">
-              {loading ? '—' : `$${fmt(totalSpent)}`}
-            </div>
-          </div>
-          <div>
-            <div className="text-[12.5px] text-ledger-text-faint">Remaining</div>
-            <div className={`text-[25px] font-bold mt-[6px] tabular-nums ${remaining < 0 ? 'text-ledger-negative' : 'text-ledger-positive'}`}>
-              {loading ? '—' : `$${fmt(Math.abs(remaining))}`}
-            </div>
-          </div>
-          <select
-            value={selectedMonth}
-            onChange={e => setSelectedMonth(e.target.value)}
-            className="glass-chip px-[10px] py-[8px] text-[13px] text-ledger-text-primary cursor-pointer focus:outline-none"
-          >
-            {MONTH_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <button
-            onClick={() => setShowSuggest(true)}
-            className="flex items-center gap-[6px] glass-chip text-ledger-text-primary rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] hover:opacity-80 transition-opacity whitespace-nowrap"
-          >
-            <Sparkles className="w-[14px] h-[14px]" strokeWidth={1.8} />
-            Suggest
-          </button>
-          <button
-            onClick={() => setShowModal(true)}
-            className="bg-ledger-accent text-ledger-accent-on rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity whitespace-nowrap"
-          >
-            + Add budget
-          </button>
-        </div>
-      </div>
 
       {deleteError && (
-        <div className="glass-card px-[16px] py-[12px] text-[13px] text-ledger-negative">
+        <GlassCard className="px-[16px] py-[12px] text-[13px] text-ledger-negative" rise={false}>
           {deleteError}
-        </div>
+        </GlassCard>
       )}
 
-      {/* Cards */}
-      {loading ? (
-        <div className="text-center py-16 text-ledger-text-faint text-[13px]">Loading…</div>
-      ) : budgets.length === 0 ? (
-        <div className="glass-card p-[40px] text-center">
-          <div className="text-[14px] font-semibold mb-[8px]">No budgets for this month</div>
-          <div className="text-[13px] text-ledger-text-faint mb-[16px]">
-            Click "+ Add budget" to set monthly spending limits by category.
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-[18px]">
-          {budgets.map((budget) => {
-            const isVirtual = Boolean(budget.virtual)
-            const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (isVirtual ? 100 : 0)
-            const isOver = !isVirtual && budget.spent > budget.limit
-
-            return (
-              <div key={budget.id} className="glass-card p-[18px]">
-                <div className="flex items-center gap-[10px] mb-[12px]">
-                  <span className="w-[10px] h-[10px] rounded-[3px] flex-shrink-0" style={{ backgroundColor: budget.color }} />
-                  <span className="text-[13px] font-semibold flex-1 truncate">{formatCategory(budget.category)}</span>
-                  {isVirtual
-                    ? <span className="text-ledger-text-secondary text-[11px] px-[6px] py-[2px] rounded-[4px] bg-ledger-inset shrink-0">Unbudgeted</span>
-                    : isOver
-                      ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(231,112,95,0.1)] shrink-0">Over</span>
-                      : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(78,195,138,0.1)] shrink-0">On track</span>
-                  }
-                  {!isVirtual && (
-                    <div className="flex items-center gap-[6px] shrink-0">
-                      <button
-                        type="button"
-                        title="Edit budget"
-                        onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
-                        className="p-[4px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
-                      >
-                        <Pencil className="w-[13px] h-[13px]" strokeWidth={2} />
-                      </button>
-                      <button
-                        type="button"
-                        title="Remove budget"
-                        onClick={() => {
-                          setDeleteError(null)
-                          setConfirmingDeleteId(prev => prev === budget.id ? null : budget.id)
-                        }}
-                        disabled={deletingId === budget.id}
-                        className="p-[4px] text-ledger-text-faint hover:text-ledger-negative transition-colors disabled:opacity-40"
-                      >
-                        <Trash2 className="w-[13px] h-[13px]" strokeWidth={2} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {!isVirtual && confirmingDeleteId === budget.id && (
-                  <div className="flex items-center justify-between gap-[10px] mb-[12px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
-                    <span className="text-[12px] text-ledger-text-secondary">Remove this budget?</span>
-                    <div className="flex items-center gap-[8px] shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setConfirmingDeleteId(null)}
-                        className="text-[12px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(budget.id)}
-                        disabled={deletingId === budget.id}
-                        className="text-[12px] font-semibold text-ledger-negative hover:opacity-80 transition-opacity disabled:opacity-40"
-                      >
-                        {deletingId === budget.id ? 'Removing…' : 'Remove'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="text-[14px] font-bold mb-[8px] tabular-nums">
-                  {isVirtual ? (
-                    <>${fmt(budget.spent)}</>
-                  ) : (
-                    <>
-                      ${fmt(budget.spent)} <span className="text-ledger-text-faint font-normal">/ ${fmt(budget.limit)}</span>
-                    </>
-                  )}
-                </div>
-
-                <div className="h-[7px] rounded-[4px] bg-ledger-track overflow-hidden mb-[10px]">
-                  <div
-                    className="h-full rounded-[4px] transition-all"
-                    style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: isOver ? '#e7705f' : budget.color }}
-                  />
-                </div>
-
-                <div className="text-[11.5px] text-ledger-text-faint">
-                  {isVirtual
-                    ? 'Outside tracked categories'
-                    : isOver
-                      ? `$${fmt(budget.spent - budget.limit)} over budget`
-                      : `$${fmt(budget.limit - budget.spent)} remaining`}
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,0.92fr)_minmax(0,1.28fr)] gap-[14px] items-stretch">
+        <div className="flex flex-col gap-[14px] min-w-0">
+          <GlassCard className="p-[22px]">
+            <div className="flex items-center justify-between gap-[12px] mb-[14px]">
+              <Eyebrow>Monthly progress</Eyebrow>
+              <select
+                value={selectedMonth}
+                onChange={e => setSelectedMonth(e.target.value)}
+                aria-label="Budget month"
+                className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              >
+                {MONTH_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-baseline gap-[8px] flex-wrap">
+              <span className="text-[32px] leading-none font-bold tabular-nums tracking-tight">
+                {loading ? '—' : `$${fmtWhole(totalSpent)}`}
+              </span>
+              <span className="text-[15px] text-ledger-text-faint tabular-nums">
+                of {loading ? '—' : `$${fmtWhole(totalBudget)}`}
+              </span>
+            </div>
+            <div className="flex items-center gap-[12px] mt-[16px]">
+              <div className="flex-1">
+                <ProgressBar
+                  pct={totalPct}
+                  height={11}
+                  glow
+                  color={totalOver ? TRACK_OVER : TRACK_OK}
+                />
               </div>
-            )
-          })}
+              <span className={`text-[13px] tabular-nums w-[42px] text-right shrink-0 ${totalOver ? 'text-ledger-negative' : 'text-ledger-text-secondary'}`}>
+                {loading || totalBudget <= 0 ? '—' : `${Math.round(totalPct)}%`}
+              </span>
+            </div>
+            {remainingCopy && (
+              <p className={`text-[12px] mt-[10px] ${totalOver ? 'text-ledger-negative-soft' : 'text-ledger-text-faint'}`}>
+                {remainingCopy}
+              </p>
+            )}
+          </GlassCard>
+
+          {insights.length > 0 && (
+            <GlassCard className="p-[22px]">
+              <Eyebrow className="mb-[14px]">Budget insights</Eyebrow>
+              <div className="flex flex-col gap-[4px]">
+                {insights.map(insight => {
+                  const clickable = insight.budgetId != null
+                  const Icon = insight.kind === 'over' ? TrendingUp : insight.kind === 'ok' ? Check : Wallet
+                  const iconWrap = insight.kind === 'over'
+                    ? 'bg-[rgba(244,144,127,0.16)] text-ledger-negative'
+                    : 'bg-[rgba(99,207,204,0.16)] text-ledger-cat-teal'
+                  return (
+                    <button
+                      key={insight.id}
+                      type="button"
+                      onClick={() => insight.budgetId != null && focusBudget(insight.budgetId)}
+                      disabled={!clickable}
+                      className={`flex items-center gap-[12px] w-full text-left rounded-[12px] px-[8px] py-[10px] -mx-[8px] transition-colors ${
+                        clickable ? 'hover:bg-white/[0.04] cursor-pointer' : 'cursor-default'
+                      } focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50`}
+                    >
+                      <span className={`w-[36px] h-[36px] rounded-full flex items-center justify-center shrink-0 ${iconWrap}`}>
+                        <Icon className="w-[15px] h-[15px]" strokeWidth={2.1} />
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[13px] font-semibold leading-tight">{insight.title}</span>
+                        <span className="block text-[12px] text-ledger-text-faint mt-[3px] leading-snug">{insight.detail}</span>
+                      </span>
+                      {clickable && (
+                        <ChevronRight className="w-[15px] h-[15px] text-ledger-text-faintest shrink-0" strokeWidth={2} />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </GlassCard>
+          )}
+
+          <GlassCard className="p-[22px] flex-1">
+            <div className="flex items-center justify-between gap-[12px] mb-[14px]">
+              <Eyebrow>Recurring</Eyebrow>
+              {!subsLoading && subscriptions.length > 0 && (
+                <span className="text-[12px] text-ledger-text-faint tabular-nums">
+                  ${fmt(recurringMonthly)} / mo
+                </span>
+              )}
+            </div>
+            {subsLoading ? (
+              <div className="text-[13px] text-ledger-text-faint py-[8px]">Loading recurring charges…</div>
+            ) : recurring.length === 0 ? (
+              <div className="py-[6px]">
+                <Repeat className="w-[16px] h-[16px] text-ledger-text-faint mb-[8px]" strokeWidth={1.8} />
+                <p className="text-[13px] font-medium">No recurring charges detected</p>
+                <p className="text-[12px] text-ledger-text-faint mt-[4px] leading-relaxed">
+                  Merchants billed on a regular schedule for a consistent amount, at least 3 times, show up here.
+                </p>
+              </div>
+            ) : (
+              <ul className="flex flex-col">
+                {recurring.map((sub, i) => (
+                  <li
+                    key={`${sub.merchant}-${i}`}
+                    className="flex items-center gap-[12px] py-[11px] border-b border-white/[0.06] last:border-b-0"
+                  >
+                    <InitialsChip initials={sub.merchant.slice(0, 1).toUpperCase()} size={36} radius={18} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold truncate">{sub.merchant}</div>
+                      <div className="text-[11.5px] text-ledger-text-faint mt-[2px] truncate">
+                        {formatCadence(sub.cadence)} · {formatCategory(sub.category)}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[13px] font-semibold tabular-nums">${fmt(sub.average_amount)}</div>
+                      <div className="text-[11px] text-ledger-text-faint mt-[2px]">
+                        {formatDate(sub.next_expected_date)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </GlassCard>
         </div>
-      )}
+
+        <GlassCard className="p-[22px] min-w-0 flex flex-col">
+          <div className="flex items-center justify-between gap-[12px] mb-[18px]">
+            <Eyebrow>Budgets</Eyebrow>
+            <button
+              type="button"
+              onClick={() => setShowModal(true)}
+              className="solid-cta rounded-[8px] px-[12px] py-[6px] font-semibold text-[12.5px] active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            >
+              Add
+            </button>
+          </div>
+
+          {loading && !data ? (
+            <div className="text-[13px] text-ledger-text-faint py-[24px] text-center">Loading…</div>
+          ) : budgets.length === 0 ? (
+            <div className="py-[28px] text-center">
+              <div className="text-[14px] font-semibold mb-[6px]">No budgets for this month</div>
+              <div className="text-[13px] text-ledger-text-faint mb-[14px]">
+                Set monthly spending limits by category.
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(true)}
+                className="solid-cta rounded-[8px] px-[14px] py-[8px] font-semibold text-[13px]"
+              >
+                Add budget
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-[18px] flex-1 min-h-0">
+              {sortedBudgets.map(budget => {
+                const isVirtual = Boolean(budget.virtual)
+                const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (isVirtual ? 100 : 0)
+                const isOver = !isVirtual && budget.spent > budget.limit
+                const Icon = categoryIcon(budget.category)
+                const iconColor = isOver ? TRACK_OVER : (isVirtual ? '#8a909c' : budget.color || TRACK_OK)
+                return (
+                  <div
+                    key={budget.id}
+                    id={`budget-row-${budget.id}`}
+                    className={`rounded-[14px] -mx-[8px] px-[8px] py-[6px] transition-colors ${
+                      focusId === budget.id ? 'bg-white/[0.05]' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-[12px]">
+                      <span
+                        className="w-[36px] h-[36px] rounded-full flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: alphaColor(iconColor, 0.16), color: iconColor }}
+                      >
+                        <Icon className="w-[15px] h-[15px]" strokeWidth={2} />
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline justify-between gap-[10px]">
+                          <span className="flex items-center gap-[6px] min-w-0">
+                            <span className="text-[13.5px] font-semibold truncate">{formatCategory(budget.category)}</span>
+                            {!isVirtual && (
+                              <span className="flex items-center shrink-0">
+                                <button
+                                  type="button"
+                                  title="Edit budget"
+                                  onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
+                                  className="p-[3px] text-ledger-text-faintest hover:text-ledger-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded"
+                                >
+                                  <Pencil className="w-[12px] h-[12px]" strokeWidth={2} />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Remove budget"
+                                  onClick={() => {
+                                    setDeleteError(null)
+                                    setConfirmingDeleteId(prev => prev === budget.id ? null : budget.id)
+                                  }}
+                                  disabled={deletingId === budget.id}
+                                  className="p-[3px] text-ledger-text-faintest hover:text-ledger-negative transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded"
+                                >
+                                  <Trash2 className="w-[12px] h-[12px]" strokeWidth={2} />
+                                </button>
+                              </span>
+                            )}
+                          </span>
+                          <span className={`text-[13px] tabular-nums shrink-0 ${isOver ? 'text-ledger-negative' : 'text-ledger-text-secondary'}`}>
+                            {isVirtual ? (
+                              `$${fmt(budget.spent)}`
+                            ) : (
+                              <>
+                                ${fmt(budget.spent)}
+                                <span className="text-ledger-text-faint"> / ${fmt(budget.limit)}</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {!isVirtual && confirmingDeleteId === budget.id && (
+                      <div className="flex items-center justify-between gap-[10px] mt-[10px] ml-[48px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
+                        <span className="text-[12px] text-ledger-text-secondary">Remove this budget?</span>
+                        <div className="flex items-center gap-[8px] shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingDeleteId(null)}
+                            className="text-[12px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(budget.id)}
+                            disabled={deletingId === budget.id}
+                            className="text-[12px] font-semibold text-ledger-negative hover:opacity-80 transition-opacity disabled:opacity-40"
+                          >
+                            {deletingId === budget.id ? 'Removing…' : 'Remove'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-[12px] mt-[10px] ml-[48px]">
+                      <div className="flex-1">
+                        <ProgressBar
+                          pct={pct}
+                          height={8}
+                          color={isOver ? TRACK_OVER : isVirtual ? '#adb8cb' : TRACK_OK}
+                        />
+                      </div>
+                      <span className={`text-[12px] tabular-nums w-[40px] text-right shrink-0 ${isOver ? 'text-ledger-negative' : 'text-ledger-text-faint'}`}>
+                        {`${Math.round(pct)}%`}
+                      </span>
+                    </div>
+                    {isOver && (
+                      <p className="text-[12px] text-ledger-negative mt-[6px] ml-[48px]">
+                        Over budget by ${fmt(budget.spent - budget.limit)}
+                      </p>
+                    )}
+                    {isVirtual && (
+                      <p className="text-[11.5px] text-ledger-text-faint mt-[6px] ml-[48px]">
+                        Outside tracked categories
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </GlassCard>
+      </div>
     </div>
   )
 }

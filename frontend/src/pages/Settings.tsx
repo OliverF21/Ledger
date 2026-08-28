@@ -1,6 +1,9 @@
 
 import { useState, useEffect } from 'react'
-import { X, Pencil, ArrowUp, ArrowDown, Heart, ExternalLink, KeyRound, Copy } from 'lucide-react'
+import {
+  X, Pencil, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Heart, ExternalLink,
+  KeyRound, Copy, Landmark, Coins, Bell, Tags, type LucideIcon,
+} from 'lucide-react'
 import { apiFetch } from '../api/client'
 import {
   getPlaidConfig, putPlaidConfig, testPlaidConfig, getSyncConfig, putSyncConfig,
@@ -64,6 +67,34 @@ function groupByItem(accounts: AccountItem[]): Map<number, AccountItem[]> {
     map.get(acc.item_id)!.push(acc)
   }
   return map
+}
+
+type SettingsCategoryId =
+  | 'bank-linking'
+  | 'crypto'
+  | 'account'
+  | 'notifications'
+  | 'categorization'
+
+const SETTINGS_CATEGORIES: {
+  id: SettingsCategoryId
+  title: string
+  description: string
+  icon: LucideIcon
+}[] = [
+  { id: 'bank-linking', title: 'Bank linking', description: 'Linked accounts, Plaid credentials, and sync', icon: Landmark },
+  { id: 'crypto', title: 'Crypto', description: 'Wallets and Alchemy', icon: Coins },
+  { id: 'account', title: 'Account', description: 'Recovery code and email', icon: KeyRound },
+  { id: 'notifications', title: 'Notifications', description: 'Alerts and weekly summary email', icon: Bell },
+  { id: 'categorization', title: 'Categorization', description: 'Rules that assign merchants to categories', icon: Tags },
+]
+
+function parseSettingsCategory(): SettingsCategoryId | null {
+  const parts = window.location.hash.replace('#', '').split('/')
+  if (parts[0] !== 'settings' || !parts[1]) return null
+  return SETTINGS_CATEGORIES.some(c => c.id === parts[1])
+    ? (parts[1] as SettingsCategoryId)
+    : null
 }
 
 interface SettingsProps {
@@ -156,6 +187,13 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const [savingRecoveryEmail, setSavingRecoveryEmail] = useState(false)
   const [recoveryEmailError, setRecoveryEmailError] = useState<string | null>(null)
   const [recoveryEmailSaved, setRecoveryEmailSaved] = useState(false)
+  const [category, setCategory] = useState<SettingsCategoryId | null>(() => parseSettingsCategory())
+
+  useEffect(() => {
+    const syncCategory = () => setCategory(parseSettingsCategory())
+    window.addEventListener('hashchange', syncCategory)
+    return () => window.removeEventListener('hashchange', syncCategory)
+  }, [])
 
   useEffect(() => {
     fetchRules()
@@ -413,7 +451,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       const res = await apiFetch('/api/weekly-email/send', { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || 'Send failed')
-      setTestEmailResult('Sent — check your inbox.')
+      setTestEmailResult('Sent. Check your inbox.')
     } catch (error) {
       setTestEmailResult(error instanceof Error ? error.message : 'Send failed')
     } finally {
@@ -665,7 +703,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       setShowRuleForm(false)
       setRuleSuccess(
         data.applied_to_existing > 0
-          ? `Rule created — applied to ${data.applied_to_existing} existing transaction${data.applied_to_existing === 1 ? '' : 's'}.`
+          ? `Rule created. Applied to ${data.applied_to_existing} existing transaction${data.applied_to_existing === 1 ? '' : 's'}.`
           : 'Rule created.'
       )
       await fetchRules()
@@ -770,7 +808,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
           failures.map(f => {
             const name = f.institution_name || `Item ${f.item_id}`
             if (f.status === 'login_required') {
-              return `${name}: login required — use Update connection`
+              return `${name}: login required. Use Update connection`
             }
             return `${name}: ${f.error || 'sync failed'}`
           }),
@@ -816,10 +854,79 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
     return { text: 'Sync error', tone: 'error' }
   }
 
+  const activeCategory = SETTINGS_CATEGORIES.find(c => c.id === category) ?? null
+
   return (
     <div className="w-full min-h-full flex flex-col gap-[24px]">
-      <div className="grid gap-[24px] xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)] items-start">
-        <div className="flex flex-col gap-[24px]">
+      {category === null ? (
+        <div className="w-full max-w-[540px] flex flex-col gap-[24px]">
+          <div className="glass-card overflow-hidden">
+            {SETTINGS_CATEGORIES.map((cat, i) => {
+              const Icon = cat.icon
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => { window.location.hash = `settings/${cat.id}` }}
+                  className={`w-full flex items-center gap-[14px] px-[18px] py-[15px] text-left hover:bg-white/[0.04] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/50 ${
+                    i > 0 ? 'border-t border-ledger-border-subtle' : ''
+                  }`}
+                >
+                  <span className="icon-well flex h-[36px] w-[36px] items-center justify-center rounded-[10px] shrink-0">
+                    <Icon className="w-[16px] h-[16px]" strokeWidth={2} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14px] font-semibold text-ledger-text-primary">{cat.title}</span>
+                    <span className="block text-[12px] text-ledger-text-faint mt-[2px]">{cat.description}</span>
+                  </span>
+                  <ChevronRight className="w-[16px] h-[16px] text-ledger-text-faintest shrink-0" strokeWidth={2} />
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="glass-card px-[18px] py-[14px]">
+            <div className="flex flex-col gap-[12px] sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-[8px] text-[13px] font-semibold text-ledger-text-primary">
+                  <span className="icon-well flex h-[28px] w-[28px] items-center justify-center rounded-[9px]">
+                    <Heart className="h-[14px] w-[14px]" strokeWidth={2.2} />
+                  </span>
+                  Support Ledger
+                </div>
+                <p className="mt-[6px] text-[12px] text-ledger-text-faint">
+                  If the app’s useful, you can tip the project on Ko-fi.
+                </p>
+              </div>
+
+              <a
+                href={KOFI_URL}
+                className="group glass-chip inline-flex items-center justify-center gap-[8px] rounded-[12px] border border-white/20 px-[15px] py-[10px] text-[13px] font-semibold text-ledger-text-primary hover:border-white/40 hover:bg-white/[0.10]"
+              >
+                <span>Support me</span>
+                <ExternalLink className="h-[13px] w-[13px] text-ledger-text-faint transition-colors group-hover:text-white" strokeWidth={2.1} />
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-[18px]">
+          <div>
+            <button
+              type="button"
+              onClick={() => { window.location.hash = 'settings' }}
+              className="flex items-center gap-[6px] text-[13px] text-ledger-text-faint hover:text-ledger-text-primary transition-colors mb-[10px] rounded-[6px] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            >
+              <ChevronLeft className="w-[15px] h-[15px]" strokeWidth={2} />
+              Settings
+            </button>
+            <h2 className="text-[20px] font-semibold tracking-tight">{activeCategory?.title}</h2>
+            {activeCategory?.description && (
+              <p className="text-[13px] text-ledger-text-faint mt-[4px]">{activeCategory.description}</p>
+            )}
+          </div>
+      {category === 'bank-linking' && (
+        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)] items-start">
           {/* Linked Accounts */}
           <div className="glass-card p-[22px]">
             <h3 className="text-[14px] font-semibold mb-[16px]">Linked accounts</h3>
@@ -941,6 +1048,143 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
             </p>
           </div>
 
+          <div className="flex flex-col gap-[16px]">
+          {/* Plaid */}
+          <div className="glass-card p-[22px]">
+            <h3 className="text-[14px] font-semibold mb-[16px]">Plaid</h3>
+
+            {plaidLoading ? (
+              <div className="text-center py-8 text-ledger-text-faint">Loading…</div>
+            ) : (
+              <div className="space-y-[12px]">
+                <div>
+                  <label className="text-[12px] text-ledger-text-faint">Client ID</label>
+                  <input
+                    type="text"
+                    value={plaidClientId}
+                    onChange={e => setPlaidClientId(e.target.value)}
+                    placeholder="Plaid client ID"
+                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[12px] text-ledger-text-faint">Environment</label>
+                  <select
+                    value={plaidEnv}
+                    onChange={e => setPlaidEnv(e.target.value)}
+                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary focus:outline-none focus:border-white/60"
+                  >
+                    <option value="sandbox">Sandbox</option>
+                    <option value="production">Production</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[12px] text-ledger-text-faint">Secret</label>
+                  <input
+                    type="password"
+                    value={plaidSecret}
+                    onChange={e => setPlaidSecret(e.target.value)}
+                    placeholder={plaidHasSecret ? '••••• (unchanged)' : 'Plaid secret'}
+                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
+                  />
+                </div>
+
+                {plaidTestResult && (
+                  <p className={`text-[11.5px] ${plaidTestOk ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
+                    {plaidTestResult}
+                  </p>
+                )}
+                {plaidSaveError && <p className="text-[11.5px] text-ledger-negative">{plaidSaveError}</p>}
+                {plaidSaveSuccess && <p className="text-[11.5px] text-ledger-positive">{plaidSaveSuccess}</p>}
+
+                <div className="flex gap-[8px]">
+                  <button
+                    onClick={handleTestPlaidConfig}
+                    disabled={plaidTesting}
+                    className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                  >
+                    {plaidTesting ? 'Testing…' : 'Test connection'}
+                  </button>
+                  <button
+                    onClick={handleSavePlaidConfig}
+                    disabled={plaidSaving}
+                    className="flex-1 solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
+                  >
+                    {plaidSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+            {/* Sync Settings */}
+            <div className="glass-card p-[22px]">
+              <h3 className="text-[14px] font-semibold mb-[16px]">Sync settings</h3>
+
+              <div className="space-y-[12px]">
+                <div>
+                  <label className="text-[12px] text-ledger-text-faint">Frequency</label>
+                  <select
+                    value={syncFrequencyHours}
+                    disabled={savingSyncFrequency}
+                    onChange={(e) => handleSyncFrequencyChange(Number(e.target.value))}
+                    className="mt-[4px] w-full glass-chip px-[12px] py-[8px] text-[13px] text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                  >
+                    <option value={0}>Manual</option>
+                    <option value={1}>Every hour</option>
+                    <option value={6}>Every 6 hours</option>
+                    <option value={12}>Every 12 hours</option>
+                    <option value={24}>Daily</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[12px] text-ledger-text-faint">Plaid environment</label>
+                  <div className="mt-[4px] flex items-center gap-[8px]">
+                    <span className="text-[12px] glass-chip text-ledger-text-primary px-[8px] py-[4px] rounded-[6px] font-medium capitalize">
+                      {plaidEnv}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[12px] text-ledger-text-faint">Last sync</label>
+                  <div className="mt-[4px] text-[13px] text-ledger-text-secondary">
+                    {syncStatus ? formatSyncTime(syncStatus.last_synced_at) : '-'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleSyncNow}
+                disabled={syncing}
+                className="mt-[16px] w-full solid-cta rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {syncing ? 'Syncing…' : 'Sync now'}
+              </button>
+              {syncMessage && (
+                <p className={`mt-[10px] text-[12px] ${syncWarnings.length ? 'text-ledger-warning' : 'text-ledger-text-secondary'}`}>
+                  {syncMessage}
+                </p>
+              )}
+              {syncWarnings.length > 0 && (
+                <ul className="mt-[6px] space-y-[4px]">
+                  {syncWarnings.map((warning, i) => (
+                    <li key={i} className="text-[11.5px] text-ledger-negative leading-snug">
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {category === 'crypto' && (
+        <>
           {/* Crypto wallets */}
           <div className="glass-card p-[22px]">
             <div className="flex items-center justify-between gap-[12px] mb-[16px]">
@@ -950,7 +1194,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                   type="button"
                   onClick={handleRefreshCrypto}
                   disabled={refreshingCrypto || !(alchemyConfigured || cryptoData?.alchemy_configured)}
-                  className="text-[11.5px] text-ledger-accent hover:opacity-70 transition-opacity disabled:opacity-40"
+                  className="text-[11.5px] text-white hover:opacity-70 transition-opacity disabled:opacity-40"
                 >
                   {refreshingCrypto ? 'Refreshing…' : 'Refresh'}
                 </button>
@@ -973,11 +1217,11 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     ? '••••• (unchanged)'
                     : 'Alchemy API key'
                 }
-                className="w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                className="w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
               />
               <p className="text-[11.5px] text-ledger-text-faint leading-snug">
                 Create a free Alchemy app with Robinhood Chain Mainnet, then paste the key here.
-                Free at dashboard.alchemy.com — stored encrypted on this device.
+                Free at dashboard.alchemy.com. Stored encrypted on this device.
               </p>
               {alchemyKeySaveResult && (
                 <p className="text-[11.5px] text-ledger-text-faint">{alchemyKeySaveResult}</p>
@@ -986,7 +1230,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                 type="button"
                 onClick={handleSaveAlchemyKey}
                 disabled={savingAlchemyKey}
-                className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
               >
                 {savingAlchemyKey ? 'Saving…' : 'Save Alchemy key'}
               </button>
@@ -1099,14 +1343,14 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                 value={cryptoAddress}
                 onChange={(e) => setCryptoAddress(e.target.value)}
                 placeholder="Public wallet address (0x…)"
-                className="w-full glass-chip px-[10px] py-[7px] text-[13px] font-mono text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                className="w-full glass-chip px-[10px] py-[7px] text-[13px] font-mono text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
               />
               <input
                 type="text"
                 value={cryptoLabel}
                 onChange={(e) => setCryptoLabel(e.target.value)}
                 placeholder="Label (optional)"
-                className="w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                className="w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
               />
               {cryptoError && (
                 <p className="text-[12px] text-ledger-negative">{cryptoError}</p>
@@ -1115,7 +1359,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                 type="button"
                 onClick={handleAddCryptoWallet}
                 disabled={addingCrypto}
-                className="glass-chip px-[14px] py-[7px] text-[12.5px] font-medium text-ledger-text-primary hover:border-ledger-accent/50 transition-colors disabled:opacity-40"
+                className="glass-chip px-[14px] py-[7px] text-[12.5px] font-medium text-ledger-text-primary hover:border-white/50 transition-colors disabled:opacity-40"
               >
                 {addingCrypto ? 'Adding…' : 'Add wallet'}
               </button>
@@ -1126,7 +1370,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               deposits) are added to net worth. Never paste a private key.
             </p>
             <p className="text-[11.5px] text-ledger-text-faint mt-[6px]">
-              Robinhood Earn: paste the address that actually holds vault shares — often an
+              Robinhood Earn: paste the address that actually holds vault shares, often an
               ERC-4337 smart account visible on{' '}
               <a
                 href="https://robinhoodchain.blockscout.com"
@@ -1140,80 +1384,254 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               balance.
             </p>
           </div>
+        </>
+      )}
 
-          {/* Plaid */}
-          <div className="glass-card p-[22px]">
-            <h3 className="text-[14px] font-semibold mb-[16px]">Plaid</h3>
+      {category === 'account' && (
+        <div className="grid gap-[16px] xl:grid-cols-2 items-start">
+            {/* Account security: recovery code (the only "forgot password" path) */}
+            <div className="glass-card p-[22px]">
+              <div className="flex items-center gap-[8px] mb-[6px]">
+                <KeyRound className="w-[15px] h-[15px] text-white" strokeWidth={2} />
+                <h3 className="text-[14px] font-semibold">Recovery code</h3>
+              </div>
+              <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[14px]">
+                Since this app has no email, a recovery code is the only way to reset your
+                password without wiping your local data. It's shown once, right after you
+                generate it.
+              </p>
 
-            {plaidLoading ? (
-              <div className="text-center py-8 text-ledger-text-faint">Loading…</div>
-            ) : (
-              <div className="space-y-[12px]">
-                <div>
-                  <label className="text-[12px] text-ledger-text-faint">Client ID</label>
-                  <input
-                    type="text"
-                    value={plaidClientId}
-                    onChange={e => setPlaidClientId(e.target.value)}
-                    placeholder="Plaid client ID"
-                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+              {recoveryCodeConfigured !== null && (
+                <div className="flex items-center gap-[6px] text-[12px] text-ledger-text-secondary mb-[12px]">
+                  <span
+                    className={`inline-block w-[7px] h-[7px] rounded-full ${recoveryCodeConfigured ? 'bg-ledger-positive' : 'bg-ledger-warning'}`}
                   />
+                  {recoveryCodeConfigured ? 'A recovery code is set.' : 'No recovery code is set yet.'}
                 </div>
+              )}
 
-                <div>
-                  <label className="text-[12px] text-ledger-text-faint">Environment</label>
-                  <select
-                    value={plaidEnv}
-                    onChange={e => setPlaidEnv(e.target.value)}
-                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary focus:outline-none focus:border-ledger-accent/60"
-                  >
-                    <option value="sandbox">Sandbox</option>
-                    <option value="production">Production</option>
-                  </select>
+              {freshRecoveryCode && (
+                <div className="mb-[12px] flex flex-col gap-[8px]">
+                  <div className="text-[11px] text-ledger-text-faint">
+                    Save this now. It won't be shown again:
+                  </div>
+                  <div className="flex items-center gap-[8px]">
+                    <code className="glass-chip rounded-[8px] px-[12px] py-[9px] text-[13px] font-mono text-ledger-text-primary flex-1 text-center">
+                      {freshRecoveryCode}
+                    </code>
+                    <button
+                      onClick={copyRecoveryCode}
+                      className="glass-chip rounded-[8px] px-[10px] py-[9px] text-[12px] text-ledger-text-secondary hover:text-white transition-colors flex items-center gap-[5px]"
+                    >
+                      <Copy className="w-[12px] h-[12px]" strokeWidth={2} />
+                      {recoveryCodeCopied ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
                 </div>
+              )}
 
-                <div>
-                  <label className="text-[12px] text-ledger-text-faint">Secret</label>
-                  <input
-                    type="password"
-                    value={plaidSecret}
-                    onChange={e => setPlaidSecret(e.target.value)}
-                    placeholder={plaidHasSecret ? '••••• (unchanged)' : 'Plaid secret'}
-                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
-                  />
-                </div>
+              {recoveryCodeError && (
+                <p className="text-[12px] text-ledger-negative mb-[10px]">{recoveryCodeError}</p>
+              )}
 
-                {plaidTestResult && (
-                  <p className={`text-[11.5px] ${plaidTestOk ? 'text-ledger-positive' : 'text-ledger-negative'}`}>
-                    {plaidTestResult}
-                  </p>
-                )}
-                {plaidSaveError && <p className="text-[11.5px] text-ledger-negative">{plaidSaveError}</p>}
-                {plaidSaveSuccess && <p className="text-[11.5px] text-ledger-positive">{plaidSaveSuccess}</p>}
+              <button
+                onClick={handleGenerateRecoveryCode}
+                disabled={generatingRecoveryCode}
+                className="w-full glass-chip rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+              >
+                {generatingRecoveryCode
+                  ? 'Generating…'
+                  : recoveryCodeConfigured
+                    ? 'Generate a new code (replaces the old one)'
+                    : 'Generate recovery code'}
+              </button>
+            </div>
 
-                <div className="flex gap-[8px]">
+            {/* Account security: recovery email (enables emailed reset codes) */}
+            <div className="glass-card p-[22px]">
+              <div className="flex items-center gap-[8px] mb-[6px]">
+                <KeyRound className="w-[15px] h-[15px] text-white" strokeWidth={2} />
+                <h3 className="text-[14px] font-semibold">Recovery email</h3>
+              </div>
+              <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[14px]">
+                Set an email to unlock "Email me a code" on the login screen, in addition to
+                the recovery code above. Requires the app operator to have configured a
+                password-reset email key.
+              </p>
+
+              <div className="flex items-center gap-[6px] text-[12px] text-ledger-text-secondary mb-[12px]">
+                <span
+                  className={`inline-block w-[7px] h-[7px] rounded-full ${recoveryEmail ? 'bg-ledger-positive' : 'bg-ledger-warning'}`}
+                />
+                {recoveryEmail ? `Recovery email set: ${recoveryEmail}` : 'No recovery email set yet.'}
+              </div>
+
+              {recoveryEmailError && (
+                <p className="text-[12px] text-ledger-negative mb-[10px]">{recoveryEmailError}</p>
+              )}
+
+              <div className="flex items-center gap-[8px]">
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={recoveryEmailDraft}
+                  onChange={e => setRecoveryEmailDraft(e.target.value)}
+                  className="glass-chip flex-1 px-[14px] py-[9px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
+                />
+                <button
+                  onClick={handleSaveRecoveryEmail}
+                  disabled={savingRecoveryEmail}
+                  className="glass-chip rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                >
+                  {savingRecoveryEmail ? 'Saving…' : recoveryEmailSaved ? 'Saved' : 'Save'}
+                </button>
+              </div>
+            </div>
+        </div>
+      )}
+
+      {category === 'notifications' && (
+        <div className="grid gap-[16px] xl:grid-cols-2 items-start">
+            {/* Alerts */}
+            <div className="glass-card p-[22px]">
+              <h3 className="text-[14px] font-semibold mb-[16px]">Alerts</h3>
+
+              <div className="space-y-[16px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px]">Budget exceeded</span>
                   <button
-                    onClick={handleTestPlaidConfig}
-                    disabled={plaidTesting}
-                    className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                    onClick={handleToggleBudgetExceeded}
+                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${budgetExceededEnabled ? 'bg-white' : 'bg-[rgba(255,255,255,0.14)]'}`}
                   >
-                    {plaidTesting ? 'Testing…' : 'Test connection'}
+                    <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${budgetExceededEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
                   </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px]">Large transaction</span>
+                  <div className="flex items-center gap-[8px]">
+                    {largeTxnEnabled && (
+                      <button
+                        onClick={() => {
+                          setLargeTxnDraft(largeTxnThreshold)
+                          setLargeTxnError(null)
+                          setShowLargeTxnModal(true)
+                        }}
+                        className="glass-chip px-[10px] py-[5px] rounded-[7px] text-[11.5px] font-medium text-ledger-text-primary hover:bg-white/[0.06] transition-colors"
+                      >
+                        {formatLargeTxnThreshold(largeTxnThreshold)}
+                      </button>
+                    )}
+                    <button
+                      onClick={handleToggleLargeTxn}
+                      className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${largeTxnEnabled ? 'bg-white' : 'bg-[rgba(255,255,255,0.14)]'}`}
+                    >
+                      <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${largeTxnEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between opacity-40">
+                  <span className="text-[13px]">Webhook <span className="text-[11px] text-ledger-text-faint">(Coming soon)</span></span>
+                  <div className="w-[40px] h-[23px] bg-[rgba(255,255,255,0.14)] rounded-full relative cursor-not-allowed">
+                    <div className="w-[17px] h-[17px] bg-ledger-text-faint rounded-full absolute left-[3px] top-[3px]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Weekly summary email */}
+            <div className="glass-card p-[22px]">
+              <h3 className="text-[14px] font-semibold mb-[4px]">Weekly summary email</h3>
+              <p className="text-[12px] text-ledger-text-faint mb-[16px]">
+                Budget pace vs. this week's spending, sent every Monday.
+              </p>
+
+              <div className="flex items-center justify-between">
+                <span className="text-[13px]">Send weekly email</span>
+                <div className="flex items-center gap-[8px]">
+                  {weeklyEmailEnabled && weeklyEmailAddress && (
+                    <button
+                      onClick={() => {
+                        setWeeklyEmailDraft(weeklyEmailAddress)
+                        setWeeklyEmailError(null)
+                        setShowWeeklyEmailModal(true)
+                      }}
+                      className="glass-chip px-[10px] py-[5px] rounded-[7px] text-[11.5px] font-medium text-ledger-text-primary hover:bg-white/[0.06] transition-colors"
+                    >
+                      {weeklyEmailAddress}
+                    </button>
+                  )}
                   <button
-                    onClick={handleSavePlaidConfig}
-                    disabled={plaidSaving}
-                    className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                    onClick={handleToggleWeeklyEmail}
+                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${weeklyEmailEnabled ? 'bg-white' : 'bg-[rgba(255,255,255,0.14)]'}`}
                   >
-                    {plaidSaving ? 'Saving…' : 'Save'}
+                    <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${weeklyEmailEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
                   </button>
                 </div>
               </div>
-            )}
-          </div>
 
+              {!weeklyEmailTransportConfigured && (
+                <p className="mt-[12px] text-[11.5px] text-ledger-warning">
+                  No Resend API key configured. The toggle will save, but no email will actually send until you add one below.
+                </p>
+              )}
+
+              <div className="mt-[16px] pt-[16px] border-t border-ledger-border/40 space-y-[12px]">
+                <div>
+                  <label className="text-[12px] text-ledger-text-faint">
+                    Resend API key {weeklyEmailHasResendKey && <span className="text-ledger-text-faint">(configured)</span>}
+                  </label>
+                  <input
+                    type="password"
+                    value={resendApiKeyDraft}
+                    onChange={e => setResendApiKeyDraft(e.target.value)}
+                    placeholder={weeklyEmailHasResendKey ? '••••• (unchanged)' : 're_xxxxxxxxxxxx'}
+                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
+                  />
+                </div>
+                <div>
+                  <label className="text-[12px] text-ledger-text-faint">From address (optional)</label>
+                  <input
+                    type="text"
+                    value={weeklyEmailFromAddress}
+                    onChange={e => setWeeklyEmailFromAddress(e.target.value)}
+                    placeholder="Ledger <onboarding@resend.dev>"
+                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
+                  />
+                </div>
+                {resendKeySaveResult && (
+                  <p className="text-[11.5px] text-ledger-text-faint">{resendKeySaveResult}</p>
+                )}
+                <button
+                  onClick={handleSaveResendConfig}
+                  disabled={savingResendKey}
+                  className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                >
+                  {savingResendKey ? 'Saving…' : 'Save Resend config'}
+                </button>
+              </div>
+
+              {weeklyEmailEnabled && (
+                <div className="mt-[14px] flex items-center gap-[10px]">
+                  <button
+                    onClick={handleSendTestEmail}
+                    disabled={sendingTestEmail}
+                    className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                  >
+                    {sendingTestEmail ? 'Sending…' : 'Send test email now'}
+                  </button>
+                  {testEmailResult && (
+                    <span className="text-[11.5px] text-ledger-text-faint">{testEmailResult}</span>
+                  )}
+                </div>
+              )}
+            </div>
         </div>
+      )}
 
-        <div className="flex flex-col gap-[24px]">
+      {category === 'categorization' && (
+        <>
           {/* Categorization Rules */}
           <div className="glass-card p-[22px]">
             <h3 className="text-[14px] font-semibold mb-[16px]">Categorization rules</h3>
@@ -1234,14 +1652,14 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                           value={editMerchant}
                           onChange={e => setEditMerchant(e.target.value)}
                           placeholder="Merchant name or pattern"
-                          className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                          className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                         />
                         <input
                           type="text"
                           list="plaid-category-suggestions"
                           value={editCategory}
                           onChange={e => setEditCategory(e.target.value)}
-                          className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary focus:outline-none focus:border-ledger-accent/60"
+                          className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary focus:outline-none focus:border-white/60"
                         />
                       </div>
                       <input
@@ -1249,20 +1667,20 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                         value={editDescription}
                         onChange={e => setEditDescription(e.target.value)}
                         placeholder="Description also contains (optional)"
-                        className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                        className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                       />
                       {editError && <p className="text-[11.5px] text-ledger-negative">{editError}</p>}
                       <div className="flex gap-[8px]">
                         <button
                           onClick={() => handleSaveEdit(rule.id)}
                           disabled={savingEdit}
-                          className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[7px] py-[7px] text-[12.5px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                          className="flex-1 solid-cta rounded-[7px] py-[7px] text-[12.5px] font-semibold disabled:opacity-50"
                         >
                           {savingEdit ? 'Saving…' : 'Save'}
                         </button>
                         <button
                           onClick={handleCancelEdit}
-                          className="px-[14px] rounded-[7px] border border-ledger-border-input text-[12.5px] text-ledger-text-secondary hover:bg-ledger-inset transition-colors"
+                          className="px-[14px] rounded-[7px] border border-ledger-border-input text-[12.5px] text-ledger-text-secondary hover:bg-white/[0.06] transition-colors"
                         >
                           Cancel
                         </button>
@@ -1345,7 +1763,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     value={ruleMerchant}
                     onChange={e => setRuleMerchant(e.target.value)}
                     placeholder="Merchant name or pattern"
-                    className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                    className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                   />
                   <input
                     type="text"
@@ -1353,7 +1771,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     value={ruleCategory}
                     onChange={e => setRuleCategory(e.target.value)}
                     placeholder="Category"
-                    className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                    className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                   />
                 </div>
                 <input
@@ -1361,7 +1779,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                   value={ruleDescription}
                   onChange={e => setRuleDescription(e.target.value)}
                   placeholder="Description also contains (optional)"
-                  className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                  className="w-full glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                 />
                 <p className="text-[11px] text-ledger-text-faint">
                   Optional: only match transactions whose bank description also contains this text. Useful when the
@@ -1372,13 +1790,13 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                   <button
                     onClick={handleCreateRule}
                     disabled={savingRule}
-                    className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[7px] py-[7px] text-[12.5px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                    className="flex-1 solid-cta rounded-[7px] py-[7px] text-[12.5px] font-semibold disabled:opacity-50"
                   >
                     {savingRule ? 'Saving…' : 'Save rule'}
                   </button>
                   <button
                     onClick={() => { setShowRuleForm(false); setRuleError(null); setRuleMerchant(''); setRuleDescription(''); setRuleCategory('') }}
-                    className="px-[14px] rounded-[7px] border border-ledger-border-input text-[12.5px] text-ledger-text-secondary hover:bg-ledger-inset transition-colors"
+                    className="px-[14px] rounded-[7px] border border-ledger-border-input text-[12.5px] text-ledger-text-secondary hover:bg-white/[0.06] transition-colors"
                   >
                     Cancel
                   </button>
@@ -1387,338 +1805,16 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
             ) : (
               <button
                 onClick={() => { setShowRuleForm(true); setRuleSuccess(null) }}
-                className="w-full glass-chip px-[12px] py-[8px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors"
+                className="w-full glass-chip px-[12px] py-[8px] text-[13px] font-semibold text-ledger-text-primary hover:bg-white/[0.06] transition-colors"
               >
                 + New rule
               </button>
             )}
           </div>
-
-          <div className="flex flex-col gap-[24px] xl:pt-[18px]">
-            {/* Alerts */}
-            <div className="glass-card p-[22px]">
-              <h3 className="text-[14px] font-semibold mb-[16px]">Alerts</h3>
-
-              <div className="space-y-[16px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px]">Budget exceeded</span>
-                  <button
-                    onClick={handleToggleBudgetExceeded}
-                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${budgetExceededEnabled ? 'bg-ledger-accent' : 'bg-[#23262f]'}`}
-                  >
-                    <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${budgetExceededEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px]">Large transaction</span>
-                  <div className="flex items-center gap-[8px]">
-                    {largeTxnEnabled && (
-                      <button
-                        onClick={() => {
-                          setLargeTxnDraft(largeTxnThreshold)
-                          setLargeTxnError(null)
-                          setShowLargeTxnModal(true)
-                        }}
-                        className="glass-chip px-[10px] py-[5px] rounded-[7px] text-[11.5px] font-medium text-ledger-text-primary hover:bg-[#161a21] transition-colors"
-                      >
-                        {formatLargeTxnThreshold(largeTxnThreshold)}
-                      </button>
-                    )}
-                    <button
-                      onClick={handleToggleLargeTxn}
-                      className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${largeTxnEnabled ? 'bg-ledger-accent' : 'bg-[#23262f]'}`}
-                    >
-                      <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${largeTxnEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between opacity-40">
-                  <span className="text-[13px]">Webhook <span className="text-[11px] text-ledger-text-faint">(Coming soon)</span></span>
-                  <div className="w-[40px] h-[23px] bg-[#23262f] rounded-full relative cursor-not-allowed">
-                    <div className="w-[17px] h-[17px] bg-ledger-text-faint rounded-full absolute left-[3px] top-[3px]" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Weekly summary email */}
-            <div className="glass-card p-[22px]">
-              <h3 className="text-[14px] font-semibold mb-[4px]">Weekly summary email</h3>
-              <p className="text-[12px] text-ledger-text-faint mb-[16px]">
-                Budget pace vs. this week's spending, sent every Monday.
-              </p>
-
-              <div className="flex items-center justify-between">
-                <span className="text-[13px]">Send weekly email</span>
-                <div className="flex items-center gap-[8px]">
-                  {weeklyEmailEnabled && weeklyEmailAddress && (
-                    <button
-                      onClick={() => {
-                        setWeeklyEmailDraft(weeklyEmailAddress)
-                        setWeeklyEmailError(null)
-                        setShowWeeklyEmailModal(true)
-                      }}
-                      className="glass-chip px-[10px] py-[5px] rounded-[7px] text-[11.5px] font-medium text-ledger-text-primary hover:bg-[#161a21] transition-colors"
-                    >
-                      {weeklyEmailAddress}
-                    </button>
-                  )}
-                  <button
-                    onClick={handleToggleWeeklyEmail}
-                    className={`w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${weeklyEmailEnabled ? 'bg-ledger-accent' : 'bg-[#23262f]'}`}
-                  >
-                    <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${weeklyEmailEnabled ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
-                  </button>
-                </div>
-              </div>
-
-              {!weeklyEmailTransportConfigured && (
-                <p className="mt-[12px] text-[11.5px] text-ledger-warning">
-                  No Resend API key configured — the toggle will save, but no email will actually send until you add one below.
-                </p>
-              )}
-
-              <div className="mt-[16px] pt-[16px] border-t border-ledger-border/40 space-y-[12px]">
-                <div>
-                  <label className="text-[12px] text-ledger-text-faint">
-                    Resend API key {weeklyEmailHasResendKey && <span className="text-ledger-text-faint">(configured)</span>}
-                  </label>
-                  <input
-                    type="password"
-                    value={resendApiKeyDraft}
-                    onChange={e => setResendApiKeyDraft(e.target.value)}
-                    placeholder={weeklyEmailHasResendKey ? '••••• (unchanged)' : 're_xxxxxxxxxxxx'}
-                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
-                  />
-                </div>
-                <div>
-                  <label className="text-[12px] text-ledger-text-faint">From address (optional)</label>
-                  <input
-                    type="text"
-                    value={weeklyEmailFromAddress}
-                    onChange={e => setWeeklyEmailFromAddress(e.target.value)}
-                    placeholder="Ledger <onboarding@resend.dev>"
-                    className="mt-[4px] w-full glass-chip px-[10px] py-[7px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
-                  />
-                </div>
-                {resendKeySaveResult && (
-                  <p className="text-[11.5px] text-ledger-text-faint">{resendKeySaveResult}</p>
-                )}
-                <button
-                  onClick={handleSaveResendConfig}
-                  disabled={savingResendKey}
-                  className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
-                >
-                  {savingResendKey ? 'Saving…' : 'Save Resend config'}
-                </button>
-              </div>
-
-              {weeklyEmailEnabled && (
-                <div className="mt-[14px] flex items-center gap-[10px]">
-                  <button
-                    onClick={handleSendTestEmail}
-                    disabled={sendingTestEmail}
-                    className="glass-chip px-[12px] py-[7px] rounded-[8px] text-[12.5px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
-                  >
-                    {sendingTestEmail ? 'Sending…' : 'Send test email now'}
-                  </button>
-                  {testEmailResult && (
-                    <span className="text-[11.5px] text-ledger-text-faint">{testEmailResult}</span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Sync Settings */}
-            <div className="glass-card p-[22px]">
-              <h3 className="text-[14px] font-semibold mb-[16px]">Sync settings</h3>
-
-              <div className="space-y-[12px]">
-                <div>
-                  <label className="text-[12px] text-ledger-text-faint">Frequency</label>
-                  <select
-                    value={syncFrequencyHours}
-                    disabled={savingSyncFrequency}
-                    onChange={(e) => handleSyncFrequencyChange(Number(e.target.value))}
-                    className="mt-[4px] w-full glass-chip px-[12px] py-[8px] text-[13px] text-ledger-text-primary hover:bg-ledger-inset transition-colors disabled:opacity-50"
-                  >
-                    <option value={0}>Manual</option>
-                    <option value={1}>Every hour</option>
-                    <option value={6}>Every 6 hours</option>
-                    <option value={12}>Every 12 hours</option>
-                    <option value={24}>Daily</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[12px] text-ledger-text-faint">Plaid environment</label>
-                  <div className="mt-[4px] flex items-center gap-[8px]">
-                    <span className="text-[12px] glass-chip text-ledger-text-primary px-[8px] py-[4px] rounded-[6px] font-medium capitalize">
-                      {plaidEnv}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[12px] text-ledger-text-faint">Last sync</label>
-                  <div className="mt-[4px] text-[13px] text-ledger-text-secondary">
-                    {syncStatus ? formatSyncTime(syncStatus.last_synced_at) : '—'}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleSyncNow}
-                disabled={syncing}
-                className="mt-[16px] w-full bg-ledger-accent text-ledger-accent-on rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {syncing ? 'Syncing…' : 'Sync now'}
-              </button>
-              {syncMessage && (
-                <p className={`mt-[10px] text-[12px] ${syncWarnings.length ? 'text-ledger-warning' : 'text-ledger-text-secondary'}`}>
-                  {syncMessage}
-                </p>
-              )}
-              {syncWarnings.length > 0 && (
-                <ul className="mt-[6px] space-y-[4px]">
-                  {syncWarnings.map((warning, i) => (
-                    <li key={i} className="text-[11.5px] text-ledger-negative leading-snug">
-                      {warning}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Account security: recovery code (the only "forgot password" path) */}
-            <div className="glass-card p-[22px]">
-              <div className="flex items-center gap-[8px] mb-[6px]">
-                <KeyRound className="w-[15px] h-[15px] text-ledger-accent" strokeWidth={2} />
-                <h3 className="text-[14px] font-semibold">Recovery code</h3>
-              </div>
-              <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[14px]">
-                Since this app has no email, a recovery code is the only way to reset your
-                password without wiping your local data. It's shown once, right after you
-                generate it.
-              </p>
-
-              {recoveryCodeConfigured !== null && (
-                <div className="flex items-center gap-[6px] text-[12px] text-ledger-text-secondary mb-[12px]">
-                  <span
-                    className={`inline-block w-[7px] h-[7px] rounded-full ${recoveryCodeConfigured ? 'bg-ledger-positive' : 'bg-ledger-warning'}`}
-                  />
-                  {recoveryCodeConfigured ? 'A recovery code is set.' : 'No recovery code is set yet.'}
-                </div>
-              )}
-
-              {freshRecoveryCode && (
-                <div className="mb-[12px] flex flex-col gap-[8px]">
-                  <div className="text-[11px] text-ledger-text-faint">
-                    Save this now — it won't be shown again:
-                  </div>
-                  <div className="flex items-center gap-[8px]">
-                    <code className="glass-chip rounded-[8px] px-[12px] py-[9px] text-[13px] font-mono text-ledger-text-primary flex-1 text-center">
-                      {freshRecoveryCode}
-                    </code>
-                    <button
-                      onClick={copyRecoveryCode}
-                      className="glass-chip rounded-[8px] px-[10px] py-[9px] text-[12px] text-ledger-text-secondary hover:text-ledger-accent transition-colors flex items-center gap-[5px]"
-                    >
-                      <Copy className="w-[12px] h-[12px]" strokeWidth={2} />
-                      {recoveryCodeCopied ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {recoveryCodeError && (
-                <p className="text-[12px] text-ledger-negative mb-[10px]">{recoveryCodeError}</p>
-              )}
-
-              <button
-                onClick={handleGenerateRecoveryCode}
-                disabled={generatingRecoveryCode}
-                className="w-full glass-chip rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] text-ledger-text-primary hover:bg-ledger-inset transition-colors disabled:opacity-50"
-              >
-                {generatingRecoveryCode
-                  ? 'Generating…'
-                  : recoveryCodeConfigured
-                    ? 'Generate a new code (replaces the old one)'
-                    : 'Generate recovery code'}
-              </button>
-            </div>
-
-            {/* Account security: recovery email (enables emailed reset codes) */}
-            <div className="glass-card p-[22px]">
-              <div className="flex items-center gap-[8px] mb-[6px]">
-                <KeyRound className="w-[15px] h-[15px] text-ledger-accent" strokeWidth={2} />
-                <h3 className="text-[14px] font-semibold">Recovery email</h3>
-              </div>
-              <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[14px]">
-                Set an email to unlock "Email me a code" on the login screen, in addition to
-                the recovery code above. Requires the app operator to have configured a
-                password-reset email key.
-              </p>
-
-              <div className="flex items-center gap-[6px] text-[12px] text-ledger-text-secondary mb-[12px]">
-                <span
-                  className={`inline-block w-[7px] h-[7px] rounded-full ${recoveryEmail ? 'bg-ledger-positive' : 'bg-ledger-warning'}`}
-                />
-                {recoveryEmail ? `Recovery email set: ${recoveryEmail}` : 'No recovery email set yet.'}
-              </div>
-
-              {recoveryEmailError && (
-                <p className="text-[12px] text-ledger-negative mb-[10px]">{recoveryEmailError}</p>
-              )}
-
-              <div className="flex items-center gap-[8px]">
-                <input
-                  type="email"
-                  placeholder="you@example.com"
-                  value={recoveryEmailDraft}
-                  onChange={e => setRecoveryEmailDraft(e.target.value)}
-                  className="glass-chip flex-1 px-[14px] py-[9px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-ledger-accent/60"
-                />
-                <button
-                  onClick={handleSaveRecoveryEmail}
-                  disabled={savingRecoveryEmail}
-                  className="glass-chip rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] text-ledger-text-primary hover:bg-ledger-inset transition-colors disabled:opacity-50"
-                >
-                  {savingRecoveryEmail ? 'Saving…' : recoveryEmailSaved ? 'Saved' : 'Save'}
-                </button>
-              </div>
-            </div>
-          </div>
+        </>
+      )}
         </div>
-      </div>
-
-      <div className="mt-auto pt-[4px]">
-        <div className="glass-card px-[18px] py-[14px]">
-          <div className="flex flex-col gap-[12px] sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-[8px] text-[13px] font-semibold text-ledger-text-primary">
-                <span className="flex h-[28px] w-[28px] items-center justify-center rounded-[9px] bg-white/10">
-                  <Heart className="h-[14px] w-[14px] text-ledger-accent" strokeWidth={2.2} />
-                </span>
-                Support Ledger
-              </div>
-              <p className="mt-[6px] text-[12px] text-ledger-text-faint">
-                If the app’s useful, you can tip the project on Ko-fi.
-              </p>
-            </div>
-
-            <a
-              href={KOFI_URL}
-              className="group glass-chip inline-flex items-center justify-center gap-[8px] rounded-[12px] border border-white/20 px-[15px] py-[10px] text-[13px] font-semibold text-ledger-text-primary hover:border-ledger-accent/40 hover:bg-white/[0.10]"
-            >
-              <span>Support me</span>
-              <ExternalLink className="h-[13px] w-[13px] text-ledger-text-faint transition-colors group-hover:text-ledger-accent" strokeWidth={2.1} />
-            </a>
-          </div>
-        </div>
-      </div>
+      )}
 
       <datalist id="plaid-category-suggestions">
         {PLAID_CATEGORY_LABELS.map(label => <option key={label} value={label} />)}
@@ -1762,7 +1858,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                     if (e.key === 'Enter') void handleSaveLargeTxnRule()
                   }}
                   placeholder="500"
-                  className="w-full glass-chip pl-[24px] pr-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                  className="w-full glass-chip pl-[24px] pr-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
                 />
               </div>
             </div>
@@ -1773,14 +1869,14 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               <button
                 onClick={closeLargeTxnModal}
                 disabled={savingLargeTxn}
-                className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveLargeTxnRule}
                 disabled={savingLargeTxn}
-                className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                className="flex-1 solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
               >
                 {savingLargeTxn ? 'Saving…' : 'Save rule'}
               </button>
@@ -1824,7 +1920,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                   if (e.key === 'Enter') void handleSaveWeeklyEmail()
                 }}
                 placeholder="you@example.com"
-                className="w-full glass-chip px-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-ledger-accent/60"
+                className="w-full glass-chip px-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
               />
             </div>
 
@@ -1834,14 +1930,14 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
               <button
                 onClick={closeWeeklyEmailModal}
                 disabled={savingWeeklyEmail}
-                className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-white/[0.06] transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveWeeklyEmail}
                 disabled={savingWeeklyEmail}
-                className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                className="flex-1 solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
               >
                 {savingWeeklyEmail ? 'Saving…' : 'Enable'}
               </button>

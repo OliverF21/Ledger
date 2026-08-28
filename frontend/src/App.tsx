@@ -1,25 +1,40 @@
 import { useState, useEffect, useCallback } from 'react'
-import Sidebar from './components/Sidebar'
+import Sidebar, { RAIL_TRANSITION } from './components/Sidebar'
 import Header from './components/Header'
 import Login from './pages/Login'
 import Overview from './pages/Overview'
 import Transactions from './pages/Transactions'
 import Spending from './pages/Spending'
 import Budgets from './pages/Budgets'
+import Goals from './pages/Goals'
 import Investments from './pages/Investments'
 import Trends from './pages/Trends'
-import Subscriptions from './pages/Subscriptions'
 import Settings from './pages/Settings'
 import Advisor from './pages/Advisor'
-import Goals from './pages/Goals'
 import Setup from './pages/Setup'
 import { useProposals } from './hooks/useAdvisor'
 import { useAccounts } from './hooks/useAccounts'
 import { useStartupSync } from './hooks/useSync'
 import { apiFetch, getToken, clearToken } from './api/client'
 import { getPlaidConfig } from './api/plaidConfig'
+import { VALID_SCREENS, type ScreenType } from './utils/screens'
+import {
+  getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl,
+} from './utils/months'
 
 type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
+
+/** Fixed ambient background every screen sits on. Static by design — see the
+ *  note in index.css. */
+function Aurora() {
+  return (
+    <div className="aurora-root" aria-hidden>
+      <div className="aurora-blob aurora-blob-blue" />
+      <div className="aurora-blob aurora-blob-teal" />
+      <div className="aurora-blob aurora-blob-warm" />
+    </div>
+  )
+}
 
 /** Rotating gradient ring shown during the initial token check (mirrors the
  *  login page's loading state). Kept inline to avoid a shared export. */
@@ -30,7 +45,7 @@ function BootLoader() {
         className="w-[92px] h-[92px] rounded-full"
         style={{
           animation: 'ledger-ring-spin 2.4s linear infinite',
-          background: 'conic-gradient(from 0deg, #5b8def, #4fc4c4, #8a7df0, #4ec38a, #d9a85b, #e7705f, #f0a87d, #7fb0ff, #5b8def)',
+          background: 'conic-gradient(from 0deg, #82a9f2, #63cfcc, #a196fa, #74d8a8, #e6bd79, #f4907f, #95c8ff, #82a9f2)',
           WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
           mask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
         }}
@@ -40,11 +55,10 @@ function BootLoader() {
   )
 }
 
-type ScreenType = 'overview' | 'transactions' | 'spending' | 'budgets' | 'goals' | 'investments' | 'trends' | 'subscriptions' | 'advisor' | 'settings'
-
 interface HeaderInfo {
+  /** Uppercase micro-label above the page title. */
+  eyebrow: string
   title: string
-  subtitle: string
 }
 
 function greeting(): string {
@@ -54,28 +68,47 @@ function greeting(): string {
   return 'Good Evening'
 }
 
+/** Most screens are just their own name — no eyebrow, no tagline. Only
+ *  Overview and Investments take the eyebrow/title pair, because the design
+ *  specifies one for each (a date over a greeting; the section over "Your
+ *  portfolio"). Inventing one for every other page only added noise. */
 const screenHeaders: Record<ScreenType, HeaderInfo> = {
-  overview:     { title: greeting(),        subtitle: '' },
-  transactions: { title: 'Transactions',    subtitle: '' },
-  spending:     { title: 'Cash Flow',       subtitle: '' },
-  budgets:      { title: 'Budgets',         subtitle: '' },
-  goals:        { title: 'Goals',           subtitle: 'Labeled savings buckets' },
-  investments:  { title: 'Investments',     subtitle: 'Portfolio holdings & activity' },
-  trends:       { title: 'Trends',          subtitle: 'Spending patterns over time' },
-  subscriptions:{ title: 'Subscriptions',   subtitle: 'Detected recurring charges' },
-  advisor:      { title: 'AI Advisor',      subtitle: 'Review & apply Claude’s suggestions' },
-  settings:     { title: 'Settings',        subtitle: 'Manage categories, rules & alerts' },
+  overview:     { eyebrow: '',            title: greeting() },
+  transactions: { eyebrow: '',            title: 'Transactions' },
+  spending:     { eyebrow: '',            title: 'Cash Flow' },
+  budgets:      { eyebrow: '',            title: 'Budgets' },
+  goals:        { eyebrow: '',            title: 'Goals' },
+  investments:  { eyebrow: 'Investments', title: 'Your portfolio' },
+  trends:       { eyebrow: '',            title: 'Trends' },
+  advisor:      { eyebrow: '',            title: 'AI Advisor' },
+  settings:     { eyebrow: '',            title: 'Settings' },
 }
 
-const VALID_SCREENS: ScreenType[] = ['overview', 'transactions', 'spending', 'budgets', 'goals', 'investments', 'trends', 'subscriptions', 'advisor', 'settings']
+/** "Thursday, 27 August" — the Overview eyebrow is the date, since the title
+ *  beside it is already a greeting. */
+function todayLabel(): string {
+  return new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+/** Shared with Overview's month picker; kept in sync with the URL. */
+const OVERVIEW_MONTH_KEY = 'ledger:overview-month-v2'
 
 function getScreenFromHash(): ScreenType {
-  const hash = window.location.hash.replace('#', '') as ScreenType
-  return VALID_SCREENS.includes(hash) ? hash : 'overview'
+  const hash = window.location.hash.replace('#', '')
+  if (hash === 'subscriptions') return 'budgets'
+  const base = hash.split('/')[0]
+  return VALID_SCREENS.includes(base as ScreenType) ? (base as ScreenType) : 'overview'
 }
 
 function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenType>(getScreenFromHash)
+  const [railOpen, setRailOpen] = useState(false)
+  // Month lives here rather than in Overview so the picker can sit in the
+  // header cluster with Sync and the avatar, where the design puts it.
+  const monthOptions = getMonthOptions(6)
+  const [selectedMonth, setSelectedMonth] = useState<string>(() =>
+    resolveSelectedMonth(OVERVIEW_MONTH_KEY, getMonthOptions(6)),
+  )
   const [auth, setAuth] = useState<AuthState>('loading')
   const [userName, setUserName] = useState('')
   const [setupNeeded, setSetupNeeded] = useState<boolean | null>(null)
@@ -114,7 +147,17 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const onHashChange = () => setActiveScreen(getScreenFromHash())
+    if (window.location.hash.replace('#', '') === 'subscriptions') {
+      window.history.replaceState(null, '', '#budgets')
+    }
+    const onHashChange = () => {
+      if (window.location.hash.replace('#', '') === 'subscriptions') {
+        window.history.replaceState(null, '', '#budgets')
+        setActiveScreen('budgets')
+        return
+      }
+      setActiveScreen(getScreenFromHash())
+    }
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
@@ -132,6 +175,12 @@ function App() {
     window.location.hash = screen
   }
 
+  const selectMonth = (month: string) => {
+    setSelectedMonth(month)
+    storeMonth(OVERVIEW_MONTH_KEY, month)
+    setMonthInUrl(month)
+  }
+
   const signOut = () => {
     clearToken()
     setAuth('unauthenticated')
@@ -139,13 +188,13 @@ function App() {
 
   // Personalize the homepage greeting with the user's name when we have one.
   const header = activeScreen === 'overview'
-    ? { title: userName ? `${greeting()}, ${userName}` : greeting(), subtitle: '' }
+    ? { eyebrow: todayLabel(), title: userName ? `${greeting()}, ${userName}` : greeting() }
     : screenHeaders[activeScreen]
 
   if (auth === 'loading') {
     return (
       <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Aurora />
         <BootLoader />
       </>
     )
@@ -154,7 +203,7 @@ function App() {
   if (auth === 'unauthenticated') {
     return (
       <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Aurora />
         <Login onAuthenticated={loadMe} />
       </>
     )
@@ -163,7 +212,7 @@ function App() {
   if (auth === 'authenticated' && setupNeeded === null) {
     return (
       <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Aurora />
         <BootLoader />
       </>
     )
@@ -172,7 +221,7 @@ function App() {
   if (auth === 'authenticated' && setupNeeded) {
     return (
       <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Aurora />
         <Setup onDone={() => setSetupNeeded(false)} />
       </>
     )
@@ -181,7 +230,7 @@ function App() {
   const renderScreen = () => {
     switch (activeScreen) {
       case 'overview':
-        return <Overview onNavigate={navigate} />
+        return <Overview onNavigate={navigate} month={selectedMonth} />
       case 'transactions':
         return <Transactions />
       case 'spending':
@@ -194,8 +243,6 @@ function App() {
         return <Investments />
       case 'trends':
         return <Trends />
-      case 'subscriptions':
-        return <Subscriptions />
       case 'advisor':
         return <Advisor advisor={advisor} />
       case 'settings':
@@ -211,23 +258,50 @@ function App() {
 
   return (
     <>
-      <div className="aurora-root">
-        <div className="aurora-layer" />
-      </div>
+      <Aurora />
 
-      <div className="relative z-10 h-dvh text-ledger-text-primary flex p-2 short:p-3 tall:p-4 gap-2 short:gap-3 tall:gap-4 overflow-hidden">
+      {/* The rail floats over the page (absolutely positioned inside this
+          padding box) and `<main>` clears it with an animated left margin, so
+          expanding the rail slides the content rather than reflowing it. */}
+      <div className="relative z-10 h-dvh p-[14px] overflow-hidden text-ledger-text-primary">
         <Sidebar
           activeScreen={activeScreen}
           onScreenChange={navigate}
           onSignOut={signOut}
           advisorCount={advisor.pendingCount}
           accounts={linkedAccounts.accounts}
+          open={railOpen}
+          onOpenChange={setRailOpen}
         />
 
-        <main className="flex-1 flex flex-col min-h-0 glass-shell overflow-hidden">
-          <Header title={header.title} subtitle={header.subtitle} name={userName} />
+        <main
+          className="relative z-10 h-full flex flex-col min-w-0"
+          style={{
+            marginLeft: railOpen ? 234 : 86,
+            transition: `margin-left ${RAIL_TRANSITION}`,
+          }}
+        >
+          <Header
+            eyebrow={header.eyebrow}
+            title={header.title}
+            name={userName}
+            controls={activeScreen === 'overview' ? (
+              <label className="glass-control flex items-center gap-2 h-[34px] pl-[13px] pr-[9px] text-[12.5px] font-medium cursor-pointer">
+                <span className="sr-only">Month</span>
+                <select
+                  value={selectedMonth}
+                  onChange={e => selectMonth(e.target.value)}
+                  className="bg-transparent border-none outline-none cursor-pointer text-white"
+                >
+                  {monthOptions.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : undefined}
+          />
 
-          <div className="flex-1 min-h-0 overflow-auto p-3 short:p-4 tall:p-5 soft-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden soft-scrollbar mt-[14px] pl-[2px] pr-1 pb-5">
             {renderScreen()}
           </div>
         </main>

@@ -14,7 +14,7 @@ function WaitingHint({ onReopen, onCancel }: { onReopen: () => void; onCancel: (
         this updates automatically when you’re done.
       </p>
       <div className="flex gap-3">
-        <button type="button" onClick={onReopen} className="text-ledger-accent hover:opacity-70 transition-opacity">
+        <button type="button" onClick={onReopen} className="text-white hover:opacity-70 transition-opacity">
           Didn’t open? Reopen
         </button>
         <button type="button" onClick={onCancel} className="text-ledger-text-faint hover:opacity-70 transition-opacity">
@@ -36,7 +36,7 @@ export default function PlaidLinkButton({ onSuccess, onError }: PlaidLinkProps) 
         type="button"
         onClick={() => void start()}
         disabled={busy}
-        className="w-full bg-ledger-accent text-ledger-accent-on rounded-lg px-4 py-2 font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full ghost-add flex items-center justify-center h-10 px-4 font-semibold text-[12.5px] disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {status === 'starting'
           ? 'Opening…'
@@ -67,7 +67,7 @@ export function PlaidUpdateButton({
   const { status, start, reopen } = usePlaidHostedLink({ onSuccess, onError })
   const cls =
     className ??
-    'text-[11.5px] text-ledger-accent hover:opacity-70 transition-opacity disabled:opacity-40 font-medium'
+    'text-[11.5px] text-white/80 hover:opacity-70 transition-opacity disabled:opacity-40 font-medium'
 
   // While the hosted flow is open, the button re-opens the tab if it was lost.
   if (status === 'waiting') {

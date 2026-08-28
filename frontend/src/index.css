@@ -1,4 +1,44 @@
-@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* ── Typefaces ────────────────────────────────────────────────────────────
+   Served from public/fonts rather than the Google Fonts CDN — see
+   public/fonts/README.md for why (desktop builds, privacy, and the variable
+   axis the CDN's static instances don't give us).
+
+   `font-display: swap` keeps first paint immediate; the files are small
+   enough (~100KB for both families) that the swap is barely perceptible. */
+
+@font-face {
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/fonts/schibsted-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/fonts/schibsted-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 
 @tailwind base;
 @tailwind components;
@@ -17,11 +57,11 @@ html {
 }
 
 body {
-  font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Schibsted Grotesk', 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0d0f14;
-  color: #e9ebf0;
+  background-color: #07080a;
+  color: #f2f4f8;
   height: 100%;
   overflow: hidden;
 }
@@ -36,208 +76,297 @@ body {
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
-/* Smooth transitions for dark mode */
+/* Colour-only transitions everywhere; layout/opacity transitions opt in. */
 * {
   @apply transition-colors duration-200;
 }
 
-/* Remove transition from prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   * {
     @apply !transition-none;
   }
 }
 
-/* ── Liquid glass background ─────────────────────────────────────────────── */
+/* ── Ambient background ───────────────────────────────────────────────────
+   Static aurora: a base wash plus three blurred colour blobs (blue / teal /
+   warm). Static rather than animated — the glass surfaces above it already
+   carry the motion, and a drifting field behind 34px backdrop-blur reads as
+   noise. Positions and blur radii come straight from the design handoff. */
 
 .aurora-root {
   position: fixed;
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background: linear-gradient(160deg, #07101f 0%, #050914 45%, #010204 100%);
-}
-
-.aurora-layer {
-  position: absolute;
-  inset: -30%;
-  filter: blur(58px);
-  animation: aurora-drift 40s ease-in-out infinite alternate;
   background:
-    radial-gradient(1220px 1040px at 94% 8%, rgba(92,140,255,0.78), transparent 74%),
-    radial-gradient(980px 860px at 88% 18%, rgba(78,196,255,0.42), transparent 68%),
-    radial-gradient(900px 820px at 96% 72%, rgba(70,130,255,0.28), transparent 72%),
-    radial-gradient(620px 620px at 4% 94%, rgba(255,150,120,0.22), transparent 60%);
+    radial-gradient(1200px 860px at 90% -14%, rgba(178,200,236,0.22), transparent 66%),
+    linear-gradient(166deg, #101319 0%, #0a0c11 48%, #06070a 100%);
 }
 
-@keyframes aurora-drift {
-  0%   { transform: translate(-4%, -3%) rotate(-3deg) scale(1.12); }
-  100% { transform: translate(4%, 3%) rotate(3deg) scale(1.18); }
+.aurora-blob {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
 }
 
-/* Login/loading gradient ring rotation */
+.aurora-blob-blue {
+  left: 30%;
+  top: 40%;
+  width: 700px;
+  height: 460px;
+  filter: blur(100px);
+  background: radial-gradient(circle, rgba(84,132,218,0.34), transparent 68%);
+}
+
+.aurora-blob-teal {
+  right: 4%;
+  top: 2%;
+  width: 520px;
+  height: 420px;
+  filter: blur(90px);
+  background: radial-gradient(circle, rgba(116,206,206,0.22), transparent 66%);
+}
+
+.aurora-blob-warm {
+  left: 6%;
+  bottom: -8%;
+  width: 560px;
+  height: 360px;
+  filter: blur(110px);
+  background: radial-gradient(circle, rgba(216,148,116,0.16), transparent 68%);
+}
+
+/* ── Entrance animations ──────────────────────────────────────────────────
+   One-time on mount, never looping. `ledger-draw` animates a line chart's
+   stroke-dashoffset in; pair it with a stroke-dasharray large enough to
+   cover the path length (1500 for wide charts, 900 for the frontier). */
+
+@keyframes ledger-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes ledger-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes ledger-draw {
+  from { stroke-dashoffset: 1500; }
+  to   { stroke-dashoffset: 0; }
+}
+
 @keyframes ledger-ring-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .aurora-layer {
-    animation: none;
-  }
-}
+.ledger-rise { animation: ledger-rise .8s ease-out both; }
+.ledger-rise-fast { animation: ledger-rise .5s ease-out both; }
+.ledger-fade { animation: ledger-fade .9s ease-out both; }
+.ledger-delay-1 { animation-delay: .30s; }
+.ledger-delay-2 { animation-delay: .35s; }
 
-/* ── Glass surfaces ───────────────────────────────────────────────────────── */
-
-.glass-card {
-  background: linear-gradient(140deg,
-    rgba(255,255,255,0.24),
-    rgba(255,255,255,0.085) 34%,
-    rgba(255,255,255,0.06) 70%,
-    rgba(255,255,255,0.13));
-  border: 1px solid rgba(255,255,255,0.22);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.55),
-    inset 0 0 30px rgba(255,255,255,0.06),
-    0 20px 50px -28px rgba(10,10,40,0.55),
-    0 0 46px rgba(150,170,255,0.10);
-  border-radius: 22px;
-}
-
-.glass-overlay {
-  background: rgba(4, 6, 10, 0.42);
-  backdrop-filter: blur(14px) saturate(115%);
-  -webkit-backdrop-filter: blur(14px) saturate(115%);
-}
-
-.glass-modal {
-  background: linear-gradient(180deg,
-    rgba(18, 21, 30, 0.94) 0%,
-    rgba(14, 17, 25, 0.92) 52%,
-    rgba(11, 14, 21, 0.94) 100%);
-  border: 1px solid rgba(255,255,255,0.14);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.14),
-    inset 0 0 0 1px rgba(255,255,255,0.03),
-    0 30px 80px -34px rgba(0,0,0,0.82),
-    0 0 42px rgba(91,141,239,0.08);
-  backdrop-filter: blur(24px) saturate(120%);
-  -webkit-backdrop-filter: blur(24px) saturate(120%);
-  border-radius: 22px;
-}
-
-/* Smaller surfaces — inputs, dropdown chips, table headers, buttons/pills. Same fill, no shadow. */
-.glass-chip {
-  background: linear-gradient(140deg,
-    rgba(255,255,255,0.24),
-    rgba(255,255,255,0.085) 34%,
-    rgba(255,255,255,0.06) 70%,
-    rgba(255,255,255,0.13));
-  border: 1px solid rgba(255,255,255,0.22);
-  border-radius: 9px;
-}
-
-/* Sidebar — the one surface allowed real backdrop-filter blur (single, non-stacked layer). */
-.glass-sidebar {
-  border-radius: 26px;
-  border: 1px solid rgba(255,255,255,0.20);
-  background: linear-gradient(160deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
-  backdrop-filter: blur(30px) saturate(150%);
-  -webkit-backdrop-filter: blur(30px) saturate(150%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.5),
-    inset 0 0 30px rgba(255,255,255,0.05),
-    0 24px 60px -22px rgba(0,0,0,0.75),
-    0 0 46px rgba(150,170,255,0.10);
-}
-
-/* Main content column — same rounding as the sidebar so both read as one floating composition. */
-.glass-shell {
-  border-radius: 26px;
-  border: 1px solid rgba(255,255,255,0.14);
-}
-
-/* Header — same glass fill as cards, but only a bottom border (full-bleed inside the shell). */
-.glass-header {
-  background: linear-gradient(140deg,
-    rgba(255,255,255,0.24),
-    rgba(255,255,255,0.085) 34%,
-    rgba(255,255,255,0.06) 70%,
-    rgba(255,255,255,0.13));
-  border-bottom: 1px solid rgba(255,255,255,0.16);
-}
-
-.soft-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.16) transparent;
-}
-
-.soft-scrollbar::-webkit-scrollbar {
-  width: 8px;
-}
-
-.soft-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.soft-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.14);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.soft-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.22);
-  background-clip: padding-box;
-}
-
-/* Optimizer panel — ported from the V2 OptimizerPanel (stroke draw, primary
-   CTA, dashed add slot, gradient range track). Scoped utilities; they don't
-   restyle the rest of the app. */
-@keyframes ledger-draw {
-  from { stroke-dashoffset: 1500; }
-  to { stroke-dashoffset: 0; }
+.ledger-draw {
+  stroke-dasharray: 1500;
+  animation: ledger-draw 1.8s cubic-bezier(.22,.8,.2,1) both;
 }
 
 .ledger-draw-short {
   stroke-dasharray: 900;
-  animation: ledger-draw 1.4s cubic-bezier(.22, .8, .2, 1) both;
+  animation: ledger-draw 1.4s cubic-bezier(.22,.8,.2,1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ledger-rise,
+  .ledger-rise-fast,
+  .ledger-fade,
+  .ledger-draw,
   .ledger-draw-short {
     animation: none;
+  }
+  .ledger-draw,
+  .ledger-draw-short {
     stroke-dashoffset: 0;
   }
 }
 
+/* ── Glass surfaces ───────────────────────────────────────────────────────
+   Three tiers, all sharing one gradient family so they read as one material:
+     .glass-card   — panels and cards (24px, full shadow stack, blur)
+     .glass-rail   — the nav rail (steeper angle, deeper blur)
+     .glass-chip   — inputs, pills, small tiles (12px, flat, no shadow)
+   Nest at most one blurred surface inside another; stacked backdrop-filters
+   compound into mud and cost a full-screen composite per layer. */
+
+.glass-card {
+  position: relative;
+  border-radius: 24px;
+  background: linear-gradient(146deg,
+    rgba(255,255,255,0.20) 0%,
+    rgba(255,255,255,0.085) 30%,
+    rgba(255,255,255,0.05) 66%,
+    rgba(255,255,255,0.115) 100%);
+  border: 1px solid rgba(255,255,255,0.24);
+  backdrop-filter: blur(34px) saturate(150%);
+  -webkit-backdrop-filter: blur(34px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.72),
+    inset 0 -1px 0 rgba(255,255,255,0.24),
+    inset 0 0 50px rgba(255,255,255,0.06),
+    0 36px 74px -32px rgba(0,0,0,0.92),
+    0 0 60px -10px rgba(196,216,252,0.20);
+}
+
+.glass-rail {
+  border-radius: 24px;
+  background: linear-gradient(158deg,
+    rgba(255,255,255,0.22) 0%,
+    rgba(255,255,255,0.09) 40%,
+    rgba(255,255,255,0.05) 72%,
+    rgba(255,255,255,0.13) 100%);
+  border: 1px solid rgba(255,255,255,0.24);
+  backdrop-filter: blur(36px) saturate(160%);
+  -webkit-backdrop-filter: blur(36px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.75),
+    inset 0 -1px 0 rgba(255,255,255,0.24),
+    inset 0 0 46px rgba(255,255,255,0.07),
+    0 24px 44px -28px rgba(0,0,0,0.9),
+    0 0 26px -14px rgba(200,218,252,0.2);
+}
+
+.glass-chip {
+  border-radius: 12px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* Cool-white icon chip — AI wells, empty-state marks. Same material as the
+   logo, quieter, so it doesn't compete with the primary CTA. */
+.icon-well {
+  background: linear-gradient(150deg, rgba(255,255,255,0.34), rgba(255,255,255,0.08));
+  border: 1px solid rgba(255,255,255,0.32);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+  color: #ffffff;
+}
+
+/* Header-height control: month picker, filter selects, secondary buttons. */
+.glass-control {
+  border-radius: 11px;
+  color: #ffffff;
+  background: linear-gradient(140deg, rgba(255,255,255,0.20), rgba(255,255,255,0.07));
+  border: 1px solid rgba(255,255,255,0.24);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.glass-control:hover {
+  border-color: rgba(255,255,255,0.4);
+}
+
+/* The one bright surface in the system — reserved for the single primary
+   action on a screen (Sync, Run optimization, Save). Two of these in one
+   view and neither reads as primary. */
+/* Radius is left to the caller so this can dress a pill, a button or a wide
+   bar without a specificity fight with the utility class beside it. */
 .solid-cta {
   color: #0a0c10;
   background: linear-gradient(150deg, #ffffff, #dbe4f2);
   box-shadow:
-    0 12px 30px -12px rgba(210, 226, 255, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    0 12px 30px -12px rgba(210,226,255,0.7),
+    inset 0 1px 0 rgba(255,255,255,0.95);
 }
 
 .solid-cta:hover:not(:disabled) { filter: brightness(1.05); }
 .solid-cta:disabled { opacity: 0.55; cursor: not-allowed; }
 
+.glass-overlay {
+  background: rgba(4, 6, 10, 0.52);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+}
+
+/* Modals sit above the aurora rather than on it, so they take an opaque
+   fill — a translucent panel over a translucent page has no contrast floor. */
+.glass-modal {
+  border-radius: 24px;
+  background: linear-gradient(180deg,
+    rgba(20, 24, 33, 0.95) 0%,
+    rgba(15, 18, 26, 0.94) 52%,
+    rgba(11, 14, 21, 0.95) 100%);
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.16),
+    0 36px 84px -34px rgba(0,0,0,0.9),
+    0 0 60px -10px rgba(196,216,252,0.12);
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+}
+
+/* Dashed "add another" affordance — reads as an open slot rather than an
+   action, which is what keeps a full-width add button from competing with the
+   screen's real primary action. */
 .ghost-add {
   border-radius: 12px;
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px dashed rgba(255, 255, 255, 0.2);
+  color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.05);
+  border: 1px dashed rgba(255,255,255,0.2);
 }
 
 .ghost-add:hover:not(:disabled) {
   color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255,255,255,0.4);
 }
+
+/* ── Nav rows ─────────────────────────────────────────────────────────── */
+
+.rail-item {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0;
+  border-radius: 11px;
+  overflow: hidden;
+  color: rgba(255,255,255,0.6);
+  width: 100%;
+  text-align: left;
+}
+
+.rail-item:hover {
+  background: rgba(255,255,255,0.07);
+  color: #ffffff;
+}
+
+.rail-item-active {
+  color: #ffffff;
+  background: linear-gradient(140deg, rgba(255,255,255,0.24), rgba(255,255,255,0.08));
+  /* Inset stroke instead of border so the 38px row doesn't shrink and the
+     collapsed icon column stays a true 40px (the closed rail's inner width). */
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.26),
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    0 10px 24px -14px rgba(0,0,0,0.9);
+}
+
+.rail-item-active:hover {
+  background: linear-gradient(140deg, rgba(255,255,255,0.28), rgba(255,255,255,0.10));
+}
+
+/* ── Row hover (activity lists, legends, tables) ──────────────────────── */
+
+.row-hover:hover { background: rgba(255,255,255,0.09); }
+.row-hover-soft:hover { background: rgba(255,255,255,0.06); }
+
+/* ── Range sliders ────────────────────────────────────────────────────────
+   The filled portion of the track is painted by an inline linear-gradient on
+   the input itself (see rangeTrackStyle), so the fill follows the value
+   without a second stacked element to keep in sync. */
 
 .ledger-range {
   -webkit-appearance: none;
@@ -255,7 +384,7 @@ code {
   height: 14px;
   border-radius: 999px;
   background: #ffffff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.15);
   cursor: pointer;
 }
 
@@ -265,9 +394,60 @@ code {
   border: none;
   border-radius: 999px;
   background: #ffffff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
   cursor: pointer;
 }
 
 .ledger-range::-moz-range-track { background: transparent; }
-.ledger-range:focus-visible { box-shadow: 0 0 0 2px rgba(130, 169, 242, 0.55); }
+
+.ledger-range:focus-visible { box-shadow: 0 0 0 2px rgba(255,255,255,0.45); }
+
+/* ── Form controls on glass ───────────────────────────────────────────── */
+
+select.glass-chip,
+select.glass-control {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+/* Native dropdown popups are drawn by the OS and don't inherit the glass
+   fill, so give the options an explicit dark ground. */
+select option {
+  background-color: #12151c;
+  color: #f2f4f8;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255,255,255,0.34);
+}
+
+/* ── Focus ────────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid rgba(255,255,255,0.5);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────── */
+
+.soft-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.16) transparent;
+}
+
+.soft-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.soft-scrollbar::-webkit-scrollbar-track { background: transparent; }
+
+.soft-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.soft-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.24);
+  background-clip: padding-box;
+}

@@ -140,7 +140,7 @@ function stackIncomeBands(
 const INVESTMENTS_NODE_ID = 'Investments'
 const SAVINGS_NODE_ID = '__savings__'
 const UNALLOCATED_NODE_ID = '__unallocated__'
-const SAVINGS_COLOR = '#4ec38a'
+const SAVINGS_COLOR = '#74d8a8'
 
 function isAllocationNode(id: string): boolean {
   return id === SAVINGS_NODE_ID
@@ -436,7 +436,7 @@ export default function Spending() {
             </span>
             {allocated > 0.01 && (
               <span className="text-ledger-text-faint">
-                Allocated <span className="text-ledger-accent font-semibold">${fmt(allocated)}</span>
+                Allocated <span className="text-white font-semibold">${fmt(allocated)}</span>
               </span>
             )}
             {deficit > 0
@@ -459,8 +459,8 @@ export default function Spending() {
             <svg width={svgW} height={SVG_H} style={{ display: 'block', overflow: 'visible' }}>
               <defs>
                 <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#4a6fa5" stopOpacity="0.95" />
-                  <stop offset="100%" stopColor="#1e2d45" stopOpacity="0.95" />
+                  <stop offset="0%"   stopColor="rgba(255,255,255,0.42)" stopOpacity="0.95" />
+                  <stop offset="100%" stopColor="rgba(232,238,248,0.16)" stopOpacity="0.95" />
                 </linearGradient>
               </defs>
 
@@ -501,12 +501,12 @@ export default function Spending() {
                 />
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY - 6}
-                  textAnchor="middle" fontSize={10} fill="#6a7a94" letterSpacing="0.10em"
+                  textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.46)" letterSpacing="0.10em"
                   style={{ userSelect: 'none' }}
                 >INCOME</text>
                 <text
                   x={layout.tunnelX + TUNNEL_W / 2} y={layout.tunnelY + layout.tunnelH + 14}
-                  textAnchor="middle" fontSize={11} fill="#6a7a94"
+                  textAnchor="middle" fontSize={11} fill="rgba(255,255,255,0.46)"
                   style={{ userSelect: 'none' }}
                 >${fmt(data!.total_income)}</text>
               </g>
@@ -521,7 +521,7 @@ export default function Spending() {
                   nodeVis={nodeVis}
                   formatLabel={n => formatCategory(n.label)}
                   amountPrefix="+"
-                  amountClass="#4ec38a"
+                  amountClass="#74d8a8"
                   onHover={setHovered}
                 />
               ))}
