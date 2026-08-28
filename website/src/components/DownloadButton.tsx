@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AppleLogo, WindowsLogo } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
+import {
+  motion,
+  useMotionValue,
+  useSpring,
+  useReducedMotion,
+} from "motion/react";
+import { AppleLogo, ArrowDown, WindowsLogo } from "@phosphor-icons/react";
 import type { LatestRelease } from "@/release/github";
 
 type Platform = "mac" | "win" | "other";
@@ -26,7 +32,13 @@ type Props = {
 };
 
 export function DownloadButton({ release, force, className }: Props) {
+  const reduce = useReducedMotion();
   const [platform, setPlatform] = useState<Platform | null>(force ?? null);
+  const ref = useRef<HTMLAnchorElement>(null);
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const x = useSpring(mx, { stiffness: 160, damping: 18, mass: 0.4 });
+  const y = useSpring(my, { stiffness: 160, damping: 18, mass: 0.4 });
 
   useEffect(() => {
     if (force) {
@@ -56,12 +68,29 @@ export function DownloadButton({ release, force, className }: Props) {
         ? "Download for Windows"
         : "Download";
 
-  const Icon = platform === "win" ? WindowsLogo : AppleLogo;
+  const Icon = platform === "win" ? WindowsLogo : platform === "mac" ? AppleLogo : ArrowDown;
 
   return (
-    <a href={href} className={`btn-primary ${className ?? ""}`}>
-      {platform === "other" ? null : <Icon size={16} weight="fill" />}
-      {label}
-    </a>
+    <motion.a
+      ref={ref}
+      href={href}
+      className={`btn-primary ${className ?? ""}`}
+      style={reduce ? undefined : { x, y }}
+      onMouseMove={(e) => {
+        if (reduce || !ref.current) return;
+        const r = ref.current.getBoundingClientRect();
+        mx.set((e.clientX - r.left - r.width / 2) * 0.28);
+        my.set((e.clientY - r.top - r.height / 2) * 0.28);
+      }}
+      onMouseLeave={() => {
+        mx.set(0);
+        my.set(0);
+      }}
+    >
+      <span>{label}</span>
+      <span className="btn-primary-icon">
+        <Icon size={14} weight="bold" />
+      </span>
+    </motion.a>
   );
 }

@@ -29,10 +29,12 @@ export const site = {
   },
 
   hero: {
+    lines: ["Your money stays", "on your machine."],
     headline: "Your money stays on your machine.",
     subtext:
       "A personal finance app that lives on your computer. You bring the Plaid keys.",
     githubLabel: "GitHub",
+    shotAlt: "Ledger Overview. Net worth, spending, and budgets.",
   },
 
   localFirst: {

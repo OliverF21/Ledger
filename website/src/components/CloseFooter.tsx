@@ -6,14 +6,14 @@ import type { LatestRelease } from "@/release/github";
 
 export function CloseFooter({ release }: { release: LatestRelease }) {
   return (
-    <footer className="relative z-[var(--z-content)]">
-      <div className="mx-auto max-w-[1400px] px-5 pb-10 pt-10 sm:px-8 sm:pt-16">
+    <footer className="relative z-[1]">
+      <div className="mx-auto max-w-[1400px] px-5 pb-10 pt-10 sm:px-8 sm:pt-8">
         <Reveal>
-          <div className="pb-20">
-            <h2 className="text-5xl font-bold tracking-[-0.05em] sm:text-6xl">
+          <div className="border-t border-[var(--hairline-soft)] pb-24 pt-16">
+            <h2 className="text-[clamp(3.4rem,12vw,9rem)] font-bold leading-[0.88] tracking-[-0.07em]">
               {site.close.headline}
             </h2>
-            <div className="mt-8">
+            <div className="mt-10">
               <DownloadButton release={release} />
             </div>
           </div>

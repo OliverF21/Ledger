@@ -107,10 +107,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 44px;
-  min-width: 12.5rem;
-  padding: 0 18px;
+  gap: 12px;
+  height: 48px;
+  min-width: 13.5rem;
+  padding: 0 8px 0 18px;
   border-radius: var(--radius-btn);
   font-size: 13.5px;
   font-weight: 650;
@@ -119,11 +119,21 @@ body {
   color: var(--cta-ink);
   background: linear-gradient(150deg, var(--cta-top), var(--cta-bottom));
   box-shadow: var(--shadow-cta);
-  transition: transform 0.2s var(--ease-out), filter 0.2s var(--ease-out);
 }
 
-.btn-primary:hover {
-  filter: brightness(1.05);
+.btn-primary-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, 0.08);
+  transition: transform 0.35s var(--ease-out);
+}
+
+.btn-primary:hover .btn-primary-icon {
+  transform: translateX(1px) scale(1.05);
 }
 
 .btn-primary:active {
@@ -134,7 +144,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 44px;
+  height: 48px;
   padding: 0 16px;
   border-radius: var(--radius-btn);
   font-size: 13.5px;
@@ -157,8 +167,8 @@ body {
 }
 
 .btn-skeleton {
-  height: 44px;
-  min-width: 12.5rem;
+  height: 48px;
+  min-width: 13.5rem;
   border-radius: var(--radius-btn);
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08));
   background-size: 200% 100%;
@@ -178,6 +188,25 @@ body {
 
   .btn-skeleton {
     animation: none;
+  }
+}
+
+.hero-product-tilt {
+  transform: perspective(1600px) rotateY(-16deg) rotateX(6deg);
+  transform-origin: 80% 20%;
+  filter: drop-shadow(0 50px 90px rgba(0, 0, 0, 0.58));
+}
+
+@media (max-width: 1023px) {
+  .hero-product-tilt {
+    transform: none;
+    filter: drop-shadow(0 28px 48px rgba(0, 0, 0, 0.45));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-product-tilt {
+    transform: none;
   }
 }
 
