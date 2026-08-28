@@ -3,8 +3,8 @@ import { site } from "@/content/site";
 
 export function LocalFirst() {
   return (
-    <section className="relative z-[1] pt-8 lg:pt-28">
-      <div className="mx-auto max-w-[1400px] px-5 py-20 sm:px-8 sm:py-32">
+    <section className="relative z-[1] border-t border-[var(--hairline-soft)]">
+      <div className="mx-auto max-w-[1400px] px-5 py-20 sm:px-8 sm:py-28 lg:py-32">
         <Reveal>
           <h2 className="max-w-[12ch] text-[clamp(2.6rem,7vw,5.4rem)] font-bold leading-[0.96] tracking-[-0.055em]">
             {site.localFirst.headline}

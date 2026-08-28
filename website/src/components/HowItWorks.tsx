@@ -37,8 +37,9 @@ export function HowItWorks() {
             pinSpacing: false,
           });
           gsap.to(card, {
-            scale: 0.92,
-            opacity: 0.55,
+            scale: 0.94,
+            autoAlpha: 0,
+            filter: "blur(6px)",
             ease: "none",
             scrollTrigger: {
               trigger: cards[i + 1],
@@ -49,6 +50,7 @@ export function HowItWorks() {
           });
         });
       });
+      ScrollTrigger.refresh();
     }, ref);
 
     return () => ctx.revert();
@@ -60,7 +62,7 @@ export function HowItWorks() {
         {site.how.steps.map((step, i) => (
           <div
             key={step.title}
-            className="stack-card relative sticky top-0 flex min-h-[100dvh] items-end overflow-hidden md:items-center"
+            className="stack-card relative flex min-h-[100dvh] items-end overflow-hidden bg-[var(--canvas)] md:items-center"
           >
             <Atmosphere mode="fill" />
             <div

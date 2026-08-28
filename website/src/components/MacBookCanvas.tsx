@@ -3,7 +3,6 @@
 import { Suspense, useLayoutEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import {
-  ContactShadows,
   Environment,
   Lightformer,
   RoundedBox,
@@ -12,9 +11,9 @@ import {
 import * as THREE from "three";
 import type { MutableRefObject } from "react";
 import { site } from "@/content/site";
+import { walkFrame } from "@/components/walkProgress";
 
 const scenes = site.features.scenes;
-const SCREEN_PATHS = scenes.map((s) => site.shots[s.shot]);
 
 const aluminum = {
   metalness: 0.9,
@@ -34,37 +33,77 @@ function poseAt(progress: number): Pose {
   const t = THREE.MathUtils.clamp(progress, 0, 1);
   const e = t * t * (3 - 2 * t);
   return {
-    yaw: THREE.MathUtils.lerp(-0.52, -0.1, e),
-    pitch: THREE.MathUtils.lerp(0.16, 0.04, e),
+    yaw: THREE.MathUtils.lerp(-0.52, -0.08, e),
+    pitch: THREE.MathUtils.lerp(0.16, 0.035, e),
     roll: THREE.MathUtils.lerp(-0.035, 0, e),
-    lid: THREE.MathUtils.lerp(-0.2, -0.08, e),
+    lid: THREE.MathUtils.lerp(-0.2, -0.075, e),
   };
 }
 
-function Screen({ active }: { active: number }) {
-  const maps = useTexture(SCREEN_PATHS) as THREE.Texture[];
+function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
+  const overview = useTexture(site.shots.overview);
+  const transactions = useTexture(site.shots.transactions);
+  const budgets = useTexture(site.shots.budgets);
+  const investments = useTexture(site.shots.investments);
+  const advisor = useTexture(site.shots.advisor);
+
+  const textures = useMemo(
+    () => [overview, transactions, budgets, investments, advisor],
+    [overview, transactions, budgets, investments, advisor],
+  );
+
+  const frontMat = useRef<THREE.MeshBasicMaterial>(null);
+  const backMat = useRef<THREE.MeshBasicMaterial>(null);
 
   useLayoutEffect(() => {
-    for (const tex of maps) {
+    for (const tex of textures) {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 8;
       tex.needsUpdate = true;
     }
-  }, [maps]);
+  }, [textures]);
+
+  useFrame(() => {
+    const { scene, blend } = walkFrame(progressRef.current);
+    const next = Math.min(scenes.length - 1, scene + 1);
+    const front = frontMat.current;
+    const back = backMat.current;
+    if (!front || !back) return;
+
+    if (scene >= scenes.length - 1 || blend < 0.001) {
+      front.map = textures[scene];
+      front.opacity = 1;
+      back.opacity = 0;
+      return;
+    }
+
+    front.map = textures[scene];
+    front.opacity = 1 - blend;
+    back.map = textures[next];
+    back.opacity = blend;
+  });
 
   return (
     <group>
-      {maps.map((tex, i) => (
-        <mesh key={scenes[i].key} position={[0, 0, i === active ? 0.001 : 0]} renderOrder={2}>
-          <planeGeometry args={[13.28, 8.28]} />
-          <meshBasicMaterial
-            map={tex}
-            toneMapped={false}
-            transparent
-            opacity={i === active ? 1 : 0}
-          />
-        </mesh>
-      ))}
+      <mesh renderOrder={1}>
+        <planeGeometry args={[13.28, 8.28]} />
+        <meshBasicMaterial
+          ref={backMat}
+          toneMapped={false}
+          transparent
+          opacity={0}
+        />
+      </mesh>
+      <mesh position={[0, 0, 0.001]} renderOrder={2}>
+        <planeGeometry args={[13.28, 8.28]} />
+        <meshBasicMaterial
+          ref={frontMat}
+          map={textures[0]}
+          toneMapped={false}
+          transparent
+          opacity={1}
+        />
+      </mesh>
     </group>
   );
 }
@@ -79,19 +118,26 @@ function Deck() {
   }, [map]);
 
   return (
-    <mesh rotation-x={-Math.PI / 2} position={[0, 0.385, 0.12]} renderOrder={1}>
-      <planeGeometry args={[13.55, 8.55]} />
-      <meshBasicMaterial map={map} toneMapped={false} />
+    <mesh rotation-x={-Math.PI / 2} position={[0, 0.392, 0.06]} renderOrder={1}>
+      <planeGeometry args={[12.6, 7.6]} />
+      <meshBasicMaterial map={map} toneMapped={false} transparent opacity={0.94} />
+    </mesh>
+  );
+}
+
+function GroundShadow() {
+  return (
+    <mesh rotation-x={-Math.PI / 2} position={[0, 0.005, 0.35]}>
+      <circleGeometry args={[6.8, 48]} />
+      <meshBasicMaterial color="#000000" transparent opacity={0.22} />
     </mesh>
   );
 }
 
 function LaptopBody({
-  active,
   progressRef,
   freeze,
 }: {
-  active: number;
   progressRef: MutableRefObject<number>;
   freeze: boolean;
 }) {
@@ -144,7 +190,7 @@ function LaptopBody({
         </mesh>
         <group position={[0, 4.42, 0.075]}>
           <Suspense fallback={null}>
-            <Screen active={active} />
+            <Screen progressRef={progressRef} />
           </Suspense>
         </group>
         <mesh position={[0, 8.68, 0.08]}>
@@ -190,11 +236,9 @@ function Lights() {
 }
 
 export function MacBookCanvas({
-  active,
   progressRef,
   freeze,
 }: {
-  active: number;
   progressRef: MutableRefObject<number>;
   freeze: boolean;
 }) {
@@ -213,15 +257,8 @@ export function MacBookCanvas({
       }}
     >
       <Lights />
-      <LaptopBody active={active} progressRef={progressRef} freeze={freeze} />
-      <ContactShadows
-        position={[0, 0, 0]}
-        opacity={0.48}
-        scale={26}
-        blur={2.6}
-        far={9}
-        color="#000000"
-      />
+      <LaptopBody progressRef={progressRef} freeze={freeze} />
+      <GroundShadow />
     </Canvas>
   );
 }

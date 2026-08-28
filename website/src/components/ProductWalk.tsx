@@ -8,17 +8,14 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { MacBook } from "@/components/MacBook";
 import { site } from "@/content/site";
 import type { LatestRelease } from "@/release/github";
+import {
+  INTRO_RATIO,
+  scenes,
+  walkFrame,
+  walkScrollDistance,
+} from "@/components/walkProgress";
 
 gsap.registerPlugin(ScrollTrigger);
-
-const scenes = site.features.scenes;
-const COPY_END = 0.16;
-
-function sceneIndex(progress: number) {
-  if (progress <= COPY_END) return 0;
-  const sceneP = (progress - COPY_END) / (1 - COPY_END);
-  return Math.min(scenes.length - 1, Math.floor(sceneP * scenes.length));
-}
 
 export function ProductWalk({ release }: { release: LatestRelease }) {
   const reduce = useReducedMotion();
@@ -26,34 +23,52 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
-  const laptopRef = useRef<HTMLDivElement>(null);
+  const captionTitleRef = useRef<HTMLHeadingElement>(null);
+  const captionBodyRef = useRef<HTMLParagraphElement>(null);
+  const mobileTitleRef = useRef<HTMLHeadingElement>(null);
+  const mobileBodyRef = useRef<HTMLParagraphElement>(null);
   const progressRef = useRef(0);
-  const [active, setActive] = useState(0);
+  const [mobileScene, setMobileScene] = useState(0);
   const freeze = reduce === true;
 
   useEffect(() => {
-    if (freeze || !sectionRef.current) return;
+    if (freeze || !sectionRef.current || !stageRef.current) return;
+
+    const section = sectionRef.current;
+    const stage = stageRef.current;
+    const copy = copyRef.current;
+    const caption = captionRef.current;
+
+    const syncCaptions = (progress: number) => {
+      progressRef.current = progress;
+      const { scene, inIntro } = walkFrame(progress);
+      const item = scenes[scene];
+
+      if (captionTitleRef.current) captionTitleRef.current.textContent = item.title;
+      if (captionBodyRef.current) captionBodyRef.current.textContent = item.body;
+      if (mobileTitleRef.current) mobileTitleRef.current.textContent = item.title;
+      if (mobileBodyRef.current) mobileBodyRef.current.textContent = item.body;
+
+      if (!inIntro) setMobileScene(scene);
+    };
 
     const ctx = gsap.context(() => {
-      const section = sectionRef.current!;
-      const copy = copyRef.current;
-      const caption = captionRef.current;
+      const distance = walkScrollDistance();
       const mm = gsap.matchMedia();
 
       mm.add("(min-width: 1024px)", () => {
-        gsap.set(caption, { opacity: 0, y: 18 });
+        gsap.set(caption, { autoAlpha: 0, y: 22 });
 
         const tl = gsap.timeline({
           scrollTrigger: {
             trigger: section,
             start: "top top",
-            end: "bottom bottom",
+            end: () => `+=${distance}vh`,
+            pin: stage,
             scrub: 1,
-            onUpdate: (self) => {
-              progressRef.current = self.progress;
-              const next = sceneIndex(self.progress);
-              setActive((i) => (i === next ? i : next));
-            },
+            anticipatePin: 1,
+            invalidateOnRefresh: true,
+            onUpdate: (self) => syncCaptions(self.progress),
           },
         });
 
@@ -61,40 +76,40 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
           tl.to(
             copy,
             {
-              opacity: 0,
-              y: -36,
+              autoAlpha: 0,
+              y: -28,
               pointerEvents: "none",
               ease: "none",
-              duration: COPY_END * 0.7,
+              duration: INTRO_RATIO,
             },
             0,
           );
         }
+
         if (caption) {
           tl.to(
             caption,
-            { opacity: 1, y: 0, ease: "none", duration: COPY_END * 0.35 },
-            COPY_END * 0.45,
+            { autoAlpha: 1, y: 0, ease: "none", duration: INTRO_RATIO * 0.35 },
+            INTRO_RATIO,
           );
         }
-        tl.to({}, { duration: 1 - COPY_END }, COPY_END);
+
+        tl.to({}, { duration: 1 - INTRO_RATIO }, INTRO_RATIO);
       });
 
       mm.add("(max-width: 1023px)", () => {
+        gsap.set(caption, { autoAlpha: 1, y: 0 });
+
         const tl = gsap.timeline({
           scrollTrigger: {
             trigger: section,
             start: "top top",
-            end: "bottom bottom",
+            end: () => `+=${Math.round(distance * 0.72)}vh`,
+            pin: stage,
             scrub: 1,
-            onUpdate: (self) => {
-              progressRef.current = self.progress;
-              const next = Math.min(
-                scenes.length - 1,
-                Math.floor(self.progress * scenes.length),
-              );
-              setActive((i) => (i === next ? i : next));
-            },
+            anticipatePin: 1,
+            invalidateOnRefresh: true,
+            onUpdate: (self) => syncCaptions(self.progress),
           },
         });
 
@@ -102,39 +117,42 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
           tl.to(
             copy,
             {
-              opacity: 0,
+              autoAlpha: 0,
               height: 0,
-              margin: 0,
+              marginTop: 0,
+              marginBottom: 0,
               overflow: "hidden",
               pointerEvents: "none",
               ease: "none",
-              duration: 0.18,
+              duration: INTRO_RATIO,
             },
             0,
           );
         }
-        tl.to({}, { duration: 0.82 }, 0.18);
+
+        tl.to({}, { duration: 1 - INTRO_RATIO }, INTRO_RATIO);
       });
-    }, stageRef);
+
+      syncCaptions(0);
+      ScrollTrigger.refresh();
+    }, section);
 
     return () => ctx.revert();
   }, [freeze]);
 
-  const scene = scenes[active];
-  const scrollVh = reduce ? undefined : 100 + scenes.length * 85;
+  const fallbackScene = scenes[mobileScene];
 
   return (
     <section
       ref={sectionRef}
       id={site.features.id}
-      className="relative z-[1]"
-      style={scrollVh ? { height: `${scrollVh}vh` } : undefined}
+      className="relative z-[1] scroll-mt-20"
     >
       <div
         ref={stageRef}
-        className="sticky top-0 flex min-h-[100dvh] items-stretch overflow-x-clip"
+        className="walk-stage flex min-h-[100dvh] items-stretch overflow-x-clip"
       >
-        <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-center items-center gap-8 px-5 pt-20 sm:px-8 lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] lg:gap-6 lg:pt-10">
+        <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-center items-center gap-8 px-5 pt-[calc(var(--nav-h)+1.25rem)] sm:px-8 lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] lg:gap-6 lg:pt-[calc(var(--nav-h)+0.5rem)]">
           <div className="relative z-10 min-h-[11rem] max-w-[34rem] lg:min-h-[22rem]">
             <div ref={copyRef}>
               <h1 className="text-[clamp(2.4rem,6.2vw,4.35rem)] font-bold leading-[0.98] tracking-[-0.055em]">
@@ -160,10 +178,10 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
               </div>
             </div>
 
-            {reduce ? (
+            {freeze ? (
               <div className="mt-10 flex flex-col gap-8">
-                {scenes.map((item, i) => (
-                  <SceneCaption key={item.key} scene={item} index={i} />
+                {scenes.map((item) => (
+                  <SceneCaption key={item.key} scene={item} />
                 ))}
               </div>
             ) : (
@@ -172,25 +190,40 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
                 className="walk-caption pointer-events-none absolute inset-0 hidden lg:block"
                 aria-live="polite"
               >
-                <SceneCaption scene={scene} index={active} />
+                <h2
+                  ref={captionTitleRef}
+                  className="text-[clamp(2rem,4.4vw,3.4rem)] font-bold leading-[1.02] tracking-[-0.05em]"
+                >
+                  {scenes[0].title}
+                </h2>
+                <p
+                  ref={captionBodyRef}
+                  className="mt-4 max-w-[34ch] text-[15.5px] leading-relaxed text-[var(--ink-soft)]"
+                >
+                  {scenes[0].body}
+                </p>
               </div>
             )}
           </div>
 
-          <div
-            ref={laptopRef}
-            className="walk-laptop relative z-20 w-full"
-          >
-            <MacBook
-              active={active}
-              progressRef={progressRef}
-              freeze={freeze}
-            />
+          <div className="walk-laptop relative z-20 w-full">
+            <MacBook progressRef={progressRef} freeze={freeze} />
           </div>
 
-          {!reduce && (
+          {!freeze && (
             <div className="relative z-10 max-w-[34rem] lg:hidden">
-              <SceneCaption scene={scene} index={active} compact />
+              <h2
+                ref={mobileTitleRef}
+                className="text-[1.65rem] font-bold tracking-[-0.04em]"
+              >
+                {fallbackScene.title}
+              </h2>
+              <p
+                ref={mobileBodyRef}
+                className="mt-2 text-[14.5px] leading-relaxed text-[var(--ink-soft)]"
+              >
+                {fallbackScene.body}
+              </p>
             </div>
           )}
         </div>
@@ -199,37 +232,13 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
   );
 }
 
-function SceneCaption({
-  scene,
-  index,
-  compact,
-}: {
-  scene: (typeof scenes)[number];
-  index: number;
-  compact?: boolean;
-}) {
+function SceneCaption({ scene }: { scene: (typeof scenes)[number] }) {
   return (
     <>
-      <p className="text-[13px] font-medium text-[var(--ink-muted)]">
-        {String(index + 1).padStart(2, "0")} /{" "}
-        {String(scenes.length).padStart(2, "0")}
-      </p>
-      <h2
-        className={
-          compact
-            ? "mt-2 text-[1.65rem] font-bold tracking-[-0.04em]"
-            : "mt-3 text-[clamp(2rem,4.4vw,3.4rem)] font-bold leading-[1.02] tracking-[-0.05em]"
-        }
-      >
+      <h2 className="text-[clamp(2rem,4.4vw,3.4rem)] font-bold leading-[1.02] tracking-[-0.05em]">
         {scene.title}
       </h2>
-      <p
-        className={
-          compact
-            ? "mt-2 text-[14.5px] leading-relaxed text-[var(--ink-soft)]"
-            : "mt-4 max-w-[34ch] text-[15.5px] leading-relaxed text-[var(--ink-soft)]"
-        }
-      >
+      <p className="mt-4 max-w-[34ch] text-[15.5px] leading-relaxed text-[var(--ink-soft)]">
         {scene.body}
       </p>
     </>

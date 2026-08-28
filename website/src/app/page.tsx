@@ -6,6 +6,7 @@ import { HowItWorks } from "@/components/HowItWorks";
 import { LocalFirst } from "@/components/LocalFirst";
 import { Nav } from "@/components/Nav";
 import { ProductWalk } from "@/components/ProductWalk";
+import { ScrollRefresh } from "@/components/ScrollRefresh";
 import { getLatestRelease } from "@/release/github";
 
 export default async function Home() {
@@ -13,6 +14,7 @@ export default async function Home() {
 
   return (
     <>
+      <ScrollRefresh />
       <Glow />
       <Grain />
       <div className="relative z-[1]">
