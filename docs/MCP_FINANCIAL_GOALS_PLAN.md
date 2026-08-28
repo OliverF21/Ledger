@@ -263,24 +263,172 @@ That is the only honest “savings budget”: planned monthly contribution vs la
 
 ### Phase 3 — Write-intent proposals + Advisor UI
 
-Mirror `propose_budget`: MCP never mutates; it POSTs proposals; user Applies in Advisor.
+**Status:** plan (do not implement until Phase 2 ships)  
+**Prerequisite:** Phase 2 — `FinancialGoal`, `goal_attributions`, Goals tab, Cash Flow named sinks from labels.
 
-**New proposal kinds**
+Same trust boundary as `propose_budget`. Claude never writes goals or labels. It POSTs a pending proposal; only the signed-in user Apply / Dismiss / Undo in Advisor.
 
-| Kind | Effect on Apply |
+```text
+Claude  →  propose_goal / propose_goal_contribution / propose_transfer_label
+       →  POST /api/proposals  (PROPOSAL_SERVICE_KEY, create-only)
+       →  pending row in budgets.db
+       →  Advisor card  →  user Apply  →  FinancialGoal and/or goal_attributions
+       →  Goals tab + Cash Flow named sinks update
+```
+
+Do **not** add `set_savings_budget`. Spend budgets stay spend caps. Dining cuts that *free* contribution still use existing `propose_budget` as a **second card**, not a fake Savings budget.
+
+#### Conversation → cards (typical)
+
+User: “Plan a $10k emergency fund and cut dining to pay for it.”
+
+1. `plan_goal_from_expenses` (read, TVM) — already Phase 1  
+2. `propose_budget` — Dining $700 → $550  
+3. `propose_goal` — Emergency fund $10k at $500/mo, 0%  
+
+Two pending Advisor cards. Apply independently (undo stays simple). No bundled payload in v1.
+
+User: “That $500 to Ally looks like vacation.”
+
+1. `transaction_search` to find the row  
+2. `propose_transfer_label` — $500 → Vacation  
+3. Apply → Goals tab + Cash Flow **Vacation** sink
+
+#### Proposal kinds
+
+| Kind | MCP tool | Apply writes | Advisor card |
+| --- | --- | --- | --- |
+| `set_budget` | `propose_budget` (exists) | `Budget` upsert | Budget · month · before → after limit |
+| `set_goal` | `propose_goal` | `FinancialGoal` create or update | Goal · name · target · $/mo · horizon · return |
+| `update_goal_contribution` | `propose_goal_contribution` | Patch `monthly_contribution` only | Goal · name · $400/mo → $500/mo |
+| `attribute_transfer` | `propose_transfer_label` | `goal_attributions` for that txn (replace that txn’s labels with the proposed set) | Label · date · merchant · $amount → goal name |
+
+`update_goal_contribution` is a narrow `set_goal` so the card can be a contribution diff without restating the whole goal. Claude should use it when the goal already exists.
+
+#### Payloads
+
+`set_goal`:
+
+```text
+{
+  payload_version: 1,
+  goal_id: int | null,              # null = create
+  name: str,                        # becomes the Cash Flow / Goals label
+  kind: emergency_fund | sinking_fund | debt_payoff | invest | custom,
+  target_amount: float,             # > 0
+  current_amount: float,            # opening balance; default 0
+  target_date: str | null,          # YYYY-MM-DD
+  monthly_contribution: float | null,
+  annual_return_assumption: float | null,  # 0–0.12; default 0
+  basis: { ...existing goal snapshot... } | null
+}
+```
+
+`update_goal_contribution`:
+
+```text
+{
+  payload_version: 1,
+  goal_id: int,
+  monthly_contribution: float,      # > 0
+  basis_contribution: float | null
+}
+```
+
+`attribute_transfer`:
+
+```text
+{
+  payload_version: 1,
+  transaction_id: int,
+  attributions: [{ goal_id: int, amount: float }],   # sum ≤ txn effective amount
+  basis_attributions: [{ goal_id, amount }]          # prior labels on that txn
+}
+```
+
+Validation on create (MCP + re-validate on Apply):
+
+- Unknown `kind` / return outside `[0, 0.12]` / non-positive money → 422  
+- `set_goal` update: `goal_id` must exist and be `active` or `paused`  
+- `attribute_transfer`: txn must exist, not removed/hidden; amount > 0; sum of attributions ≤ abs(effective amount); each `goal_id` active  
+- Prefer savings/investment/transfer outflows; still allow other outflows (user may Apply a grocery tagged Vacation — Advisor copy should warn in `rationale` if the classifier is `spending`)  
+- No Plaid tokens, DB paths, or service keys in payload or tool output  
+
+#### Supersede
+
+Same as budgets: one pending proposal per target so the queue does not fill from one chat.
+
+| Kind | Same-target key |
 | --- | --- |
-| `set_goal` | Create/update a `FinancialGoal` |
-| `update_goal_contribution` | Change planned monthly contribution |
-| `attribute_transfer` (later) | Flag a ledger transaction (or split) as counting toward a goal |
+| `set_goal` | `goal_id` if set, else (`name` + `kind`) |
+| `update_goal_contribution` | `goal_id` |
+| `attribute_transfer` | `transaction_id` (whole proposed label set replaces the previous pending set) |
 
-Do **not** implement `set_savings_budget` as a `Budget` row. Spend budgets stay spend caps. Claude can still `propose_budget` on dining/etc. to free contribution capacity.
+A pending `set_goal` and a pending `update_goal_contribution` for the same `goal_id`: supersede the older of the two (contribution is implied by a full `set_goal`).
 
-**Touch points**
+#### Apply / undo
 
-- `mcp_server/proposals.py` — create helpers  
-- `routes/proposals.py` — `SUPPORTED_KINDS`, validate, apply, undo, summaries  
-- Advisor UI — today is budget-diff oriented; add goal proposal cards  
-- Docs: `MCP_SETUP.md`, `ARCHITECTURE.md`
+Apply is still the **only** mutation path. Writers are shared with the Goals REST API (Phase 2), not duplicated in the proposal route.
+
+| Kind | Apply | Undo blob | Undo refuse if |
+| --- | --- | --- | --- |
+| `set_goal` create | Insert goal | `{ created: true, goal_id }` | Goal missing or user-edited fields ≠ applied snapshot |
+| `set_goal` update | Patch goal | `{ created: false, goal_id, prev: {...} }` | Current row ≠ applied snapshot |
+| `update_goal_contribution` | Patch PMT | `{ goal_id, prev_contribution, applied_contribution }` | Current PMT ≠ applied |
+| `attribute_transfer` | Replace that txn’s attribution rows | `{ transaction_id, prev: [...], applied: [...] }` | Current attributions ≠ applied set |
+
+Optimistic concurrency matches `set_budget` undo: if the user changed the goal or labels in the UI after Apply, undo returns 409 rather than clobbering.
+
+Dismiss / expire / TTL: unchanged (status machine on `proposals`).
+
+#### Advisor UI
+
+Today every card is hard-coded `Budget · {month}` and `basis_limit → proposed_limit`. Phase 3:
+
+- Branch on `kind` (and a kind-agnostic `summary` from the API, already on `ProposalOut`)  
+- **Goal card:** chip `Goal`; title = name; lines for `$current → $target`, `$PMT/mo`, horizon from stored TVM fields (do not recompute in React — show payload numbers); rationale  
+- **Label card:** chip `Label`; merchant + date; `$amount → {goal name}`; if replacing labels, show before → after  
+- **Budget card:** unchanged  
+- Intro copy: applied goals land on the Goals tab; applied labels show on Cash Flow; applied budgets still on Budgets  
+- Empty state: also mention “Propose a savings goal”  
+- `ApplyResponse` today requires `budget_id` / `new_limit`. Generalize: `{ success, proposal_id, kind, entity_id, summary, created }` with budget fields optional so the hook does not break  
+
+Deep link stays `#advisor?proposal=<id>` (`apply_url` from MCP).
+
+#### MCP tools (Phase 3)
+
+| Tool | Tags | Behavior |
+| --- | --- | --- |
+| `propose_goal` | `advisor`, `goals`, `write-intent` | Stage `set_goal`. Requires backend + `PROPOSAL_SERVICE_KEY`. Returns `apply_url`. |
+| `propose_goal_contribution` | same | Stage `update_goal_contribution` for an existing `goal_id`. |
+| `propose_transfer_label` | `advisor`, `goals`, `write-intent` | Stage `attribute_transfer` after `transaction_search`. |
+
+FastMCP instructions addition:
+
+- After a plan the user wants to keep, call `propose_goal` (and `propose_budget` if cuts are part of the plan).  
+- To count a transfer toward a bucket, `propose_transfer_label` — do not set `category_user` to the goal name.  
+- Never claim the goal or label is live until the user Applies.  
+- Still never compute TVM; cite `plan_goal*` fields in `rationale`.
+
+`ProposalResult` grows optional goal/label fields (`goal_id`, `goal_name`, `transaction_id`) alongside the existing budget ones; `ok` / `apply_url` / `message` stay.
+
+#### API / code touch points
+
+- `SUPPORTED_KINDS` += the three kinds; per-kind validate / apply / undo / `_to_out.summary`  
+- `mcp_server/proposals.py` — create helpers + health check (same as `create_budget_proposal`)  
+- `mcp_server/server.py` — three tools; instructions  
+- Shared writers from Phase 2: `upsert_goal`, `replace_txn_attributions` used by both REST and Apply  
+- Advisor.tsx + `useAdvisor.ts` `Proposal` / `ApplyResult`  
+- Tests: extend `test_proposals.py` (create, supersede, apply, undo, 409 on concurrent edit, MCP cannot apply)  
+- Docs: `MCP_SETUP.md`, `ARCHITECTURE.md` Advisor diagram  
+
+#### Out of scope (Phase 3)
+
+- Claude applying proposals  
+- Bundled “cut dining + create goal” as one proposal  
+- Auto-labeling by merchant rule (optional later, like categorization rules)  
+- Moving money / auto-transfers  
+- `set_savings_budget` as a `Budget` row  
 
 ---
 
@@ -339,7 +487,10 @@ app/services/goals_planning_service.py
     └── (phase 2) FinancialGoal CRUD in budgets.db
 
 Write path (phase 3 only):
-propose_* → POST /api/proposals → Advisor Apply → budgets.db
+propose_goal / propose_goal_contribution / propose_transfer_label / propose_budget
+    → POST /api/proposals → Advisor Apply
+    → FinancialGoal / goal_attributions / Budget
+    → Goals tab + Cash Flow named sinks + Budgets
 ```
 
 **Principles (unchanged):**
@@ -361,7 +512,7 @@ propose_* → POST /api/proposals → Advisor Apply → budgets.db
 5. Extend FastMCP server `instructions` with a short “Financial goals” section: when to call which tool, never promise returns, always surface `r` assumptions from tool output.
 6. Tests: `backend/tests/test_tvm.py`, `test_goals_planning.py` + MCP call coverage patterned on `test_mcp_spending.py`.
 7. Docs: update `docs/MCP_SETUP.md` tool list and example prompts; link this spec from `ARCHITECTURE.md` MCP section.
-8. Phase 2/3 only after Phase 1 feels useful in Claude Desktop.
+8. Phase 2/3 only after Phase 1 feels useful in Claude Desktop. **Phase 3 after Phase 2** (goals, attributions, Goals tab, named sinks). See Phase 3 section for kinds, payloads, apply/undo, and Advisor cards.
 
 Likely touch points (Phase 1):
 
@@ -396,7 +547,8 @@ After Phase 1:
 
 After Phase 3:
 
-- “Propose a goal for a $10k emergency fund at $500/mo and a dining budget cut that frees that capacity.”
+- “Propose a $10k emergency fund at $500/mo and a dining budget cut that frees that capacity.”
+- “Propose labeling that $500 Ally transfer as Vacation.”
 
 ---
 
@@ -428,7 +580,7 @@ Budgets answer: “Am I overspending a category?”
 5. **UI surface:** **locked** — Phase 2 includes a **Goals tab**. Claude remains the planning conversationalist (Phase 1 tools); the tab is where labeled transfer progress lives.
 6. **Cash-flow dependency:** **locked** — Phase 1 keeps planning on residual surplus. Once labels exist, Cash Flow **replaces generic Savings/Investments with the goal label** when a transfer is tagged; unlabeled rows keep the generic sink. Residual leftover is Unallocated, never a goal.
 
-**Recommendation:** ship Phase 1 on residual surplus immediately. Phase 2 adds persisted goals, **savings labels on transfers**, a **Goals tab**, and Cash Flow **named sinks** from those labels (generic Savings/Investments only as unlabeled fallback). Keep debt simple (0% interest math) until demand appears. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback. Goal progress is labeled transfers per bucket, not a Savings spend budget and not a whole-account link.
+**Recommendation:** ship Phase 1 on residual surplus immediately. Phase 2 adds persisted goals, **savings labels on transfers**, a **Goals tab**, and Cash Flow **named sinks**. Phase 3 (planned above, implement last) stages `set_goal` / contribution / transfer-label through Advisor — same create-only key as `propose_budget`; never a Savings spend budget. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback.
 
 ---
 
@@ -455,9 +607,11 @@ Budgets answer: “Am I overspending a category?”
 
 ### Phase 3
 
-- `propose_*` goal kinds create pending proposals only.
-- Advisor can Apply / Dismiss / Undo goal proposals.
-- Claude receives an `apply_url` and cannot apply server-side.
+- `propose_goal`, `propose_goal_contribution`, and `propose_transfer_label` create pending proposals only (`PROPOSAL_SERVICE_KEY`, create-only).
+- Advisor renders goal and label cards (not only budget diffs) and can Apply / Dismiss / Undo.
+- Apply uses the same writers as the Goals REST API; undo refuses if the user edited since Apply.
+- Claude receives an `apply_url` and cannot apply, label, or mutate goals server-side.
+- No `set_savings_budget` kind; dining cuts remain `propose_budget`.
 
 ---
 
@@ -470,5 +624,6 @@ Budgets answer: “Am I overspending a category?”
 | Math ownership | Model arithmetic | `tvm.py` + planning service; Claude calls only |
 | Capacity | Residual buried in cash flow / savings rate | Explicit `planning_capacity` |
 | Expense → plan | Manual multi-tool reasoning | `plan_goal_from_expenses` with optional cuts |
-| Mutations | `propose_budget` only | + `set_goal` / contribution proposals (P3) |
+| Mutations | `propose_budget` only | + `set_goal` / contribution / transfer-label proposals (P3) |
 | Invest timeline | Performance charts only | Contribution schedules under user-stated return assumptions |
+| Goal progress | Absent | Labeled transfers + Goals tab; Cash Flow named sinks (P2); Advisor Apply (P3) |
