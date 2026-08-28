@@ -1,11 +1,14 @@
 # Product shots
 
-Replace these files in place. The landing page reads them by filename.
+Replace these files in place. The landing MacBook reads them by filename.
 
-| File | Aspect | Notes |
-| --- | --- | --- |
-| `overview.png` | ~16:10 or 16:9, at least 1600px wide | Full Overview. Hero, product frame, and bento crops until you add dedicated shots. |
-| `budgets.png` | optional, 4:3 or 16:9 | Point `site.shots.budgets` here when you have it. |
-| `activity.png` | optional, 4:3 or 16:9 | Point `site.shots.activity` here when you have it. |
+| File | Used as |
+| --- | --- |
+| `overview.png` | First walk screen and Open Graph |
+| `transactions.png` | Transactions / scheduled sync screen |
+| `budgets.png` | Budgets screen |
+| `investments.png` | Risk and optimization screen |
+| `advisor.png` | MCP / Advisor screen |
+| `walk.mp4` | Optional. Set `site.features.video` to `/product/walk.mp4` to play in the MacBook instead of stills |
 
-Capture from the live app at 2x if you can. Do not overlay pills or captions on the PNG; captions live in `src/content/site.ts`.
+Capture from the live app at 16:10 if you can. Do not overlay captions on the PNG; captions live in `src/content/site.ts`.

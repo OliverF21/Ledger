@@ -38,9 +38,13 @@ Drop replacement captures into [`public/product/`](public/product/). Keep the fi
 
 | File | Used as |
 | --- | --- |
-| `overview.png` | Hero canvas, product frame, bento crops |
+| `overview.png` | First MacBook screen, Open Graph |
+| `transactions.png` | Transactions walk screen |
+| `budgets.png` | Budgets walk screen |
+| `investments.png` | Risk and optimization walk screen |
+| `advisor.png` | MCP / Advisor walk screen |
 
-When you have dedicated screens, add `budgets.png` / `activity.png` and point `site.shots.budgets` and `site.shots.activity` at them.
+To play a product video in the MacBook later, drop `walk.mp4` here and set `site.features.video` to `/product/walk.mp4`. Until then the screen crossfades the stills as you scroll.
 
 See [`public/product/README.md`](public/product/README.md) for sizes.
 

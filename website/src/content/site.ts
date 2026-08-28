@@ -23,10 +23,11 @@ export const site = {
 
   shots: {
     hero: "/product/overview.png",
-    product: "/product/overview.png",
-    netWorth: "/product/overview.png",
-    budgets: "/product/overview.png",
-    activity: "/product/overview.png",
+    overview: "/product/overview.png",
+    budgets: "/product/budgets.png",
+    transactions: "/product/transactions.png",
+    investments: "/product/investments.png",
+    advisor: "/product/advisor.png",
   },
 
   hero: {
@@ -35,7 +36,7 @@ export const site = {
     subtext:
       "A personal finance app that lives on your computer. You bring the Plaid keys.",
     githubLabel: "GitHub",
-    shotAlt: "Ledger Overview. Net worth, spending, and budgets.",
+    shotAlt: "Ledger Overview on a MacBook. Net worth, spending, and budgets.",
   },
 
   localFirst: {
@@ -51,63 +52,42 @@ export const site = {
     caption: "Overview. Net worth, spending, and budgets in one place.",
   },
 
+  /* Drop a file at public/product/walk.mp4 and set walk.video to that path
+     when you have a product walkthrough. Until then the MacBook screen
+     crossfades the stills below on scroll. */
   features: {
     id: "features",
-    headline: "See the month before it gets away from you.",
-    cells: [
+    video: null as string | null,
+    scenes: [
       {
-        key: "netWorth",
-        title: "Net worth",
-        body: "Daily snapshots across banks, brokerages, and optional crypto wallets.",
-        shot: "netWorth" as const,
-        objectPosition: "left top",
-        pictured: true,
-        tint: "none" as const,
+        key: "overview",
+        title: "Overview",
+        body: "Net worth, spending, and budgets on one desk. Daily snapshots across banks, brokerages, and optional crypto wallets.",
+        shot: "overview" as const,
+      },
+      {
+        key: "sync",
+        title: "Transactions",
+        body: "New activity comes in on a schedule, every six hours by default. Sync now is still there when you want it sooner.",
+        shot: "transactions" as const,
       },
       {
         key: "budgets",
         title: "Budgets",
-        body: "Category limits that carry into the next month, with overage alerts.",
+        body: "Category limits that carry into the next month, with overage alerts before the month gets away from you.",
         shot: "budgets" as const,
-        objectPosition: "right bottom",
-        pictured: true,
-        tint: "none" as const,
-      },
-      {
-        key: "sync",
-        title: "Automated transaction pulling",
-        body: "New transactions come in on a schedule, every six hours by default. Sync now is still there when you want them sooner.",
-        shot: "activity" as const,
-        objectPosition: "left bottom",
-        pictured: false,
-        tint: "cool" as const,
       },
       {
         key: "risk",
         title: "Risk and optimization",
         body: "Volatility, Sharpe, drawdown, VaR, and beta on holdings you already have, plus a max-Sharpe mix you can take or leave.",
-        shot: "product" as const,
-        objectPosition: "center",
-        pictured: false,
-        tint: "mint" as const,
+        shot: "investments" as const,
       },
       {
         key: "mcp",
-        title: "MCP for Claude Desktop",
-        body: "A local, read-only Model Context Protocol server. It can propose a budget. Only you Apply or Dismiss it in Advisor.",
-        shot: "product" as const,
-        objectPosition: "center",
-        pictured: false,
-        tint: "teal" as const,
-      },
-      {
-        key: "activity",
-        title: "Activity",
-        body: "Search, recategorize, split, hide, export CSV, and catch recurring charges.",
-        shot: "activity" as const,
-        objectPosition: "left bottom",
-        pictured: true,
-        tint: "none" as const,
+        title: "Advisor",
+        body: "A local, read-only MCP for Claude Desktop. It can propose a budget. Only you Apply or Dismiss it in the app.",
+        shot: "advisor" as const,
       },
     ],
   },
@@ -174,4 +154,4 @@ export const site = {
 
 export type Site = typeof site;
 export type ShotKey = keyof typeof site.shots;
-export type FeatureCell = (typeof site.features.cells)[number];
+export type WalkScene = (typeof site.features.scenes)[number];
