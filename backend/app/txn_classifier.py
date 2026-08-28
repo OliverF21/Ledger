@@ -76,8 +76,11 @@ def _looks_like_investment_funding(
     counterparties: list[dict[str, Any]] | None,
     transaction_code: str | None,
     category_key: str,
+    has_matched_investment: bool = False,
 ) -> bool:
     if category_key in TRANSFER_OUT_SPENDING_SUBCATEGORIES:
+        return True
+    if has_matched_investment:
         return True
 
     blob = _text_blob(
@@ -134,8 +137,11 @@ def _looks_like_card_payment(
     original_description: str | None,
     description_raw: str | None,
     category_key: str,
+    has_matched_transfer: bool = False,
 ) -> bool:
     if category_key.startswith("LOAN_PAYMENTS"):
+        return True
+    if has_matched_transfer:
         return True
     # Credit-side payment posting on the card account (money moving onto the card).
     if (account_type or "").lower() == "credit" and amount < 0:
@@ -160,6 +166,8 @@ def classify_cash_flow_txn(
     counterparties: list[dict[str, Any]] | None = None,
     account_type: str | None = None,
     account_subtype: str | None = None,
+    has_matched_transfer: bool = False,
+    has_matched_investment: bool = False,
 ) -> CashFlowRole:
     """
     Classify a transaction for Cash Flow.
@@ -180,6 +188,7 @@ def classify_cash_flow_txn(
             original_description=original_description,
             description_raw=description_raw,
             category_key=category_key,
+            has_matched_transfer=has_matched_transfer,
         ):
             return "transfer"
         if is_excluded_from_income(category_key):
@@ -194,6 +203,7 @@ def classify_cash_flow_txn(
         original_description=original_description,
         description_raw=description_raw,
         category_key=category_key,
+        has_matched_transfer=has_matched_transfer,
     ):
         return "transfer"
 
@@ -205,6 +215,7 @@ def classify_cash_flow_txn(
         counterparties=counterparties,
         transaction_code=transaction_code,
         category_key=category_key,
+        has_matched_investment=has_matched_investment,
     ):
         return "investments"
 
@@ -251,4 +262,6 @@ def classify_orm_transaction(txn: Any, account: Any | None = None) -> CashFlowRo
         counterparties=extra.get("counterparties"),
         account_type=getattr(acct, "type", None) if acct is not None else None,
         account_subtype=getattr(acct, "subtype", None) if acct is not None else None,
+        has_matched_transfer=getattr(txn, "transfer_match_transaction_id", None) is not None,
+        has_matched_investment=getattr(txn, "transfer_match_investment_txn_id", None) is not None,
     )

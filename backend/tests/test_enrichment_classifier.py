@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from app.enrichment import apply_enrichment_fields, extract_plaid_enrichment, parse_enrichment_json
-from app.txn_classifier import classify_cash_flow_txn
+from app.txn_classifier import classify_cash_flow_txn, classify_orm_transaction
 
 
 def test_extract_plaid_enrichment_keeps_payment_meta_and_codes():
@@ -166,3 +166,69 @@ def test_classifier_generic_internal_transfer_stays_transfer():
         account_type="depository",
     )
     assert role == "transfer"
+
+
+def test_matched_transfer_forces_transfer_role_with_no_text_cues():
+    # No category, no merchant text cues at all — only the persisted match
+    # tells us this is a transfer.
+    role = classify_cash_flow_txn(
+        amount=500,
+        merchant="Unlabeled ACH",
+        account_type="depository",
+        has_matched_transfer=True,
+    )
+    assert role == "transfer"
+
+
+def test_matched_transfer_forces_transfer_role_on_inflow_leg():
+    # The receiving leg (e.g. a plain bank-to-bank transfer landing in
+    # checking) would otherwise default to "income" with no other signal.
+    role = classify_cash_flow_txn(
+        amount=-500,
+        merchant="Unlabeled ACH",
+        account_type="depository",
+        has_matched_transfer=True,
+    )
+    assert role == "transfer"
+
+
+def test_matched_investment_forces_investments_role_with_no_text_cues():
+    role = classify_cash_flow_txn(
+        amount=500,
+        merchant="Unlabeled ACH",
+        account_type="depository",
+        has_matched_investment=True,
+    )
+    assert role == "investments"
+
+
+class _FakeAccount:
+    def __init__(self, type_=None, subtype=None):
+        self.type = type_
+        self.subtype = subtype
+
+
+class _FakeTxn:
+    def __init__(self, **kwargs):
+        self.amount = kwargs.get("amount")
+        self.category_user = kwargs.get("category_user")
+        self.category_plaid = kwargs.get("category_plaid")
+        self.category_plaid_detailed = kwargs.get("category_plaid_detailed")
+        self.merchant = kwargs.get("merchant")
+        self.original_description = kwargs.get("original_description")
+        self.transaction_code = kwargs.get("transaction_code")
+        self.enrichment_json = kwargs.get("enrichment_json")
+        self.transfer_match_transaction_id = kwargs.get("transfer_match_transaction_id")
+        self.transfer_match_investment_txn_id = kwargs.get("transfer_match_investment_txn_id")
+
+
+def test_classify_orm_transaction_reads_transfer_match_column():
+    txn = _FakeTxn(amount=500, merchant="Robinhood", transfer_match_transaction_id=42)
+    role = classify_orm_transaction(txn, account=_FakeAccount(type_="depository"))
+    assert role == "transfer"
+
+
+def test_classify_orm_transaction_reads_investment_match_column():
+    txn = _FakeTxn(amount=500, merchant="Robinhood", transfer_match_investment_txn_id=7)
+    role = classify_orm_transaction(txn, account=_FakeAccount(type_="depository"))
+    assert role == "investments"
