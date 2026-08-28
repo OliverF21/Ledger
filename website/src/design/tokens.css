@@ -218,9 +218,9 @@ body {
   filter: drop-shadow(0 50px 90px rgba(0, 0, 0, 0.58));
 }
 
-.macbook-scene {
-  perspective: 1800px;
-  perspective-origin: 50% 40%;
+.walk-laptop {
+  transform-style: preserve-3d;
+  will-change: transform;
 }
 
 .macbook {
@@ -238,7 +238,7 @@ body {
 .macbook-bezel {
   position: relative;
   border-radius: 18px 18px 10px 10px;
-  padding: 11px 11px 16px;
+  padding: 12px 11px 22px;
   background:
     linear-gradient(180deg, var(--mb-lid-hi) 0%, var(--mb-lid) 38%, var(--mb-lid-lo) 100%);
   box-shadow:
@@ -286,8 +286,8 @@ body {
   z-index: 1;
   transform-style: preserve-3d;
   transform-origin: top center;
-  transform: rotateX(76deg);
-  margin-top: -2px;
+  transform: rotateX(64deg);
+  margin-top: -1px;
 }
 
 .macbook-hinge {

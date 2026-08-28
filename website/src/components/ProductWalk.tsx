@@ -156,7 +156,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
     >
       <div
         ref={stageRef}
-        className="sticky top-0 flex min-h-[100dvh] items-stretch overflow-hidden"
+        className="sticky top-0 flex min-h-[100dvh] items-stretch overflow-x-clip"
       >
         <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-center items-center gap-8 px-5 pt-20 sm:px-8 lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] lg:gap-6 lg:pt-10">
           <div className="relative z-10 min-h-[11rem] max-w-[34rem] lg:min-h-[22rem]">
@@ -206,8 +206,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
 
           <div
             ref={laptopRef}
-            className="relative z-20 w-full origin-center lg:origin-[70%_40%]"
-            style={{ transformStyle: "preserve-3d" }}
+            className="walk-laptop relative z-20 w-full origin-center lg:origin-[70%_40%]"
           >
             <MacBook>
               <div className="relative h-full w-full bg-[var(--canvas)]">
