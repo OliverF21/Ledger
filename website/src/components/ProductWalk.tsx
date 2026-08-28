@@ -25,8 +25,6 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
   const reduce = useReducedMotion();
   const sectionRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const copyRef = useRef<HTMLDivElement>(null);
-  const cardsRef = useRef<HTMLDivElement>(null);
   const laptopRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const [cardsOn, setCardsOn] = useState(false);
@@ -37,8 +35,6 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
     const ctx = gsap.context(() => {
       const section = sectionRef.current!;
       const laptop = laptopRef.current!;
-      const copy = copyRef.current;
-      const cards = cardsRef.current;
 
       gsap.set(laptop, {
         rotateY: -18,
@@ -47,9 +43,14 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
         yPercent: 4,
         scale: 1.04,
       });
-      gsap.set(cards, { opacity: 0, y: 20 });
 
-      const tl = gsap.timeline({
+      gsap.to(laptop, {
+        rotateY: -11,
+        rotateX: 6,
+        xPercent: 6,
+        yPercent: 2,
+        scale: 1,
+        ease: "none",
         scrollTrigger: {
           trigger: section,
           start: "top top",
@@ -61,57 +62,6 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             setCardsOn(self.progress > HERO_END * 0.55);
           },
         },
-      });
-
-      tl.to(
-        laptop,
-        {
-          rotateY: -11,
-          rotateX: 6,
-          xPercent: 6,
-          yPercent: 2,
-          scale: 1,
-          ease: "none",
-          duration: HERO_END,
-        },
-        0,
-      );
-
-      if (copy) {
-        tl.to(
-          copy,
-          {
-            opacity: 0,
-            y: -28,
-            pointerEvents: "none",
-            ease: "none",
-            duration: HERO_END * 0.85,
-          },
-          0,
-        );
-      }
-      if (cards) {
-        tl.to(
-          cards,
-          { opacity: 1, y: 0, ease: "none", duration: HERO_END * 0.5 },
-          HERO_END * 0.45,
-        );
-      }
-
-      const mm = gsap.matchMedia();
-      mm.add("(max-width: 1023px)", () => {
-        if (!copy) return;
-        tl.to(
-          copy,
-          {
-            height: 0,
-            overflow: "hidden",
-            margin: 0,
-            ease: "none",
-            duration: HERO_END * 0.85,
-          },
-          0,
-        );
       });
     }, stageRef);
 
@@ -133,8 +83,14 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
         className="sticky top-0 flex min-h-[100dvh] items-stretch overflow-x-clip"
       >
         <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-center items-center gap-8 px-5 pt-20 sm:px-8 lg:grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] lg:gap-10 lg:pt-10">
-          <div className="relative z-10 min-h-[16rem] max-w-[36rem] lg:min-h-[26rem]">
-            <div ref={copyRef} className={reduce ? "" : undefined}>
+          <div className="relative z-10 max-w-[36rem] lg:min-h-[26rem]">
+            <div
+              className={
+                reduce || !showCards
+                  ? "relative"
+                  : "pointer-events-none invisible absolute inset-0"
+              }
+            >
               <h1 className="text-[clamp(2.4rem,6.2vw,4.35rem)] font-bold leading-[0.98] tracking-[-0.055em]">
                 {site.hero.lines.map((line) => (
                   <span key={line} className="block">
@@ -159,11 +115,12 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             </div>
 
             <div
-              ref={cardsRef}
               className={
                 reduce
                   ? "mt-10 flex flex-col gap-4"
-                  : "absolute inset-0 hidden lg:block"
+                  : showCards
+                    ? "relative"
+                    : "pointer-events-none invisible absolute inset-0"
               }
               aria-live="polite"
             >
@@ -176,8 +133,10 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
                 : scenes.map((scene, i) => (
                     <div
                       key={scene.key}
-                      className={`walk-card absolute inset-0 flex items-center ${
-                        showCards && i === active ? "walk-card-active" : ""
+                      className={`walk-card ${
+                        showCards && i === active
+                          ? "walk-card-active relative"
+                          : "absolute inset-0"
                       }`}
                     >
                       <article className="liquid-glass walk-card-panel w-full p-7 sm:p-8">
@@ -228,14 +187,6 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
               </div>
             </MacBook>
           </div>
-
-          {!reduce && (
-            <div className="relative z-10 lg:hidden">
-              <article className="liquid-glass p-6">
-                <SceneCopy scene={scenes[active]} index={active} />
-              </article>
-            </div>
-          )}
         </div>
       </div>
     </section>
