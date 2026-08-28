@@ -251,11 +251,13 @@ Progress is **not** inferred from leftover income, and **not** a spend-style bud
 
 Plaid (and Cash Flow) can tell you a row is a savings transfer (`TRANSFER_OUT_SAVINGS`, savings-account subtype, or a user category like “Savings”). They cannot tell you *which goal* that transfer serves. One HYSA often funds an emergency fund, a vacation sinking fund, and unallocated cash at once. Linking the whole account balance to a single goal would mis-count.
 
-**Savings labels (new tag type, not a spend category).** Creating a goal creates a bucket label (e.g. `Vacation`, `Emergency fund`). On a transfer, the user can attach that label — same $500 ACH stays a savings/transfer for Cash Flow and Budgets, and *also* counts toward the Vacation goal. Do **not** reuse `category_user` for this: a spend category of “Vacation” would leak into Budgets and spending rollups. Labels live on a separate field (e.g. `goal_id` / split lines).
+**Savings labels (new tag type, not a spend category).** Creating a goal creates a bucket label (e.g. `Vacation`, `Emergency fund`). On a transfer, the user can attach that label. Do **not** reuse `category_user` for this: a spend category of “Vacation” would leak into Budgets and spending rollups. Labels live on a separate field (e.g. `goal_id` / split lines).
+
+**Cash Flow uses the same labels as named allocation sinks.** A $500 transfer tagged Vacation is a **Vacation** ribbon, not generic Savings. A brokerage transfer tagged Retirement is **Retirement**, not generic Investments. Unlabeled savings/investment transfers still fall into the generic **Savings** / **Investments** nodes. Residual leftover (income − spend − labeled allocations) stays **Unallocated** — never a goal. Clicking a named sink lists the labeled transfers (same rows the Goals tab counts).
 
 **Attribution:** flag a transfer (or a split of one) with a savings label. Progress = opening `current_amount` + labeled inflows − labeled withdrawals. Unlabeled savings transfers stay generic Cash Flow “Savings,” not goal progress.
 
-**Goals tab:** each bucket shows target, labeled-to-date, planned $/mo, and TVM months remaining. Example: tag a $500 savings transfer “Vacation” → Vacation card ticks up $500.
+**Goals tab:** each bucket shows target, labeled-to-date, planned $/mo, and TVM months remaining. Example: tag a $500 savings transfer “Vacation” → Vacation card ticks up $500 **and** Cash Flow shows Vacation $500 that month.
 
 That is the only honest “savings budget”: planned monthly contribution vs labeled transfers this month — not a `Budget` ceiling.
 
@@ -403,7 +405,7 @@ After Phase 3:
 | Surface | Role vs goals planning |
 | --- | --- |
 | **MCP + Claude** | Conversational planning (Phase 1 tools); later can suggest labels / goals |
-| **Cash Flow** | Surplus and (later) generic Savings vs Invest allocations — unlabeled |
+| **Cash Flow** | Spend categories + **named goal sinks** (Vacation, …) for labeled transfers; unlabeled Savings/Investments; leftover Unallocated |
 | **Budgets** | Spending caps; cuts free capacity; not the goal itself |
 | **Transactions** | User attaches a **savings label** (goal bucket) on a transfer; optional split |
 | **Goals tab** | Target, labeled progress, planned $/mo, TVM remaining |
@@ -424,9 +426,9 @@ Budgets answer: “Am I overspending a category?”
 3. **Linked balances:** **locked** — do not auto-fill a goal from a whole account. One savings account can back several buckets. Progress comes from **user-flagged transfers** (plus optional opening `current_amount`). Account subtype / `TRANSFER_OUT_SAVINGS` only classifies the row as savings, not as a specific goal.
 4. **Multiple concurrent goals:** split capacity pro-rata, priority order, or leave allocation entirely to Claude’s narrative?
 5. **UI surface:** **locked** — Phase 2 includes a **Goals tab**. Claude remains the planning conversationalist (Phase 1 tools); the tab is where labeled transfer progress lives.
-6. **Cash-flow dependency:** ship Phase 1 on residual surplus now, or wait for Savings/Investments sinks so “invest plan” uses real investment transfers?
+6. **Cash-flow dependency:** **locked** — Phase 1 keeps planning on residual surplus. Once labels exist, Cash Flow **replaces generic Savings/Investments with the goal label** when a transfer is tagged; unlabeled rows keep the generic sink. Residual leftover is Unallocated, never a goal.
 
-**Recommendation:** ship Phase 1 on residual surplus immediately; treat Savings vs Investments allocation as an enhancement when that cash-flow spec lands. Keep debt simple (0% interest math) until demand appears. Phase 2 adds persisted goals, **savings labels on transfers**, and a **Goals tab**. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback. Goal progress is labeled transfers per bucket, not a Savings spend budget and not a whole-account link.
+**Recommendation:** ship Phase 1 on residual surplus immediately. Phase 2 adds persisted goals, **savings labels on transfers**, a **Goals tab**, and Cash Flow **named sinks** from those labels (generic Savings/Investments only as unlabeled fallback). Keep debt simple (0% interest math) until demand appears. Capacity uses `min(current, lookback)`. Auto-load capacity when Claude omits `assumed_monthly_capacity`. Defer `chart_goal_plan` / standalone `projected_balance`. Match spend cuts by `category_key` with display-name fallback. Goal progress is labeled transfers per bucket, not a Savings spend budget and not a whole-account link.
 
 ---
 
@@ -447,7 +449,8 @@ Budgets answer: “Am I overspending a category?”
 
 - Goals can be listed and progress reported from labeled transfers + opening amount.
 - Progress math matches the same planner assumptions stored on the goal.
-- Savings labels are distinct from spend categories; tagging a transfer does not change Budgets/Cash Flow category rollups.
+- Savings labels are distinct from spend categories; tagging a transfer does not change Budgets spend rollups.
+- Cash Flow shows labeled transfers as named sinks (e.g. Vacation); unlabeled savings/investments stay generic; leftover is Unallocated.
 - Goals tab shows per-bucket progress (e.g. $500 tagged Vacation).
 
 ### Phase 3
