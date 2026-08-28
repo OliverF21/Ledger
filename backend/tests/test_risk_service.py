@@ -5,6 +5,7 @@ import os
 from datetime import date, timedelta
 from decimal import Decimal
 
+import numpy as np
 from cryptography.fernet import Fernet
 
 # risk_service imports get_cached_risk_free_rate -> app_config -> app.security,
@@ -19,7 +20,11 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.models import Account, BalanceSnapshot, Base, Holding, Item, MarketPrice, Security, User  # noqa: E402
-from app.services.risk_service import MIN_BACKTEST_DATA_POINTS, build_risk_metrics  # noqa: E402
+from app.services.risk_service import (  # noqa: E402
+    MIN_BACKTEST_DATA_POINTS,
+    _backtest_portfolio_log_returns,
+    build_risk_metrics,
+)
 
 
 @pytest.fixture
@@ -289,3 +294,26 @@ def test_backtest_insufficient_history_returns_empty(db_session, account):
     assert data.var_horizons == []
     assert data.var_data_points < MIN_BACKTEST_DATA_POINTS
     assert data.volatility_pct is None
+
+
+def test_backtest_log_returns_keep_equity_weekend_move(db_session):
+    # Union of BTC (has Saturday) and SPY (weekday only): Saturday is NaN for
+    # SPY. Naive shift(1) makes Monday/SaturdayNaN = NaN, so SPY's Friday→Monday
+    # move disappears and Monday is BTC-only. Previous-valid close must keep it.
+    fri, sat, mon = date(2026, 1, 2), date(2026, 1, 3), date(2026, 1, 5)
+    db_session.add(MarketPrice(ticker="SPY", price_date=fri, close_price=100))
+    db_session.add(MarketPrice(ticker="SPY", price_date=mon, close_price=102))
+    db_session.add(MarketPrice(ticker="BTC", price_date=fri, close_price=10))
+    db_session.add(MarketPrice(ticker="BTC", price_date=sat, close_price=10.5))
+    db_session.add(MarketPrice(ticker="BTC", price_date=mon, close_price=10.8))
+    db_session.commit()
+
+    series = _backtest_portfolio_log_returns(
+        db_session, ["SPY", "BTC"], {"SPY": 0.5, "BTC": 0.5}, fri, mon,
+    )
+
+    assert mon in list(series.index)
+    expected_mon = 0.5 * np.log(102 / 100) + 0.5 * np.log(10.8 / 10.5)
+    assert series.loc[mon] == pytest.approx(expected_mon)
+    assert sat in list(series.index)
+    assert series.loc[sat] == pytest.approx(np.log(10.5 / 10))

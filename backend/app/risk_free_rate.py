@@ -38,7 +38,7 @@ def parse_fred_csv(text: str) -> float | None:
     return latest
 
 
-def get_cached_risk_free_rate(db: Session) -> float:
+def fetch_and_cache_risk_free_rate(db: Session) -> float:
     """
     Fetch the latest 3-month T-bill yield from FRED and cache it in app_config
     so a transient network failure doesn't block risk-metric calculations.

@@ -162,7 +162,7 @@ def test_classifier_generic_internal_transfer_stays_transfer():
         category_plaid="TRANSFER_OUT",
         category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
         merchant="Online Transfer",
-        original_description="TRANSFER TO SAVINGS",
+        original_description="TRANSFER TO CHECKING",
         account_type="depository",
     )
     assert role == "transfer"

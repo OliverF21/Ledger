@@ -136,7 +136,7 @@ def sync_market_data_job():
     """
     try:
         from app.database import SessionLocal
-        from app.risk_free_rate import get_cached_risk_free_rate
+        from app.risk_free_rate import fetch_and_cache_risk_free_rate
         from app.services.price_sync_service import sync_market_prices
 
         db = SessionLocal()
@@ -147,7 +147,7 @@ def sync_market_data_job():
                 price_stats.get("tickers_synced"),
                 price_stats.get("rows_upserted"),
             )
-            rate = get_cached_risk_free_rate(db)
+            rate = fetch_and_cache_risk_free_rate(db)
             logger.info(f"Risk-free rate refreshed: {rate}%")
         finally:
             db.close()

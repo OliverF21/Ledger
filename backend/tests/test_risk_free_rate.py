@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from app.models import AppConfig, Base  # noqa: E402
 from app.risk_free_rate import (  # noqa: E402
     DEFAULT_RISK_FREE_RATE_PCT,
-    get_cached_risk_free_rate,
+    fetch_and_cache_risk_free_rate,
     get_cached_risk_free_rate,
     parse_fred_csv,
 )
@@ -58,7 +58,7 @@ def test_fetch_and_cache_risk_free_rate_stores_and_returns_value(db_session, mon
 
     monkeypatch.setattr(rfr_module.requests, "get", lambda url, timeout: _FakeResponse(SAMPLE_CSV))
 
-    rate = get_cached_risk_free_rate(db_session)
+    rate = fetch_and_cache_risk_free_rate(db_session)
     assert rate == 5.23
     assert get_cached_risk_free_rate(db_session) == 5.23
 
@@ -71,5 +71,5 @@ def test_fetch_and_cache_risk_free_rate_falls_back_on_network_error(db_session, 
 
     monkeypatch.setattr(rfr_module.requests, "get", _raise)
 
-    rate = get_cached_risk_free_rate(db_session)
+    rate = fetch_and_cache_risk_free_rate(db_session)
     assert rate == DEFAULT_RISK_FREE_RATE_PCT
