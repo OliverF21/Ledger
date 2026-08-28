@@ -148,44 +148,121 @@ const SP500_SECTORS: Record<string, number> = {
   'Communication Services': 9, Industrials: 8, 'Consumer Defensive': 6, Energy: 4,
 }
 
+/** Weights the optimizer demo uses for both the current and suggested books. */
+const OPTIMIZER_TICKERS = [
+  { ticker: 'VTI', current_weight_pct: 46.7, suggested_weight_pct: 38.2, current_dollar: 91309.68, suggested_dollar: 74680.35 },
+  { ticker: 'VOO', current_weight_pct: 21.6, suggested_weight_pct: 26.4, current_dollar: 42254.85, suggested_dollar: 51625.37 },
+  { ticker: 'AAPL', current_weight_pct: 14.3, suggested_weight_pct: 11.8, current_dollar: 27948, suggested_dollar: 23074.98 },
+  { ticker: 'NVDA', current_weight_pct: 2.8, suggested_weight_pct: 6.9, current_dollar: 5401.2, suggested_dollar: 13493 },
+  { ticker: 'BND', current_weight_pct: 9.7, suggested_weight_pct: 14.4, current_dollar: 18988.8, suggested_dollar: 28159.29 },
+  { ticker: 'SCHD', current_weight_pct: 0.3, suggested_weight_pct: 2.3, current_dollar: 499.57, suggested_dollar: 4497.67 },
+]
+
 /**
  * Frontier + reference cloud for the optimizer panel. Shapes a plausible
  * concave frontier and a Dirichlet-ish cloud beneath it so the panel can be
  * reviewed without scipy — the real numbers come from
  * backend/app/services/optimization_service.py.
+ *
+ * The returned object matches OptimizationResponse (see Investments.tsx /
+ * useInvestmentsOptimization), not the older internal field names.
  */
-function optimizerExtras() {
-  const frontier = Array.from({ length: 40 }, (_, i) => {
+function optimizerSuggestion() {
+  const frontier_points = Array.from({ length: 40 }, (_, i) => {
     const t = i / 39
     const vol = 6 + t * 16
-    return { volatility_pct: Math.round(vol * 100) / 100, return_pct: Math.round((5 + 17 * Math.sqrt(t) + t * 2) * 100) / 100, sharpe: null }
+    return { volatility_pct: Math.round(vol * 100) / 100, return_pct: Math.round((5 + 17 * Math.sqrt(t) + t * 2) * 100) / 100 }
   })
-  const scatter = Array.from({ length: 600 }, (_, i) => {
+  const random_portfolios = Array.from({ length: 80 }, (_, i) => {
     const t = noise(i * 1.7)
     const vol = 5 + t * 20
     const ceiling = 5 + 17 * Math.sqrt((vol - 6) / 16 > 0 ? (vol - 6) / 16 : 0) + 2
+    const ret = ceiling - noise(i * 3.1) * 12
     return {
       volatility_pct: Math.round(vol * 100) / 100,
-      return_pct: Math.round((ceiling - noise(i * 3.1) * 12) * 100) / 100,
-      sharpe: null,
+      return_pct: Math.round(ret * 100) / 100,
+      sharpe: Math.round((ret / Math.max(vol, 0.01)) * 100) / 100,
     }
   })
+  const maxSharpeTickers = OPTIMIZER_TICKERS
+  const maxUtilityTickers = OPTIMIZER_TICKERS.map(t => ({
+    ...t,
+    suggested_weight_pct: Math.round((t.suggested_weight_pct * 0.92 + 1.4) * 10) / 10,
+    suggested_dollar: Math.round(t.suggested_dollar * 1.08 * 100) / 100,
+  }))
   return {
-    frontier,
-    scatter,
-    current_point: { volatility_pct: 14.24, return_pct: 12.4, sharpe: 0.94 },
-    max_sharpe_point: { volatility_pct: 12.86, return_pct: 15.1, sharpe: 1.21 },
-    max_utility_point: { volatility_pct: 17.4, return_pct: 18.2, sharpe: 1.08 },
-    sectors: [
-      { name: 'Technology', current_weight_pct: 17.1, sp_reference_pct: 32 },
-      { name: 'Financial Services', current_weight_pct: 9.4, sp_reference_pct: 14 },
-      { name: 'Healthcare', current_weight_pct: 6.2, sp_reference_pct: 10 },
-      { name: 'Unclassified', current_weight_pct: 67.3, sp_reference_pct: null },
+    tickers: OPTIMIZER_TICKERS,
+    current_expected_return_pct: 12.4,
+    current_volatility_pct: 14.24,
+    current_sharpe: 0.94,
+    suggested_expected_return_pct: 15.1,
+    suggested_volatility_pct: 12.86,
+    suggested_sharpe: 1.21,
+    data_points: 248,
+    insufficient_data: false,
+    advanced_enabled: false,
+    position_cap_pct: 10,
+    cap_relaxed: null,
+    objectives: [
+      { name: 'max_sharpe', tickers: maxSharpeTickers, expected_return_pct: 15.1, volatility_pct: 12.86, sharpe: 1.21 },
+      { name: 'max_quadratic_utility', tickers: maxUtilityTickers, expected_return_pct: 18.2, volatility_pct: 17.4, sharpe: 1.08 },
     ],
-    ticker_sectors: { AAPL: 'Technology', NVDA: 'Technology', VTI: 'Unclassified', VOO: 'Unclassified', BND: 'Unclassified', SCHD: 'Unclassified' },
-    infeasible: false,
+    frontier_points,
+    random_portfolios,
+    sector_breakdown: [
+      { sector: 'Technology', weight_pct: 17.1, floor_pct: 0, cap_pct: 100 },
+      { sector: 'Financial Services', weight_pct: 9.4, floor_pct: 0, cap_pct: 100 },
+      { sector: 'Healthcare', weight_pct: 6.2, floor_pct: 0, cap_pct: 100 },
+      { sector: 'Unclassified', weight_pct: 67.3, floor_pct: 0, cap_pct: 100 },
+    ],
+    clip_log: [],
   }
 }
+
+const GOALS = [
+  {
+    id: 1,
+    name: 'Emergency fund',
+    kind: 'emergency_fund',
+    kind_label: 'Emergency fund',
+    target_amount: 18000,
+    opening_amount: 8000,
+    labeled_in: 2400,
+    labeled_out: 0,
+    progress: 10400,
+    remaining: 7600,
+    monthly_contribution: 800,
+    annual_return: 0.04,
+    target_date: null,
+    status: 'active',
+    color: '#82a9f2',
+    months_remaining: 10,
+    months_exact: 9.5,
+    projected_end_month: 'Jun 2027',
+    percent_funded: 57.8,
+  },
+  {
+    id: 2,
+    name: 'Japan trip',
+    kind: 'sinking_fund',
+    kind_label: 'Sinking fund',
+    target_amount: 4500,
+    opening_amount: 500,
+    labeled_in: 1200,
+    labeled_out: 0,
+    progress: 1700,
+    remaining: 2800,
+    monthly_contribution: 350,
+    annual_return: 0,
+    target_date: '2027-03-01',
+    status: 'active',
+    color: '#63cfcc',
+    months_remaining: 8,
+    months_exact: 8,
+    projected_end_month: 'Apr 2027',
+    percent_funded: 37.8,
+  },
+]
 
 /** path (without query) → JSON body. Matched longest-prefix-first. */
 function routes(url: URL): unknown | undefined {
@@ -315,6 +392,9 @@ function routes(url: URL): unknown | undefined {
         total_spent: BUDGETS.reduce((s, b) => s + b.spent, 0),
       }
 
+    case '/api/goals':
+      return { goals: GOALS }
+
     case '/api/subscriptions':
       return {
         subscriptions: [
@@ -408,25 +488,16 @@ function routes(url: URL): unknown | undefined {
       }
 
     case '/api/investments/risk/optimize':
-      return {
-        ...optimizerExtras(),
-        tickers: [
-          { ticker: 'VTI', current_weight_pct: 46.7, suggested_weight_pct: 38.2 },
-          { ticker: 'VOO', current_weight_pct: 21.6, suggested_weight_pct: 26.4 },
-          { ticker: 'AAPL', current_weight_pct: 14.3, suggested_weight_pct: 11.8 },
-          { ticker: 'NVDA', current_weight_pct: 2.8, suggested_weight_pct: 6.9 },
-          { ticker: 'BND', current_weight_pct: 9.7, suggested_weight_pct: 14.4 },
-          { ticker: 'SCHD', current_weight_pct: 0.3, suggested_weight_pct: 2.3 },
-        ],
-        current_expected_return_pct: 12.4,
-        current_volatility_pct: 14.24,
-        current_sharpe: 0.94,
-        suggested_expected_return_pct: 15.1,
-        suggested_volatility_pct: 12.86,
-        suggested_sharpe: 1.21,
-        data_points: 248,
-        insufficient_data: false,
-      }
+      return optimizerSuggestion()
+
+    case '/api/investments/optimization-settings':
+      return { advanced_enabled: false, position_cap_pct: 10, concentration_strength: 0.5 }
+
+    case '/api/investments/sector-constraints':
+      return []
+
+    case '/api/investments/ticker-constraints':
+      return []
 
     case '/api/investments/risk/sector-reference':
       return { weights: SP500_SECTORS }
@@ -447,7 +518,14 @@ function routes(url: URL): unknown | undefined {
       return { auto_sync: true, sync_hour: 6 }
 
     case '/api/settings/advisor-config':
-      return { enabled: false, prompt: '', model: 'claude-sonnet-4-5' }
+      return {
+        configured: true,
+        service_key: 'ledger_demo_key_8f3a',
+        config_snippet: '{ "mcpServers": { "ledger": { "command": "uv", "args": ["run", "mcp"] } } }',
+        enabled: true,
+        prompt: '',
+        model: 'claude-sonnet-4-5',
+      }
 
     case '/api/settings/weekly-email':
       return { enabled: false, day: 'monday', email: null }
