@@ -182,6 +182,11 @@ function txnInitials(merchant: string, amount: number) {
   return '??'
 }
 
+function formatChartDate(iso: string) {
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 function formatTxnDate(iso: string) {
   const d = new Date(iso + 'T00:00:00')
   const today = new Date()
@@ -244,6 +249,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
   )
   const [hoveredSlice, setHoveredSlice] = useState<number | null>(null)
   const [selectedSlice, setSelectedSlice] = useState<number | null>(null)
+  const [hoveredNetWorth, setHoveredNetWorth] = useState<{ date: string; value: number } | null>(null)
   const [expandedAssetGroups, setExpandedAssetGroups] = useState<Set<AssetGroup>>(() => new Set())
   const [syncRefresh, setSyncRefresh] = useState(0)
   useOnSyncComplete(useCallback(() => setSyncRefresh(n => n + 1), []))
@@ -390,12 +396,14 @@ export default function Overview({ onNavigate }: OverviewProps) {
         <div className="glass-card p-3 short:p-3.5 tall:p-4 min-w-0 min-h-0 overflow-hidden flex flex-col">
           <div className="flex justify-between items-start">
             <div>
-              <div className="text-[12px] text-ledger-text-faint font-medium">Net Worth</div>
+              <div className="text-[12px] text-ledger-text-faint font-medium">
+                {hoveredNetWorth ? formatChartDate(hoveredNetWorth.date) : 'Net Worth'}
+              </div>
               <div className="text-[26px] short:text-[24px] tall:text-[28px] font-bold letter-spacing-[-0.02em] mt-[2px] tabular-nums leading-tight">
-                {nwLoading ? '—' : `$${fmt(nwData?.current_net_worth ?? 0)}`}
+                {nwLoading ? '—' : `$${fmt(hoveredNetWorth ? hoveredNetWorth.value : nwData?.current_net_worth ?? 0)}`}
               </div>
               {!nwLoading && nwData && nwData.snapshots.length >= 2 && nwData.change_amount !== 0 && (
-                <div className="flex items-center gap-[6px] mt-[4px]">
+                <div className={`flex items-center gap-[6px] mt-[4px] transition-opacity ${hoveredNetWorth ? 'opacity-0' : 'opacity-100'}`}>
                   {nwData.change_pct !== 0 && (
                     <span className={`inline-flex items-center gap-[3px] text-[11.5px] font-semibold px-[6px] py-[2px] rounded-[6px] ${
                       nwData.change_pct >= 0
@@ -437,7 +445,16 @@ export default function Overview({ onNavigate }: OverviewProps) {
               <div className="h-full flex items-center justify-center text-[12.5px] text-ledger-text-faintest">Loading…</div>
             ) : nwData && nwData.snapshots.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={nwData.snapshots.map(s => ({ date: s.date, value: s.total }))}>
+                <AreaChart
+                  data={nwData.snapshots.map(s => ({ date: s.date, value: s.total }))}
+                  onMouseMove={(state: any) => {
+                    const point = state?.activePayload?.[0]?.payload
+                    if (state?.isTooltipActive && point) {
+                      setHoveredNetWorth({ date: point.date, value: point.value })
+                    }
+                  }}
+                  onMouseLeave={() => setHoveredNetWorth(null)}
+                >
                   <defs>
                     <linearGradient id="colorNetWorth" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#5b8def" stopOpacity={0.3} />
@@ -448,11 +465,18 @@ export default function Overview({ onNavigate }: OverviewProps) {
                   <XAxis dataKey="date" hide />
                   <YAxis hide domain={['auto', 'auto']} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px' }}
-                    formatter={(val: number) => [`$${fmt(val)}`, 'Net Worth']}
-                    cursor={false}
+                    content={() => null}
+                    cursor={{ stroke: '#5b8def', strokeWidth: 1, strokeDasharray: '3 3' }}
                   />
-                  <Area type="monotone" dataKey="value" stroke="#5b8def" strokeWidth={2.5} fill="url(#colorNetWorth)" dot={nwData.snapshots.length === 1} />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#5b8def"
+                    strokeWidth={2.5}
+                    fill="url(#colorNetWorth)"
+                    dot={nwData.snapshots.length === 1}
+                    activeDot={{ r: 4, fill: '#5b8def', stroke: '#0d0f14', strokeWidth: 2 }}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (

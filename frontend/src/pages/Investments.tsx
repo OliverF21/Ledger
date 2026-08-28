@@ -70,6 +70,7 @@ export default function Investments() {
   const { transactions, loading: txnsLoading } = useInvestmentTransactions(6)
   const [historyRange, setHistoryRange] = useState<'6M' | '1Y'>('6M')
   const { data: history, loading: historyLoading } = useInvestmentsHistory(historyRange === '6M' ? 6 : 12)
+  const [hoveredHistory, setHoveredHistory] = useState<{ date: string; value: number } | null>(null)
   const { data: risk, loading: riskLoading } = useInvestmentsRisk(365)
   const { data: optimization, loading: optimizationLoading } = useInvestmentsOptimization(365)
   const [allocationView, setAllocationView] = useState<AllocationView>('security')
@@ -178,7 +179,16 @@ export default function Investments() {
           ) : (
             <div className="h-[240px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={history.snapshots}>
+                <AreaChart
+                  data={history.snapshots}
+                  onMouseMove={(state: any) => {
+                    const point = state?.activePayload?.[0]?.payload
+                    if (state?.isTooltipActive && point) {
+                      setHoveredHistory({ date: point.date, value: point.total })
+                    }
+                  }}
+                  onMouseLeave={() => setHoveredHistory(null)}
+                >
                   <defs>
                     <linearGradient id="investmentHistoryFill" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#5b8def" stopOpacity={0.28} />
@@ -206,8 +216,17 @@ export default function Investments() {
                     contentStyle={{ backgroundColor: '#11141a', border: '1px solid #1c2029', borderRadius: '8px' }}
                     labelFormatter={d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     formatter={(val: number) => [`$${fmt(val)}`, 'Value']}
+                    cursor={{ stroke: '#5b8def', strokeWidth: 1, strokeDasharray: '3 3' }}
                   />
-                  <Area type="monotone" dataKey="total" stroke="#5b8def" strokeWidth={2.5} fill="url(#investmentHistoryFill)" dot={history.snapshots.length === 1} />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#5b8def"
+                    strokeWidth={2.5}
+                    fill="url(#investmentHistoryFill)"
+                    dot={history.snapshots.length === 1}
+                    activeDot={{ r: 4, fill: '#5b8def', stroke: '#0d0f14', strokeWidth: 2 }}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -216,9 +235,11 @@ export default function Investments() {
           {!historyLoading && history && history.snapshots.length > 0 && (
             <div className="grid grid-cols-3 gap-2.5 mt-3 pt-3 border-t border-ledger-border-subtle">
               <div className="glass-chip px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">Current</div>
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-ledger-text-faintest">
+                  {hoveredHistory ? formatActivityDate(hoveredHistory.date) : 'Current'}
+                </div>
                 <div className="text-[15px] font-bold tabular-nums mt-[2px]">
-                  ${fmt(history.snapshots[history.snapshots.length - 1]?.total ?? 0)}
+                  ${fmt(hoveredHistory ? hoveredHistory.value : history.snapshots[history.snapshots.length - 1]?.total ?? 0)}
                 </div>
               </div>
               <div className="glass-chip px-3 py-2">
