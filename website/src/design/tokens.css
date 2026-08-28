@@ -230,15 +230,6 @@ body {
   min-height: 16rem;
 }
 
-@media (min-width: 1024px) {
-  .macbook-3d,
-  .macbook-3d-fallback {
-    aspect-ratio: 4 / 3.6;
-    min-height: clamp(22rem, 72vh, 36rem);
-    width: min(108%, 52rem);
-  }
-}
-
 .macbook-3d-canvas {
   width: 100% !important;
   height: 100% !important;

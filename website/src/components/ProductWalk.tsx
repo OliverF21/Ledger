@@ -152,7 +152,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
         ref={stageRef}
         className="walk-stage flex min-h-[100dvh] items-stretch overflow-x-clip"
       >
-        <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-center items-center gap-8 px-5 pt-[calc(var(--nav-h)+1.25rem)] sm:px-8 lg:grid-cols-[minmax(0,0.64fr)_minmax(0,1.36fr)] lg:gap-5 lg:pt-[calc(var(--nav-h)+0.5rem)]">
+        <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 content-center items-center gap-8 px-5 pt-[calc(var(--nav-h)+1.25rem)] sm:px-8 lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] lg:gap-6 lg:pt-[calc(var(--nav-h)+0.5rem)]">
           <div className="relative z-10 min-h-[11rem] max-w-[34rem] lg:min-h-[22rem]">
             <div ref={copyRef}>
               <h1 className="text-[clamp(2.4rem,6.2vw,4.35rem)] font-bold leading-[0.98] tracking-[-0.055em]">
@@ -206,7 +206,7 @@ export function ProductWalk({ release }: { release: LatestRelease }) {
             )}
           </div>
 
-          <div className="walk-laptop relative z-20 w-full lg:-mr-4 lg:justify-self-end">
+          <div className="walk-laptop relative z-20 w-full">
             <MacBook progressRef={progressRef} freeze={freeze} />
           </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useLayoutEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import {
   Environment,
   Lightformer,
@@ -27,49 +27,17 @@ type Pose = {
   pitch: number;
   roll: number;
   lid: number;
-  scale: number;
 };
 
-function smooth(progress: number) {
-  const t = THREE.MathUtils.clamp(progress, 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
-/** Desktop: start turned toward the viewer with the screen dominant, ease into the scroll walk. */
 function poseAt(progress: number): Pose {
-  const e = smooth(progress);
+  const t = THREE.MathUtils.clamp(progress, 0, 1);
+  const e = t * t * (3 - 2 * t);
   return {
-    yaw: THREE.MathUtils.lerp(-0.14, -0.04, e),
-    pitch: THREE.MathUtils.lerp(0.3, 0.14, e),
-    roll: THREE.MathUtils.lerp(-0.018, 0, e),
-    lid: THREE.MathUtils.lerp(-0.055, -0.035, e),
-    scale: THREE.MathUtils.lerp(1.1, 1.0, e),
+    yaw: THREE.MathUtils.lerp(-0.52, -0.08, e),
+    pitch: THREE.MathUtils.lerp(0.16, 0.035, e),
+    roll: THREE.MathUtils.lerp(-0.035, 0, e),
+    lid: THREE.MathUtils.lerp(-0.2, -0.075, e),
   };
-}
-
-function CameraRig({
-  progressRef,
-  freeze,
-}: {
-  progressRef: MutableRefObject<number>;
-  freeze: boolean;
-}) {
-  const { camera } = useThree();
-
-  useFrame(() => {
-    const e = smooth(freeze ? 1 : progressRef.current);
-    const cam = camera as THREE.PerspectiveCamera;
-    cam.position.set(
-      0,
-      THREE.MathUtils.lerp(5.52, 5.18, e),
-      THREE.MathUtils.lerp(11.8, 13.6, e),
-    );
-    cam.fov = THREE.MathUtils.lerp(19.5, 22, e);
-    cam.lookAt(0, THREE.MathUtils.lerp(5.02, 4.86, e), 0);
-    cam.updateProjectionMatrix();
-  });
-
-  return null;
 }
 
 function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
@@ -119,7 +87,12 @@ function Screen({ progressRef }: { progressRef: MutableRefObject<number> }) {
     <group>
       <mesh renderOrder={1}>
         <planeGeometry args={[13.28, 8.28]} />
-        <meshBasicMaterial ref={backMat} toneMapped={false} transparent opacity={0} />
+        <meshBasicMaterial
+          ref={backMat}
+          toneMapped={false}
+          transparent
+          opacity={0}
+        />
       </mesh>
       <mesh position={[0, 0, 0.001]} renderOrder={2}>
         <planeGeometry args={[13.28, 8.28]} />
@@ -179,15 +152,14 @@ function LaptopBody({
     rig.current.rotation.x = next.pitch;
     rig.current.rotation.z = next.roll;
     lid.current.rotation.x = next.lid;
-    rig.current.scale.setScalar(next.scale);
   });
 
   return (
     <group
       ref={rig}
-      position={[0, 0.12, 0]}
+      position={[0, 0.2, 0]}
       rotation={[rest.pitch, rest.yaw, rest.roll]}
-      scale={rest.scale}
+      scale={0.92}
     >
       <RoundedBox args={[14.42, 0.36, 9.96]} radius={0.09} smoothness={6} position={[0, 0.18, 0]}>
         <meshPhysicalMaterial color="#6e727a" {...aluminum} />
@@ -238,8 +210,20 @@ function Lights() {
   return (
     <>
       <hemisphereLight args={["#c5d2e6", "#0a0c10", 0.55]} />
-      <spotLight position={[6, 11, 8]} angle={0.55} penumbra={1} intensity={1.35} color="#eef2f7" />
-      <spotLight position={[-6.5, 5, 6]} angle={0.75} penumbra={1} intensity={0.45} color="#8eadd8" />
+      <spotLight
+        position={[6, 11, 8]}
+        angle={0.55}
+        penumbra={1}
+        intensity={1.35}
+        color="#eef2f7"
+      />
+      <spotLight
+        position={[-6.5, 5, 6]}
+        angle={0.75}
+        penumbra={1}
+        intensity={0.45}
+        color="#8eadd8"
+      />
       <directionalLight position={[2, 4, -7]} intensity={0.35} color="#d5dde8" />
       <Environment resolution={256}>
         <Lightformer intensity={1.2} position={[0, 5, -2]} scale={[12, 2.4, 1]} />
@@ -263,16 +247,15 @@ export function MacBookCanvas({
       className="macbook-3d-canvas"
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       dpr={[1, 1.75]}
-      camera={{ fov: 19.5, position: [0, 5.52, 11.8], near: 0.1, far: 80 }}
+      camera={{ fov: 32, position: [0, 4.6, 26], near: 0.1, far: 80 }}
       frameloop={freeze ? "demand" : "always"}
       onCreated={({ camera, gl }) => {
-        camera.lookAt(0, 5.02, 0);
+        camera.lookAt(0, 2.15, 0);
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 0.88;
         gl.setClearColor(0x000000, 0);
       }}
     >
-      <CameraRig progressRef={progressRef} freeze={freeze} />
       <Lights />
       <LaptopBody progressRef={progressRef} freeze={freeze} />
       <GroundShadow />
