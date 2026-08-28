@@ -42,8 +42,8 @@ interface SuggestData {
 }
 
 const PALETTE = [
-  '#5b8def', '#4fc4c4', '#8a7df0', '#4ec38a', '#d9a85b',
-  '#e7705f', '#f0a87d', '#7fb0ff', '#a8d8a8', '#c084fc',
+  '#82a9f2', '#63cfcc', '#a196fa', '#74d8a8', '#e6bd79',
+  '#f4907f', '#f4a97f', '#95c8ff', '#a3dfc0', '#b9a8ff',
 ]
 
 interface SuggestPanelProps {
@@ -325,7 +325,7 @@ function SuggestPanel({ month, onClose, onApplied }: SuggestPanelProps) {
           <button
             onClick={handleApply}
             disabled={applying || selected.size === 0}
-            className="bg-ledger-accent text-ledger-accent-on rounded-[9px] px-[18px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity disabled:opacity-40"
+            className="solid-cta rounded-[9px] px-[18px] py-[9px] font-semibold text-[13px] disabled:opacity-40"
           >
             {applying ? 'Applying…' : `Apply ${selected.size} budget${selected.size !== 1 ? 's' : ''}`}
           </button>
@@ -448,7 +448,7 @@ function BudgetModal({ month, editing, onClose, onSaved }: ModalProps) {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="mt-[4px] w-full bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="mt-[4px] w-full solid-cta rounded-[9px] py-[9px] font-semibold text-[13px] disabled:opacity-50"
           >
             {saving ? 'Saving…' : editing ? 'Save changes' : 'Add budget'}
           </button>
@@ -474,7 +474,7 @@ function OnboardingPrompt({ onSuggest, onDismiss }: { onSuggest: () => void; onD
         <div className="flex flex-col gap-[10px] w-full">
           <button
             onClick={onSuggest}
-            className="w-full bg-ledger-accent text-ledger-accent-on rounded-[10px] py-[11px] font-semibold text-[13px] hover:opacity-90 transition-opacity"
+            className="w-full solid-cta rounded-[10px] py-[11px] font-semibold text-[13px] transition-opacity"
           >
             Suggest budgets from my income
           </button>
@@ -586,7 +586,7 @@ export default function Budgets() {
 
       {/* Summary bar */}
       <div className="glass-card p-[22px]">
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto_auto] gap-[24px] items-center">
+        <div className="grid grid-cols-[1fr_1fr_1fr_auto_auto_auto] gap-[18px] items-center">
           <div>
             <div className="text-[12.5px] text-ledger-text-faint">Total budget</div>
             <div className="text-[25px] font-bold mt-[6px] tabular-nums">
@@ -623,7 +623,7 @@ export default function Budgets() {
           </button>
           <button
             onClick={() => setShowModal(true)}
-            className="bg-ledger-accent text-ledger-accent-on rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity whitespace-nowrap"
+            className="solid-cta rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] whitespace-nowrap"
           >
             + Add budget
           </button>
@@ -661,8 +661,8 @@ export default function Budgets() {
                   {isVirtual
                     ? <span className="text-ledger-text-secondary text-[11px] px-[6px] py-[2px] rounded-[4px] bg-ledger-inset shrink-0">Unbudgeted</span>
                     : isOver
-                      ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(231,112,95,0.1)] shrink-0">Over</span>
-                      : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(78,195,138,0.1)] shrink-0">On track</span>
+                      ? <span className="text-ledger-negative text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(244,144,127,0.13)] border border-[rgba(244,144,127,0.28)] shrink-0">Over</span>
+                      : <span className="text-ledger-positive text-[11px] px-[6px] py-[2px] rounded-[4px] bg-[rgba(120,220,170,0.13)] border border-[rgba(120,220,170,0.28)] shrink-0">On track</span>
                   }
                   {!isVirtual && (
                     <div className="flex items-center gap-[6px] shrink-0">
@@ -726,7 +726,7 @@ export default function Budgets() {
                 <div className="h-[7px] rounded-[4px] bg-ledger-track overflow-hidden mb-[10px]">
                   <div
                     className="h-full rounded-[4px] transition-all"
-                    style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: isOver ? '#e7705f' : budget.color }}
+                    style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: isOver ? '#f4907f' : budget.color }}
                   />
                 </div>
 

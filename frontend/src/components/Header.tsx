@@ -1,10 +1,18 @@
+import type { ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useSync } from '../hooks/useSync'
+import { Eyebrow } from './ui/primitives'
 
 interface HeaderProps {
+  /** Uppercase micro-label above the title — today's date, or the section. */
+  eyebrow: string
   title: string
-  subtitle: string
   name?: string
+  /** Screen-specific controls (a month picker, a filter) rendered to the left
+   *  of Sync. Keeps each page's own state where it belongs while still
+   *  landing in the header cluster the design calls for. */
+  controls?: ReactNode
+  onOpenSettings?: () => void
 }
 
 /** Up to two initials from a name: "Oliver Fichte" → "OF", "ofichte" → "O". */
@@ -16,7 +24,18 @@ function initials(name?: string): string {
   return (first + last).toUpperCase()
 }
 
-export default function Header({ title, subtitle, name }: HeaderProps) {
+function openSettingsScreen() {
+  const settingsNav = document.querySelector('[data-nav-settings]') as HTMLButtonElement | null
+  settingsNav?.click()
+}
+
+/**
+ * Page header. Sits directly on the aurora rather than in a bar of its own —
+ * the eyebrow/title pair on the left, the action cluster on the right, and
+ * nothing between them. Sync is the one solid-white surface here, which is
+ * what makes it read as the primary action without needing an accent colour.
+ */
+export default function Header({ eyebrow, title, name, controls, onOpenSettings }: HeaderProps) {
   const { syncing: isSyncing, sync } = useSync()
 
   const handleSync = async () => {
@@ -32,42 +51,40 @@ export default function Header({ title, subtitle, name }: HeaderProps) {
     }
   }
 
+  const goToSettings = onOpenSettings ?? openSettingsScreen
+
   return (
-    <header className="glass-header px-5 short:px-6 tall:px-7 py-3 short:py-[14px] tall:py-[18px] flex items-center justify-between shrink-0">
-      <div>
-        <h1 className="text-lg font-bold tracking-tight">{title}</h1>
-        <p className="text-sm text-ledger-text-faint mt-0.5">{subtitle}</p>
+    <header className="flex items-start justify-between gap-4 pt-[2px] pl-[2px] pr-1 shrink-0">
+      <div className="min-w-0">
+        <Eyebrow>{eyebrow}</Eyebrow>
+        <h1 className="mt-[5px] text-[24px] font-bold tracking-[-0.035em] leading-none truncate">
+          {title}
+        </h1>
       </div>
 
-      <div className="flex items-center gap-2.5">
-        <button
-          onClick={() => {
-            const settingsNav = document.querySelector('[data-nav-settings]') as HTMLButtonElement
-            if (settingsNav) settingsNav.click()
-          }}
-          className="flex items-center gap-1.5 glass-chip text-ledger-text-primary px-3.5 py-2 font-semibold text-sm cursor-pointer hover:brightness-110 transition-all"
-        >
-          Link Account
-        </button>
+      <div className="flex items-center gap-[9px] shrink-0">
+        {controls}
 
         <button
+          type="button"
           onClick={handleSync}
           disabled={isSyncing}
-          className="flex items-center gap-1.5 bg-ledger-accent text-ledger-accent-on border-none rounded-lg px-3.5 py-2 font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          className="solid-cta rounded-[11px] flex items-center gap-[7px] h-[34px] px-[15px] text-[12.5px] font-semibold whitespace-nowrap"
         >
-          <RefreshCw
-            className={`w-4 h-4 flex-shrink-0 ${isSyncing ? 'animate-spin' : ''}`}
-            strokeWidth={2.2}
-          />
-          {isSyncing ? 'Syncing...' : 'Sync'}
+          <RefreshCw className={`w-[13px] h-[13px] shrink-0 ${isSyncing ? 'animate-spin' : ''}`} strokeWidth={2.2} />
+          {isSyncing ? 'Syncing…' : 'Sync'}
         </button>
 
         <button
-          onClick={() => {
-            const settingsNav = document.querySelector('[data-nav-settings]') as HTMLButtonElement
-            if (settingsNav) settingsNav.click()
+          type="button"
+          onClick={goToSettings}
+          aria-label="Open settings"
+          className="w-[34px] h-[34px] rounded-full flex items-center justify-center text-[12px] font-bold text-white hover:brightness-110 transition-[filter]"
+          style={{
+            background: 'linear-gradient(150deg, rgba(255,255,255,0.26), rgba(255,255,255,0.06))',
+            border: '1px solid rgba(255,255,255,0.26)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55)',
           }}
-          className="w-9 h-9 rounded-full bg-gradient-to-br from-[#3a4252] to-[#222632] flex items-center justify-center text-sm font-bold text-[#cdd2da] hover:opacity-80 transition-opacity cursor-pointer"
         >
           {initials(name)}
         </button>

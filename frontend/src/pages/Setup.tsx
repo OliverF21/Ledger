@@ -6,7 +6,7 @@ import {
 import { alphaColor } from '../utils/color'
 
 // The same Transportation blue used behind the Login card.
-const BLUE = '#5b8def'
+const BLUE = '#82a9f2'
 
 type Step = 'welcome' | 'byok' | 'plaid' | 'import'
 
@@ -163,7 +163,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 </p>
                 <button
                   onClick={() => { window.location.hash = ''; setStep('welcome') }}
-                  className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors"
+                  className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[rgba(255,255,255,0.07)] transition-colors"
                 >
                   Back to Welcome
                 </button>
@@ -196,7 +196,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={handleImport}
                   disabled={importing || !sourceDir.trim()}
-                  className="w-full bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="w-full solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
                 >
                   {importing ? 'Importing…' : 'Import'}
                 </button>
@@ -221,7 +221,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
 
             <button
               onClick={() => setStep('plaid')}
-              className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 transition-opacity"
+              className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold transition-opacity"
             >
               Get started
             </button>
@@ -274,14 +274,14 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={goToImport}
                   disabled={byokSaving}
-                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[rgba(255,255,255,0.07)] transition-colors disabled:opacity-50"
                 >
                   Skip for now
                 </button>
                 <button
                   onClick={handleByokContinue}
                   disabled={byokSaving}
-                  className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="flex-1 solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
                 >
                   {byokSaving ? 'Saving…' : 'Continue'}
                 </button>
@@ -347,7 +347,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
               <button
                 onClick={handleTest}
                 disabled={testing}
-                className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                className="w-full glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[rgba(255,255,255,0.07)] transition-colors disabled:opacity-50"
               >
                 {testing ? 'Testing…' : 'Test connection'}
               </button>
@@ -356,14 +356,14 @@ export default function Setup({ onDone }: { onDone: () => void }) {
                 <button
                   onClick={handleSkip}
                   disabled={skipping || saving}
-                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[#161a21] transition-colors disabled:opacity-50"
+                  className="flex-1 glass-chip rounded-[9px] py-[9px] text-[13px] font-semibold text-ledger-text-primary hover:bg-[rgba(255,255,255,0.07)] transition-colors disabled:opacity-50"
                 >
                   {skipping ? 'Please wait…' : 'Skip for now'}
                 </button>
                 <button
                   onClick={handleFinish}
                   disabled={saving || skipping}
-                  className="flex-1 bg-ledger-accent text-ledger-accent-on rounded-[9px] py-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="flex-1 solid-cta rounded-[9px] py-[9px] text-[13px] font-semibold disabled:opacity-50"
                 >
                   {saving ? 'Saving…' : 'Finish'}
                 </button>

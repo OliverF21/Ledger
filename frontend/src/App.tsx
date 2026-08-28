@@ -17,8 +17,21 @@ import { useAccounts } from './hooks/useAccounts'
 import { useStartupSync } from './hooks/useSync'
 import { apiFetch, getToken, clearToken } from './api/client'
 import { getPlaidConfig } from './api/plaidConfig'
+import { VALID_SCREENS, type ScreenType } from './utils/screens'
 
 type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
+
+/** Fixed ambient background every screen sits on. Static by design — see the
+ *  note in index.css. */
+function Aurora() {
+  return (
+    <div className="aurora-root" aria-hidden>
+      <div className="aurora-blob aurora-blob-blue" />
+      <div className="aurora-blob aurora-blob-teal" />
+      <div className="aurora-blob aurora-blob-warm" />
+    </div>
+  )
+}
 
 /** Rotating gradient ring shown during the initial token check (mirrors the
  *  login page's loading state). Kept inline to avoid a shared export. */
@@ -29,7 +42,7 @@ function BootLoader() {
         className="w-[92px] h-[92px] rounded-full"
         style={{
           animation: 'ledger-ring-spin 2.4s linear infinite',
-          background: 'conic-gradient(from 0deg, #5b8def, #4fc4c4, #8a7df0, #4ec38a, #d9a85b, #e7705f, #f0a87d, #7fb0ff, #5b8def)',
+          background: 'conic-gradient(from 0deg, #82a9f2, #63cfcc, #a196fa, #74d8a8, #e6bd79, #f4907f, #95c8ff, #82a9f2)',
           WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
           mask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
         }}
@@ -39,11 +52,10 @@ function BootLoader() {
   )
 }
 
-type ScreenType = 'overview' | 'transactions' | 'spending' | 'budgets' | 'investments' | 'trends' | 'subscriptions' | 'advisor' | 'settings'
-
 interface HeaderInfo {
+  /** Uppercase micro-label above the page title. */
+  eyebrow: string
   title: string
-  subtitle: string
 }
 
 function greeting(): string {
@@ -53,19 +65,25 @@ function greeting(): string {
   return 'Good Evening'
 }
 
+/** Eyebrow names the section, the title says what you're looking at — so the
+ *  two never repeat the same word. */
 const screenHeaders: Record<ScreenType, HeaderInfo> = {
-  overview:     { title: greeting(),        subtitle: '' },
-  transactions: { title: 'Transactions',    subtitle: '' },
-  spending:     { title: 'Cash Flow',       subtitle: '' },
-  budgets:      { title: 'Budgets',         subtitle: '' },
-  investments:  { title: 'Investments',     subtitle: 'Portfolio holdings & activity' },
-  trends:       { title: 'Trends',          subtitle: 'Spending patterns over time' },
-  subscriptions:{ title: 'Subscriptions',   subtitle: 'Detected recurring charges' },
-  advisor:      { title: 'AI Advisor',      subtitle: 'Review & apply Claude’s suggestions' },
-  settings:     { title: 'Settings',        subtitle: 'Manage categories, rules & alerts' },
+  overview:     { eyebrow: 'Overview',      title: greeting() },
+  transactions: { eyebrow: 'Transactions',  title: 'Every movement' },
+  spending:     { eyebrow: 'Cash flow',     title: 'Money in, money out' },
+  budgets:      { eyebrow: 'Budgets',       title: 'This month’s limits' },
+  investments:  { eyebrow: 'Investments',   title: 'Your portfolio' },
+  trends:       { eyebrow: 'Trends',        title: 'Patterns over time' },
+  subscriptions:{ eyebrow: 'Subscriptions', title: 'Recurring charges' },
+  advisor:      { eyebrow: 'AI advisor',    title: 'Suggestions to review' },
+  settings:     { eyebrow: 'Settings',      title: 'Categories, rules & alerts' },
 }
 
-const VALID_SCREENS: ScreenType[] = ['overview', 'transactions', 'spending', 'budgets', 'investments', 'trends', 'subscriptions', 'advisor', 'settings']
+/** "Thursday, 27 August" — the Overview eyebrow is the date, not the section
+ *  name, since the title beside it is already a greeting. */
+function todayLabel(): string {
+  return new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+}
 
 function getScreenFromHash(): ScreenType {
   const hash = window.location.hash.replace('#', '') as ScreenType
@@ -74,6 +92,7 @@ function getScreenFromHash(): ScreenType {
 
 function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenType>(getScreenFromHash)
+  const [railOpen, setRailOpen] = useState(false)
   const [auth, setAuth] = useState<AuthState>('loading')
   const [userName, setUserName] = useState('')
   const [setupNeeded, setSetupNeeded] = useState<boolean | null>(null)
@@ -137,13 +156,13 @@ function App() {
 
   // Personalize the homepage greeting with the user's name when we have one.
   const header = activeScreen === 'overview'
-    ? { title: userName ? `${greeting()}, ${userName}` : greeting(), subtitle: '' }
+    ? { eyebrow: todayLabel(), title: userName ? `${greeting()}, ${userName}` : greeting() }
     : screenHeaders[activeScreen]
 
   if (auth === 'loading') {
     return (
       <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Aurora />
         <BootLoader />
       </>
     )
@@ -152,7 +171,7 @@ function App() {
   if (auth === 'unauthenticated') {
     return (
       <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Aurora />
         <Login onAuthenticated={loadMe} />
       </>
     )
@@ -161,7 +180,7 @@ function App() {
   if (auth === 'authenticated' && setupNeeded === null) {
     return (
       <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Aurora />
         <BootLoader />
       </>
     )
@@ -170,7 +189,7 @@ function App() {
   if (auth === 'authenticated' && setupNeeded) {
     return (
       <>
-        <div className="aurora-root"><div className="aurora-layer" /></div>
+        <Aurora />
         <Setup onDone={() => setSetupNeeded(false)} />
       </>
     )
@@ -207,23 +226,32 @@ function App() {
 
   return (
     <>
-      <div className="aurora-root">
-        <div className="aurora-layer" />
-      </div>
+      <Aurora />
 
-      <div className="relative z-10 h-dvh text-ledger-text-primary flex p-2 short:p-3 tall:p-4 gap-2 short:gap-3 tall:gap-4 overflow-hidden">
+      {/* The rail floats over the page (absolutely positioned inside this
+          padding box) and `<main>` clears it with an animated left margin, so
+          expanding the rail slides the content rather than reflowing it. */}
+      <div className="relative z-10 h-dvh p-[14px] overflow-hidden text-ledger-text-primary">
         <Sidebar
           activeScreen={activeScreen}
           onScreenChange={navigate}
           onSignOut={signOut}
           advisorCount={advisor.pendingCount}
           accounts={linkedAccounts.accounts}
+          open={railOpen}
+          onOpenChange={setRailOpen}
         />
 
-        <main className="flex-1 flex flex-col min-h-0 glass-shell overflow-hidden">
-          <Header title={header.title} subtitle={header.subtitle} name={userName} />
+        <main
+          className="relative z-10 h-full flex flex-col min-w-0"
+          style={{
+            marginLeft: railOpen ? 234 : 86,
+            transition: 'margin-left .28s cubic-bezier(.22,.8,.2,1)',
+          }}
+        >
+          <Header eyebrow={header.eyebrow} title={header.title} name={userName} />
 
-          <div className="flex-1 min-h-0 overflow-auto p-3 short:p-4 tall:p-5 soft-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden soft-scrollbar mt-[14px] pl-[2px] pr-1 pb-5">
             {renderScreen()}
           </div>
         </main>

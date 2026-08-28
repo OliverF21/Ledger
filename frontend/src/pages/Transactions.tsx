@@ -464,7 +464,7 @@ export default function Transactions() {
                           {new Date(txn.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
                         <td className="px-[20px] py-[11px] text-right text-[14px] font-semibold tabular-nums"
-                          style={{ color: txn.amount < 0 ? '#4ec38a' : undefined }}>
+                          style={{ color: txn.amount < 0 ? '#74d8a8' : undefined }}>
                           {txn.amount < 0 ? '+' : '−'}${Math.abs(txn.amount).toFixed(2)}
                           {txn.user_split_pct && txn.user_split_pct < 1 && (
                             <span className="ml-[5px] text-[10px] font-normal text-ledger-text-faintest">
@@ -519,7 +519,7 @@ export default function Transactions() {
                                 />
                                 <button
                                   onClick={() => handleRecategorize(txn.id, recatDraft)}
-                                  className="px-[10px] py-[7px] rounded-[8px] bg-ledger-accent text-ledger-accent-on text-[12px] font-semibold hover:opacity-90 transition-opacity"
+                                  className="px-[10px] py-[7px] rounded-[8px] solid-cta text-[12px] font-semibold transition-opacity"
                                 >
                                   Save
                                 </button>
@@ -569,7 +569,7 @@ export default function Transactions() {
                               <div className="flex gap-[6px] ml-auto">
                                 <button
                                   onClick={() => handleApplySimilar(action)}
-                                  className="px-[10px] py-[5px] rounded-[7px] bg-ledger-accent text-ledger-accent-on text-[12px] font-semibold hover:opacity-90 transition-opacity"
+                                  className="px-[10px] py-[5px] rounded-[7px] solid-cta text-[12px] font-semibold transition-opacity"
                                 >
                                   Apply
                                 </button>
@@ -726,7 +726,7 @@ export default function Transactions() {
               <button
                 onClick={() => handleSplit(splitAction.id, splitAction.draft, splitAction.originalAbs)}
                 disabled={!splitValid}
-                className="flex-1 py-[10px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+                className="flex-1 py-[10px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
               >
                 Apply split
               </button>

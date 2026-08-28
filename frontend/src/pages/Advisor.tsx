@@ -21,9 +21,9 @@ function deepLinkedId(): number | null {
 }
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
-  applied: { label: 'Applied', color: '#4ec38a' },
+  applied: { label: 'Applied', color: '#74d8a8' },
   dismissed: { label: 'Dismissed', color: '#9096a0' },
-  undone: { label: 'Undone', color: '#d9a85b' },
+  undone: { label: 'Undone', color: '#e6bd79' },
   expired: { label: 'Expired', color: '#7a808c' },
   superseded: { label: 'Superseded', color: '#7a808c' },
 }
@@ -96,7 +96,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
   }
 
   return (
-    <div className="flex flex-col gap-[24px] max-w-[860px]">
+    <div className="flex flex-col gap-4 max-w-[1000px]">
       {/* Intro */}
       <div className="glass-card p-[22px]">
         <div className="flex items-start gap-[14px]">
@@ -116,8 +116,8 @@ export default function Advisor({ advisor }: AdvisorProps) {
       </div>
 
       {actionError && (
-        <div className="glass-card p-[14px] flex items-center gap-[10px] border border-[#e7705f]/40">
-          <AlertCircle className="w-[16px] h-[16px] text-[#e7705f] flex-shrink-0" strokeWidth={2} />
+        <div className="glass-card p-[14px] flex items-center gap-[10px] border border-[#f4907f]/40">
+          <AlertCircle className="w-[16px] h-[16px] text-[#f4907f] flex-shrink-0" strokeWidth={2} />
           <span className="text-[12.5px] text-ledger-text-secondary">{actionError}</span>
         </div>
       )}
@@ -138,7 +138,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
           <button
             onClick={generateKey}
             disabled={genLoading}
-            className="bg-ledger-accent text-ledger-accent-on rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="solid-cta rounded-[9px] px-[14px] py-[9px] font-semibold text-[13px] disabled:opacity-50"
           >
             {genLoading ? 'Generating…' : 'Generate connection key'}
           </button>
@@ -270,7 +270,7 @@ export default function Advisor({ advisor }: AdvisorProps) {
                     <button
                       onClick={() => run(p.id, apply, 'Apply')}
                       disabled={busyId === p.id}
-                      className="flex items-center justify-center gap-[6px] text-[12.5px] font-semibold px-[14px] py-[7px] rounded-[8px] bg-ledger-accent text-ledger-accent-on hover:opacity-90 transition-all disabled:opacity-50"
+                      className="flex items-center justify-center gap-[6px] text-[12.5px] font-semibold px-[14px] py-[7px] rounded-[8px] solid-cta disabled:opacity-50"
                     >
                       <Check className="w-[14px] h-[14px]" strokeWidth={2.5} />
                       Apply

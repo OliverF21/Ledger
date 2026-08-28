@@ -3,9 +3,9 @@ import { apiFetch, setToken } from '../api/client'
 import { getResetOptions, requestResetCode, resetPasswordWithEmailCode, type ResetOptions } from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
 
-// The pie-chart Transportation blue (#5b8def). Rendered as a large glow that
+// The pie-chart Transportation blue (#82a9f2). Rendered as a large glow that
 // diffuses outward from behind the liquid-glass card, not a tint on the card.
-const BLUE = '#5b8def'
+const BLUE = '#82a9f2'
 
 /** Minimal ring spinner for the "checking" state (no donut chart). */
 function Spinner() {
@@ -202,7 +202,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 </div>
                 <button
                   onClick={check}
-                  className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 transition-opacity"
+                  className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold transition-opacity"
                 >
                   Re-check
                 </button>
@@ -269,7 +269,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="submit"
                   disabled={submitting || !username || !password}
-                  className="mt-[4px] w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  className="mt-[4px] w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 >
                   {submitting ? 'Please wait…' : phase === 'setup' ? 'Create account' : 'Sign in'}
                 </button>
@@ -324,7 +324,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                       setRequestingCode(false)
                     }
                   }}
-                  className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 transition-opacity"
                 >
                   {requestingCode ? 'Sending…' : `Email me a code (${resetOptions?.masked_email})`}
                 </button>
@@ -404,7 +404,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="submit"
                   disabled={submitting || !emailCode || !newPassword}
-                  className="mt-[4px] w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  className="mt-[4px] w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 >
                   {submitting ? 'Please wait…' : 'Reset password'}
                 </button>
@@ -459,7 +459,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 <button
                   type="submit"
                   disabled={submitting || !recoveryCode || !newPassword}
-                  className="mt-[4px] w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  className="mt-[4px] w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 >
                   {submitting ? 'Please wait…' : 'Reset password'}
                 </button>
@@ -505,7 +505,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 </div>
                 <button
                   onClick={continueFromReveal}
-                  className="w-full py-[11px] rounded-[10px] bg-ledger-accent text-ledger-accent-on text-[13px] font-semibold hover:opacity-90 transition-opacity"
+                  className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold transition-opacity"
                 >
                   I've saved it — Continue
                 </button>

@@ -36,7 +36,7 @@ export default function PlaidLinkButton({ onSuccess, onError }: PlaidLinkProps) 
         type="button"
         onClick={() => void start()}
         disabled={busy}
-        className="w-full bg-ledger-accent text-ledger-accent-on rounded-lg px-4 py-2 font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full ghost-add flex items-center justify-center h-10 px-4 font-semibold text-[12.5px] disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {status === 'starting'
           ? 'Opening…'

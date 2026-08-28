@@ -138,7 +138,7 @@ function stackIncomeBands(
 
 const INVESTMENTS_NODE_ID = 'Investments'
 const SAVINGS_NODE_ID = '__savings__'
-const SAVINGS_COLOR = '#4ec38a'
+const SAVINGS_COLOR = '#74d8a8'
 
 function isAllocationNode(id: string): boolean {
   return id === SAVINGS_NODE_ID || id === INVESTMENTS_NODE_ID
@@ -510,7 +510,7 @@ export default function Spending() {
                   nodeVis={nodeVis}
                   formatLabel={n => formatCategory(n.label)}
                   amountPrefix="+"
-                  amountClass="#4ec38a"
+                  amountClass="#74d8a8"
                   onHover={setHovered}
                 />
               ))}
