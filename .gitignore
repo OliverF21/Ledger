@@ -101,3 +101,5 @@ GEMINI.md
 .claude/
 example_var.py
 example_portfolio_optimization.py
+check_mcap_fallback.py
+sql csv getting.py
