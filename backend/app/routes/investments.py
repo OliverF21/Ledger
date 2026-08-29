@@ -333,6 +333,13 @@ async def refresh(db: Session = Depends(get_db)):
                 db.rollback()
                 continue
 
+        try:
+            from app.transfer_matcher import match_transfers
+            match_transfers(db)
+        except Exception:
+            import logging
+            logging.getLogger("ledger").exception("transfer matching after investments refresh failed")
+
         return RefreshResponse(refreshed_items=refreshed, holdings_upserted=total_upserted)
     except Exception as e:
         log_and_raise(e)
