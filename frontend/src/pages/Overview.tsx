@@ -32,6 +32,15 @@ function splitAmount(value: number): { dollars: string; cents: string } {
   return { dollars: `${value < 0 ? '−' : ''}$${dollars}`, cents }
 }
 
+/** Liability balances are normally >= 0 (money owed). A negative balance
+ *  means the account is in credit — render it as money owed back to you
+ *  rather than stacking a literal "−" in front of the number's own sign. */
+function fmtLiability(n: number): { text: string; credit: boolean } {
+  return n < 0
+    ? { text: `+$${fmt(Math.abs(n))}`, credit: true }
+    : { text: `−$${fmt(n)}`, credit: false }
+}
+
 interface AccountBreakdown {
   id: number
   name: string
@@ -265,6 +274,7 @@ function AccountBreakdownModal({
   onClose: () => void
 }) {
   const isAssets = kind === 'assets'
+  const liabilityTotal = fmtLiability(total)
   return (
     <div className="glass-overlay fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div
@@ -274,8 +284,12 @@ function AccountBreakdownModal({
         <div className="flex items-start justify-between mb-[18px]">
           <div>
             <h3 className="text-[15px] font-semibold">{isAssets ? 'Assets' : 'Liabilities'}</h3>
-            <div className={`mt-1 text-[20px] font-bold tracking-[-0.03em] ${isAssets ? 'text-ledger-positive-soft' : 'text-ledger-negative-soft'}`}>
-              {isAssets ? '$' : '−$'}{fmt(total)}
+            <div
+              className={`mt-1 text-[20px] font-bold tracking-[-0.03em] ${
+                isAssets || liabilityTotal.credit ? 'text-ledger-positive-soft' : 'text-ledger-negative-soft'
+              }`}
+            >
+              {isAssets ? `$${fmt(total)}` : liabilityTotal.text}
             </div>
           </div>
           <button onClick={onClose} className="text-ledger-text-faint hover:text-ledger-text-primary transition-colors">
@@ -317,7 +331,7 @@ function AccountBreakdownModal({
                 {accounts!.map(account => (
                   <div key={account.id} className="flex items-center justify-between gap-3 text-[12.5px]">
                     <span className="text-ledger-text-faint truncate">{account.name}</span>
-                    <span className="text-white/80 font-medium whitespace-nowrap">−${fmt(account.balance)}</span>
+                    <span className="text-white/80 font-medium whitespace-nowrap">{fmtLiability(account.balance).text}</span>
                   </div>
                 ))}
               </div>
@@ -374,6 +388,7 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
   const assetAccounts = nwData?.accounts.filter(a => !a.is_liability) ?? []
   const liabilityAccounts = nwData?.accounts.filter(a => a.is_liability) ?? []
   const assetGroups = groupAssetAccounts(assetAccounts)
+  const liabilitiesTotal = fmtLiability(nwData?.total_liabilities ?? 0)
 
   const budgetPct = budgetData && budgetData.total_limit > 0
     ? (budgetData.total_spent / budgetData.total_limit) * 100
@@ -476,12 +491,16 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
           <Divider />
           <BreakdownColumn
             label="Liabilities"
-            total={<span className="text-ledger-negative-soft">−${fmt(nwData?.total_liabilities ?? 0)}</span>}
+            total={
+              <span className={liabilitiesTotal.credit ? 'text-ledger-positive-soft' : 'text-ledger-negative-soft'}>
+                {liabilitiesTotal.text}
+              </span>
+            }
             labelWidth={104}
             rows={liabilityAccounts.slice(0, 3).map(account => ({
               key: account.id,
               name: account.name,
-              value: `−$${fmt(account.balance)}`,
+              value: fmtLiability(account.balance).text,
             }))}
             onExpand={() => setBreakdownModal('liabilities')}
           />
