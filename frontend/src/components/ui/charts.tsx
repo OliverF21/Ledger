@@ -10,33 +10,11 @@
  * analytical charts on Trends/Cash Flow, where its axes and tooltips earn
  * their weight.
  */
-import { useCallback, useId, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useId, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { alphaColor, mixHex } from '../../utils/color'
+import { areaLinePoints, donutArcs, nearestIndex, smoothPath, type AreaLinePadding } from './chartGeometry'
 
 /* ── Area line chart ──────────────────────────────────────────────────── */
-
-/** Catmull-Rom through the points, converted to cubic beziers. Gives the
- *  handoff's soft curve without the overshoot a naive bezier smoothing
- *  produces on a spiky series. */
-function smoothPath(points: { x: number; y: number }[]): string {
-  if (points.length === 0) return ''
-  if (points.length === 1) return `M${points[0].x} ${points[0].y}`
-
-  let d = `M${points[0].x} ${points[0].y}`
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] ?? points[i]
-    const p1 = points[i]
-    const p2 = points[i + 1]
-    const p3 = points[i + 2] ?? p2
-    // Tension 1/6 is the standard uniform Catmull-Rom → Bezier conversion.
-    const c1x = p1.x + (p2.x - p0.x) / 6
-    const c1y = p1.y + (p2.y - p0.y) / 6
-    const c2x = p2.x - (p3.x - p1.x) / 6
-    const c2y = p2.y - (p3.y - p1.y) / 6
-    d += ` C${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`
-  }
-  return d
-}
 
 export interface AreaLineHover {
   index: number
@@ -49,8 +27,13 @@ export interface AreaLineChartProps {
   color: string
   width?: number
   height?: number
-  /** Vertical inset so the curve's peaks aren't clipped by the viewBox. */
-  padding?: number
+  /** Inset so peaks aren't clipped. A number is vertical only; pass an object
+   *  for extra bottom inset when the curve sits above a breakdown row. */
+  padding?: AreaLinePadding
+  /** Epoch-ms timestamps aligned with `values`. When set, X is a time axis so
+   *  sparse snapshots (two days, then a month gap) don't stretch the quiet
+   *  pair across half the chart. */
+  times?: number[]
   /** CSS mask that fades the right edge out, so the curve dissolves under
    *  overlaid figures rather than ending on a hard stop. */
   maskImage?: string
@@ -68,6 +51,7 @@ export function AreaLineChart({
   width = 1180,
   height = 300,
   padding = 20,
+  times,
   maskImage,
   className = '',
   style,
@@ -78,27 +62,20 @@ export function AreaLineChart({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const notifiedIndex = useRef<number | null>(null)
 
-  const min = values.length === 0 ? 0 : Math.min(...values)
-  const max = values.length === 0 ? 0 : Math.max(...values)
-  // A dead-flat series would divide by zero; centre it instead.
-  const span = max - min || 1
-  const usable = height - padding * 2
-  const step = values.length > 1 ? width / (values.length - 1) : 0
-
-  const points = values.map((value, i) => ({
-    x: values.length > 1 ? i * step : width / 2,
-    y: padding + (1 - (value - min) / span) * usable,
-  }))
+  const points = useMemo(
+    () => areaLinePoints(values, width, height, padding, times),
+    [values, width, height, padding, times],
+  )
 
   const line = smoothPath(points)
   const area = `${line} L${width} ${height} L0 ${height} Z`
 
   const indexFromClientX = useCallback((clientX: number, target: HTMLElement) => {
     const rect = target.getBoundingClientRect()
-    if (rect.width <= 0 || values.length === 0) return 0
+    if (rect.width <= 0 || points.length === 0) return 0
     const t = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
-    return values.length === 1 ? 0 : Math.round(t * (values.length - 1))
-  }, [values.length])
+    return nearestIndex(points, t * width)
+  }, [points, width])
 
   const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const next = indexFromClientX(event.clientX, event.currentTarget)
@@ -136,7 +113,7 @@ export function AreaLineChart({
       >
         <defs>
           <linearGradient id={`${gradientId}-fill`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+            <stop offset="0%" stopColor={color} stopOpacity="0.14" />
             <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
           <linearGradient id={`${gradientId}-line`} x1="0" y1="0" x2="1" y2="0">
@@ -201,8 +178,6 @@ const DONUT_CY = 100
 /** ViewBox units reserved so the outer arc + hover outset never meet the clip. */
 const DONUT_PAD = 8
 const DONUT_HOVER_OUTSET = 3
-/** ~0.47% of the ring — a hair under 2° — matching the design's gap. */
-const DONUT_GAP_FRAC = 0.0047
 
 function polar(cx: number, cy: number, r: number, angle: number) {
   return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) }
@@ -257,7 +232,6 @@ export function Donut({
   children?: React.ReactNode
 }) {
   const gradientId = useId()
-  const total = slices.reduce((sum, slice) => sum + Math.max(0, slice.value), 0)
 
   const requestedOuter = radius + strokeWidth / 2
   const maxOuter = DONUT_VB / 2 - DONUT_PAD - DONUT_HOVER_OUTSET
@@ -267,16 +241,8 @@ export function Donut({
   const rMid = (rInner + rOuter) / 2
   const trackWidth = rOuter - rInner
 
-  const gapRad = 2 * Math.PI * DONUT_GAP_FRAC
-  let angle = -Math.PI / 2
-  const arcs = slices.map(slice => {
-    const fraction = total > 0 ? Math.max(0, slice.value) / total : 0
-    const sweep = fraction * 2 * Math.PI
-    const a0 = angle + gapRad / 2
-    const a1 = angle + sweep - gapRad / 2
-    angle += sweep
-    return { slice, a0, a1 }
-  })
+  const laidOut = donutArcs(slices.map(slice => slice.value))
+  const arcs = laidOut.map((arc, i) => ({ ...arc, slice: slices[i] }))
 
   const glowColor = activeIndex !== null && slices[activeIndex]
     ? slices[activeIndex].color
@@ -310,7 +276,7 @@ export function Donut({
             width: outerDisk,
             height: outerDisk,
             transform: 'translate(-50%, -50%)',
-            background: `radial-gradient(circle, ${alphaColor(glowColor, 0.24)} 0%, ${alphaColor(glowColor, 0.15)} 34%, ${alphaColor(glowColor, 0.07)} 58%, ${alphaColor(glowColor, 0)} 82%)`,
+            background: `radial-gradient(circle, ${alphaColor(glowColor, 0.08)} 0%, ${alphaColor(glowColor, 0.04)} 40%, ${alphaColor(glowColor, 0)} 72%)`,
           }}
         />
       </div>
@@ -329,7 +295,7 @@ export function Donut({
             width: coreDisk,
             height: coreDisk,
             transform: 'translate(-50%, -50%)',
-            background: `radial-gradient(circle, ${alphaColor('#bed4ff', 0.30)} 0%, ${alphaColor('#82a9f2', 0.13)} 46%, ${alphaColor('#82a9f2', 0)} 80%)`,
+            background: `radial-gradient(circle, ${alphaColor('#bed4ff', 0.08)} 0%, ${alphaColor('#82a9f2', 0.03)} 50%, ${alphaColor('#82a9f2', 0)} 78%)`,
           }}
         />
       </div>

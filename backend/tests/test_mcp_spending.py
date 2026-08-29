@@ -322,6 +322,46 @@ def test_get_spending_by_category_rolls_up_detailed_categories(db_session: Sessi
     assert result.categories[1].transaction_count == 2
 
 
+def test_monthly_summary_excludes_investment_funding_from_spending_pie(db_session: Session):
+    """Overview pie / spending totals must not treat brokerage funding as spend.
+
+    Cash Flow keeps TRANSFER_OUT_INVESTMENT_* as an allocation sink; the
+    spending aggregator used to reuse that allowlist and paint an Investments
+    slice on the category donut.
+    """
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    db_session.add(
+        Transaction(
+            account=checking,
+            merchant="Vanguard Contribution",
+            amount=Decimal("500.00"),
+            date=date(2026, 6, 15),
+            category_plaid="TRANSFER_OUT",
+            category_plaid_detailed="TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
+            pending=False,
+            removed=False,
+            hidden=False,
+        )
+    )
+    db_session.commit()
+
+    summary = build_monthly_summary(db_session, month="2026-06")
+    names = [item.name for item in summary.spending_by_category]
+    assert "Investments" not in names
+    assert "TRANSFER_OUT" not in names
+    assert summary.total_spending == 1219.0
+
+    result = get_spending_by_category(
+        db_session,
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 30),
+        top_n=10,
+    )
+    assert "Investments" not in [item.name for item in result.categories]
+    assert result.total_spending == 1219.0
+    assert result.transaction_count == 3
+
+
 def test_search_transactions_filters_by_category_and_effective_amount(db_session: Session):
     result = search_transactions(
         db_session,
@@ -403,6 +443,33 @@ def test_build_cash_flow_shows_investment_transfer_out(db_session: Session):
     assert alloc["Investments"].amount == 500.0
     assert result.total_spending == 1219.0
     assert result.savings == 3000.0 - 1219.0 - 500.0
+
+
+def test_build_cash_flow_shows_hysa_for_unlabeled_savings(db_session: Session):
+    """Unlabeled savings transfers are HYSA; leftover surplus stays Savings."""
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    db_session.add(
+        Transaction(
+            account=checking,
+            merchant="Ally Transfer",
+            amount=Decimal("400.00"),
+            date=date(2026, 6, 15),
+            category_plaid="TRANSFER_OUT",
+            category_plaid_detailed="TRANSFER_OUT_SAVINGS",
+            pending=False,
+            removed=False,
+            hidden=False,
+        )
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    alloc = {node.id: node for node in result.allocation_nodes}
+    assert alloc["__savings__"].label == "HYSA"
+    assert alloc["__savings__"].amount == 400.0
+    assert alloc["__unallocated__"].label == "Savings"
+    assert alloc["__unallocated__"].amount == 3000.0 - 1219.0 - 400.0
+    assert result.savings == alloc["__unallocated__"].amount
 
 
 def test_build_cash_flow_classifies_brokerage_ach_memo_as_investments(db_session: Session):
@@ -502,7 +569,7 @@ def test_cash_flow_sankey_data_returns_mermaid_links(
     assert result.total_income == 3000.0
     assert result.mermaid.startswith("sankey-beta")
     assert "Paycheck,Income pool,3000" in result.mermaid
-    assert any(link.target == "Unallocated" for link in result.sankey_links)
+    assert any(link.target == "Savings" for link in result.sankey_links)
     assert "<svg" in result.svg
     assert "INCOME" in result.svg
 
@@ -563,7 +630,7 @@ def test_build_cash_flow_sankey_svg_renders_income_tunnel_and_savings(db_session
 
     assert "<svg" in svg
     assert "Paycheck" in svg
-    assert "Unallocated" in svg
+    assert "Savings" in svg
     assert 'fill="url(#tg)"' in svg
     assert "Flow width represents relative amount" not in svg
     assert 'width="100%"' in svg

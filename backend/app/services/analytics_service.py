@@ -119,7 +119,7 @@ class CashFlowData:
     month: str
     total_income: float
     total_spending: float
-    savings: float  # unallocated leftover (not labeled savings transfers)
+    savings: float  # residual leftover (labeled Savings; not HYSA transfers)
     income_sources: list[CashFlowNodeItem]
     spending_categories: list[CashFlowNodeItem]
     allocation_nodes: list[CashFlowNodeItem] = field(default_factory=list)
@@ -418,7 +418,7 @@ def build_trends(db: Session, months: int = 6) -> TrendsData:
         mk = f"{txn.date.year:04d}-{txn.date.month:02d}"
         amount = float(txn.amount)
         if amount > 0:
-            if is_excluded_from_spending(_spending_category_key(txn)):
+            if not _is_consumptive_spend(txn):
                 continue
             category = _rollup_category(txn, "Uncategorized")
             bucket = spend_by_month.setdefault(mk, {})
@@ -611,9 +611,9 @@ def build_cash_flow(
         allocation_nodes.append(
             CashFlowNodeItem(
                 id="__unallocated__",
-                label="Unallocated",
+                label="Savings",
                 amount=unallocated,
-                color="#7a808c",
+                color=SAVINGS_COLOR,
                 top_transactions=[],
             )
         )
@@ -718,7 +718,7 @@ def _allocation_nodes(
         nodes.append(
             CashFlowNodeItem(
                 id=SAVINGS_NODE_ID,
-                label="Savings",
+                label="HYSA",
                 amount=round(unlabeled_savings, 2),
                 color=SAVINGS_COLOR,
                 top_transactions=_top_pool_txns(unlabeled_save_txns),
@@ -924,6 +924,20 @@ def _fetch_transaction_rows(
     )
 
 
+def _is_consumptive_spend(txn: Transaction) -> bool:
+    """True for outflows that belong on the Overview pie and spending KPIs.
+
+    Investment / retirement funding is a cash-flow allocation, not spend —
+    `is_excluded_from_spending` deliberately lets those through so Cash Flow
+    can show them as an Investments sink.
+    """
+    if float(txn.amount) <= 0:
+        return False
+    if is_excluded_from_spending(_spending_category_key(txn)):
+        return False
+    return classify_orm_transaction(txn) != "investments"
+
+
 def _aggregate_spending(
     rows: list[tuple[Transaction, str | None, str | None, str | None]],
     top_n: int | None = None,
@@ -932,10 +946,7 @@ def _aggregate_spending(
     transaction_count = 0
 
     for txn, _, _, _ in rows:
-        if float(txn.amount) <= 0:
-            continue
-
-        if is_excluded_from_spending(_spending_category_key(txn)):
+        if not _is_consumptive_spend(txn):
             continue
         # Merge subcategory overrides into PFC primaries (same as Cash Flow) so
         # Overview doesn't show duplicate truncated "Food…" / "Rent…" rows.

@@ -150,8 +150,8 @@ function isAllocationNode(id: string): boolean {
 }
 
 function allocationLabel(n: FlowNode): string {
-  if (n.id === SAVINGS_NODE_ID) return 'Savings'
-  if (n.id === UNALLOCATED_NODE_ID) return 'Unallocated'
+  if (n.id === SAVINGS_NODE_ID) return 'HYSA'
+  if (n.id === UNALLOCATED_NODE_ID) return 'Savings'
   if (n.id.startsWith('goal:')) return n.label
   return formatCategory(n.label)
 }
@@ -441,7 +441,7 @@ export default function Spending() {
             )}
             {deficit > 0
               ? <span className="text-ledger-negative font-semibold">−${fmt(deficit)} over</span>
-              : <span className="text-ledger-text-faint">Unallocated <span className="text-ledger-positive font-semibold">${fmt(unallocated)}</span></span>
+              : <span className="text-ledger-text-faint">Savings <span className="text-ledger-positive font-semibold">${fmt(unallocated)}</span></span>
             }
           </div>
         )}

@@ -27,6 +27,7 @@ from app.analytics_shared import (
     is_excluded_from_spending,
     month_bounds,
 )
+from app.txn_classifier import classify_orm_transaction
 from app.email_sender import get_resend_api_key, send_email
 from app.models import Transaction, User
 from app.routes.budgets import get_budget_items
@@ -134,6 +135,8 @@ def _spend_in_window(db: Session, start: date, end: date) -> tuple[float, dict[s
         if is_excluded_from_spending(
             category_key_for_spending_rules(t.category_user, t.category_plaid, t.category_plaid_detailed)
         ):
+            continue
+        if classify_orm_transaction(t) == "investments":
             continue
         eff = float(t.amount) * float(t.user_split_pct or 1)
         total += eff

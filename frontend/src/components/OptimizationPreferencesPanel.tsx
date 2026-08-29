@@ -380,7 +380,7 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
   }
 
   return (
-    <div className={`glass-card flex flex-col px-[22px] pt-5 pb-[18px] ${prefs.advanced_enabled ? 'max-h-[760px]' : ''} ${className}`}>
+    <div className={`glass-card flex flex-col px-[22px] pt-5 pb-[18px] min-h-0 ${className}`}>
       <div className="flex items-center justify-between shrink-0">
         <div className="text-[15px] font-bold tracking-[-0.02em]">Advanced optimization</div>
         <Toggle enabled={prefs.advanced_enabled} onToggle={() => runMutation(

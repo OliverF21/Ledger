@@ -149,8 +149,9 @@ bash desktop/scripts/build-mac.sh
 
 ## Icon
 
-`appicon.png` is the 1024×1024 source (from [Icon Kitchen](https://icon.kitchen/) or similar).
-Regenerate Tauri bundle icons with:
+`appicon.svg` is the vector source (same Lucide BookOpen mark as the sidebar logo,
+on the pale tile). `appicon.png` is the 1024×1024 raster. Regenerate Tauri
+bundle icons with:
 
 ```bash
 bash desktop/scripts/render-icons.sh

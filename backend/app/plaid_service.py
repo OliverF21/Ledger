@@ -13,9 +13,14 @@ from app.plaid_errors import raise_for_plaid_response
 
 logger = logging.getLogger(__name__)
 
+# Bound every Plaid HTTP call so a stalled socket cannot freeze the API.
+_HTTP_TIMEOUT_SECONDS = 30
+
 
 class PlaidService:
     """Real Plaid service using REST API."""
+
+    _HTTP_TIMEOUT_SECONDS = _HTTP_TIMEOUT_SECONDS
 
     @staticmethod
     def _get_headers() -> Dict[str, str]:
@@ -120,7 +125,12 @@ class PlaidService:
             }
             if access_token:
                 payload['access_token'] = access_token
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             raise_for_plaid_response(response, "Failed to create link token")
             data = response.json()
             return data['link_token'], data['hosted_link_url']
@@ -144,7 +154,12 @@ class PlaidService:
                 **PlaidService._get_credentials(),
                 'link_token': link_token,
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             raise_for_plaid_response(response, "Failed to get link session")
             return response.json()
         except ValueError:
@@ -161,7 +176,12 @@ class PlaidService:
                 **PlaidService._get_credentials(),
                 'public_token': public_token,
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             data = response.json()
             return data['access_token'], data['item_id']
@@ -177,7 +197,12 @@ class PlaidService:
                 **PlaidService._get_credentials(),
                 'access_token': access_token,
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -228,7 +253,12 @@ class PlaidService:
                 'country_codes': ['US'],
                 'options': {'include_optional_metadata': True},
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             inst = response.json().get('institution', {})
             result['name'] = inst.get('name', institution_id)
@@ -256,7 +286,12 @@ class PlaidService:
                 'country_codes': ['US'],
                 'products': ['transactions'],
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             institutions = response.json().get('institutions', [])
             name_lower = name.lower()
@@ -321,7 +356,12 @@ class PlaidService:
                 **PlaidService._get_credentials(),
                 'access_token': access_token,
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -356,7 +396,12 @@ class PlaidService:
             if cursor:
                 payload['cursor'] = cursor
 
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             raise_for_plaid_response(response, "Failed to sync transactions")
             data = response.json()
 
@@ -399,7 +444,12 @@ class PlaidService:
                     "offset": offset,
                 },
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             data = response.json()
             batch = data.get("transactions", [])
@@ -419,7 +469,12 @@ class PlaidService:
                 **PlaidService._get_credentials(),
                 'access_token': access_token,
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as e:
@@ -449,7 +504,12 @@ class PlaidService:
                     'offset': offset,
                 },
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as e:
@@ -471,7 +531,12 @@ class PlaidService:
                 **PlaidService._get_credentials(),
                 'access_token': access_token,
             }
-            response = requests.post(url, json=payload, headers=PlaidService._get_headers())
+            response = requests.post(
+                url,
+                json=payload,
+                headers=PlaidService._get_headers(),
+                timeout=_HTTP_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as e:

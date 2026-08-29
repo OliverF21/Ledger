@@ -79,6 +79,10 @@ const OVERRIDES: Record<string, string> = {
   BUSINESS_SERVICES: 'Business Services',
   GENERAL_SERVICES: 'General Services',
   'GENERAL_SERVICES.AUTOMOTIVE': 'Auto Services',
+  HYSA: 'HYSA',
+  OTHER: 'Miscellaneous',
+  'OTHER.OTHER': 'Miscellaneous',
+  Other: 'Miscellaneous',
 }
 
 const NORMALIZED_OVERRIDES: Record<string, string> = Object.fromEntries(
@@ -150,7 +154,9 @@ export function formatTransactionCategory(t: {
   ) {
     const hierarchical = hierarchicalLabelForDetailedKey(t.category_plaid_detailed)
     if (hierarchical) return hierarchical
-    return `${formatCategory(t.category_plaid)} · ${formatCategory(t.category_plaid_detailed)}`
+    const parent = formatCategory(t.category_plaid)
+    const sub = formatCategory(t.category_plaid_detailed)
+    return parent === sub ? parent : `${parent} · ${sub}`
   }
 
   const raw = displayCategory(t)
@@ -167,7 +173,7 @@ export function formatTransactionCategory(t: {
 }
 
 export function formatCategory(raw: string | null | undefined): string {
-  if (!raw) return 'Uncategorized'
+  if (!raw || !raw.trim()) return 'Uncategorized'
   const trimmed = raw.trim()
   const normalizedKey = trimmed.toUpperCase().replace(/\./g, '_')
 
@@ -189,9 +195,11 @@ export function formatCategory(raw: string | null | undefined): string {
     : /^[A-Z0-9_]+$/.test(trimmed) && trimmed.includes('_')
       ? trimmed.replace(/^[A-Z]+(?:_[A-Z]+)?(?:_[A-Z]+)?_/, '')
       : trimmed
-  return segment
+  const formatted = segment
     .toLowerCase()
     .replace(/_/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase())
     .replace(/\bAnd\b/g, '&')
+    .trim()
+  return formatted || 'Uncategorized'
 }

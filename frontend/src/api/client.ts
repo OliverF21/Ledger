@@ -33,3 +33,19 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 
   return res
 }
+
+/** Same as apiFetch, but give up after `ms` so a hung backend cannot pin
+ *  the boot spinner forever. */
+export async function apiFetchTimeout(
+  path: string,
+  init: RequestInit = {},
+  ms = 8_000,
+): Promise<Response> {
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), ms)
+  try {
+    return await apiFetch(path, { ...init, signal: ctrl.signal })
+  } finally {
+    window.clearTimeout(timer)
+  }
+}

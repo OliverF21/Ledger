@@ -128,8 +128,9 @@ export const PLAID_CATEGORIES: PlaidCategory[] = [
   { primary: 'GOVERNMENT_AND_NON_PROFIT', primaryLabel: 'Government & Non-Profit', detailed: 'GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT', label: 'Tax Payment' },
   { primary: 'GOVERNMENT_AND_NON_PROFIT', primaryLabel: 'Government & Non-Profit', detailed: 'GOVERNMENT_AND_NON_PROFIT_OTHER_GOVERNMENT_AND_NON_PROFIT', label: 'Other Government / Non-Profit' },
 
-  // Catch-all primary (common on checking / P2P)
-  { primary: 'OTHER', primaryLabel: 'Other', detailed: 'OTHER_OTHER', label: 'Other' },
+  // Catch-all primary (common on checking / P2P). "Other · Other" reads as a
+  // blank chip next to Plaid's generic icon; call it Miscellaneous.
+  { primary: 'OTHER', primaryLabel: 'Miscellaneous', detailed: 'OTHER_OTHER', label: 'Miscellaneous' },
 
   // Transportation
   { primary: 'TRANSPORTATION', primaryLabel: 'Transportation', detailed: 'TRANSPORTATION_BIKES_AND_SCOOTERS', label: 'Bikes & Scooters' },
@@ -222,13 +223,17 @@ function titleCaseSegment(segment: string): string {
     .replace(/\bAnd\b/g, '&')
 }
 
+function joinHierarchy(parent: string, sub: string): string {
+  return parent === sub ? parent : `${parent} · ${sub}`
+}
+
 /** Parent · sub label when `label` is a Plaid detailed category name. */
 export function hierarchicalLabelForCategoryLabel(label: string): string | null {
   const lower = label.trim().toLowerCase()
   for (const g of CATEGORY_GROUPS) {
     for (const sub of g.subcategories) {
       if (sub.label.toLowerCase() === lower) {
-        return `${g.label} · ${sub.label}`
+        return joinHierarchy(g.label, sub.label)
       }
     }
   }
@@ -241,12 +246,13 @@ export function hierarchicalLabelForCategoryLabel(label: string): string | null 
 export function hierarchicalLabelForDetailedKey(detailed: string): string | null {
   const normalized = detailed.trim().toUpperCase().replace(/\./g, '_')
   const entry = PLAID_CATEGORIES.find(c => c.detailed === normalized)
-  if (entry) return `${entry.primaryLabel} · ${entry.label}`
+  if (entry) return joinHierarchy(entry.primaryLabel, entry.label)
 
   for (const [primary, primaryLabel] of PRIMARY_PREFIXES) {
     const prefix = `${primary}_`
     if (normalized.startsWith(prefix)) {
-      return `${primaryLabel} · ${titleCaseSegment(normalized.slice(prefix.length))}`
+      const sub = titleCaseSegment(normalized.slice(prefix.length))
+      return sub ? joinHierarchy(primaryLabel, sub) : primaryLabel
     }
   }
   return null

@@ -15,8 +15,8 @@ import Setup from './pages/Setup'
 import { useProposals } from './hooks/useAdvisor'
 import { useAccounts } from './hooks/useAccounts'
 import { useStartupSync } from './hooks/useSync'
-import { apiFetch, getToken, clearToken } from './api/client'
-import { getPlaidConfig } from './api/plaidConfig'
+import { apiFetchTimeout, getToken, clearToken } from './api/client'
+import { LedgerLoader } from './components/ui/LedgerLoader'
 import { VALID_SCREENS, type ScreenType } from './utils/screens'
 import {
   getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl,
@@ -36,21 +36,10 @@ function Aurora() {
   )
 }
 
-/** Rotating gradient ring shown during the initial token check (mirrors the
- *  login page's loading state). Kept inline to avoid a shared export. */
 function BootLoader() {
   return (
-    <div className="relative z-10 min-h-dvh flex flex-col items-center justify-center gap-4 text-ledger-text-primary">
-      <div
-        className="w-[92px] h-[92px] rounded-full"
-        style={{
-          animation: 'ledger-ring-spin 2.4s linear infinite',
-          background: 'conic-gradient(from 0deg, #82a9f2, #63cfcc, #a196fa, #74d8a8, #e6bd79, #f4907f, #95c8ff, #82a9f2)',
-          WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
-          mask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
-        }}
-      />
-      <div className="text-[13px] text-ledger-text-faint">Loading…</div>
+    <div className="relative z-10 min-h-dvh flex items-center justify-center">
+      <LedgerLoader size="lg" />
     </div>
   )
 }
@@ -123,7 +112,7 @@ function App() {
 
   // Fetch the current user's display name; sets auth based on token validity.
   const loadMe = useCallback(() => {
-    apiFetch('/api/auth/me')
+    apiFetchTimeout('/api/auth/me')
       .then(async r => {
         if (!r.ok) { setAuth('unauthenticated'); return }
         const data = await r.json().catch(() => ({}))
@@ -166,7 +155,11 @@ function App() {
   // meaningful once authenticated; resets whenever we drop back out of auth.
   useEffect(() => {
     if (auth !== 'authenticated') { setSetupNeeded(null); return }
-    getPlaidConfig()
+    apiFetchTimeout('/api/settings/plaid-config')
+      .then(async r => {
+        if (!r.ok) throw new Error('Failed to load Plaid config')
+        return r.json()
+      })
       .then(cfg => setSetupNeeded(!cfg.wizard_done && !cfg.configured))
       .catch(() => setSetupNeeded(false))
   }, [auth])

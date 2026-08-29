@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 if [[ ! -f appicon.png ]]; then
-  echo "appicon.png missing — add a 1024×1024 source (e.g. IconKitchen ios/AppIcon~ios-marketing.png)" >&2
+  echo "appicon.png missing — rasterize appicon.svg to 1024×1024 first" >&2
   exit 1
 fi
 

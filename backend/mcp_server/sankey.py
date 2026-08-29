@@ -37,7 +37,7 @@ DEFICIT_NODE = "Deficit"
 
 
 def _right_items(flow: CashFlowData) -> list[CashFlowNodeItem]:
-    """Consumptive spend first, then named sinks / unlabeled savings / Unallocated."""
+    """Consumptive spend first, then named sinks / HYSA transfers / residual Savings."""
     return list(flow.spending_categories) + list(flow.allocation_nodes or [])
 
 
@@ -99,7 +99,7 @@ def build_cash_flow_sankey_payload(flow: CashFlowData) -> CashFlowSankeyPayload:
             mermaid_rows.append(row)
 
     for use in uses:
-        label = format_category(use.label)
+        label = _display_label(use.id, use.label)
         links.append(SankeyLink(source=INCOME_HUB, target=label, value=use.amount))
         row = _sankey_row(INCOME_HUB, label, use.amount)
         if row:
@@ -250,9 +250,9 @@ def _escape(text: str) -> str:
 
 def _display_label(node_id: str, raw_label: str) -> str:
     if node_id == SAVINGS_ID:
-        return "Savings"
+        return "HYSA"
     if node_id == UNALLOCATED_ID:
-        return "Unallocated"
+        return "Savings"
     if node_id.startswith("goal:"):
         return raw_label
     return format_category(raw_label)

@@ -162,7 +162,7 @@ _PLAID_V2_DETAILED_LABELS: dict[str, str] = {
     "GOVERNMENT_AND_NON_PROFIT_GOVERNMENT_DEPARTMENTS_AND_AGENCIES": "Government Services",
     "GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT": "Tax Payment",
     "GOVERNMENT_AND_NON_PROFIT_OTHER_GOVERNMENT_AND_NON_PROFIT": "Other Government / Non-Profit",
-    "OTHER_OTHER": "Other",
+    "OTHER_OTHER": "Miscellaneous",
     "TRANSPORTATION_BIKES_AND_SCOOTERS": "Bikes & Scooters",
     "TRANSPORTATION_GAS": "Gas",
     "TRANSPORTATION_PARKING": "Parking",
@@ -198,7 +198,7 @@ _PLAID_V2_PRIMARY_LABELS: dict[str, str] = {
     "PERSONAL_CARE": "Personal Care",
     "GENERAL_SERVICES": "Services",
     "GOVERNMENT_AND_NON_PROFIT": "Government & Non-Profit",
-    "OTHER": "Other",
+    "OTHER": "Miscellaneous",
     "TRANSPORTATION": "Transportation",
     "TRAVEL": "Travel",
     "RENT_AND_UTILITIES": "Rent & Utilities",
@@ -296,7 +296,12 @@ _PFC_PRIMARIES = (
     ("TRAVEL", "Travel"),
     ("MEDICAL", "Medical"),
     ("INCOME", "Income"),
+    ("OTHER", "Miscellaneous"),
 )
+
+
+def _join_hierarchy(parent: str, sub: str) -> str:
+    return parent if parent == sub else f"{parent} · {sub}"
 
 
 def _hierarchical_label_for_detailed_key(detailed: str) -> str | None:
@@ -306,19 +311,19 @@ def _hierarchical_label_for_detailed_key(detailed: str) -> str | None:
         for primary, primary_label in _PFC_PRIMARIES:
             prefix = f"{primary}_"
             if normalized.startswith(prefix):
-                return f"{primary_label} · {_PLAID_V2_DETAILED_LABELS[normalized]}"
+                return _join_hierarchy(primary_label, _PLAID_V2_DETAILED_LABELS[normalized])
         return _PLAID_V2_DETAILED_LABELS[normalized]
     for primary, primary_label in _PFC_PRIMARIES:
         prefix = f"{primary}_"
         if normalized.startswith(prefix):
             suffix = normalized[len(prefix):]
             sub = suffix.replace("_", " ").title().replace(" And ", " & ")
-            return f"{primary_label} · {sub}"
+            return _join_hierarchy(primary_label, sub) if sub else primary_label
     return None
 
 
 def format_category(raw: str | None) -> str:
-    if not raw:
+    if not raw or not str(raw).strip():
         return "Uncategorized"
     trimmed = raw.strip()
     normalized = trimmed.upper().replace(".", "_")

@@ -120,8 +120,8 @@ mcp = FastMCP(
         "Visual chart tools (return inline SVG images — no embed widgets):\n"
         "- chart_cash_flow / chart_sankey — ALWAYS use for cash-flow Sankey diagrams; "
         "they match the Ledger Cash Flow page. Do not redraw Mermaid from cash_flow_sankey_data. "
-        "Labeled transfers appear as named sinks (e.g. Vacation); unlabeled savings/investments "
-        "stay generic; leftover is Unallocated — never a goal.\n\n"
+        "Labeled transfers appear as named sinks (e.g. Vacation); unlabeled HYSA/investments "
+        "stay generic; leftover is Savings — never a goal.\n\n"
         "Advisor / write-intent tools (you CANNOT change the user's data):\n"
         "- propose_budget — stage a spend-budget suggestion (never a Savings spend budget)\n"
         "- propose_goal — stage a financial goal (emergency fund, sinking fund, invest, …)\n"
@@ -399,7 +399,7 @@ def get_cash_flow(
         Field(description="Calendar month in YYYY-MM format. Defaults to the current month."),
     ] = None,
 ) -> CashFlowResult:
-    """Return income sources, spending, named allocation sinks, and unallocated leftover (JSON). For Sankey diagrams use cash_flow_sankey_data instead."""
+    """Return income sources, spending, named allocation sinks, and leftover Savings (JSON). For Sankey diagrams use cash_flow_sankey_data instead."""
     result = _load_cash_flow(month)
 
     return CashFlowResult(

@@ -6,6 +6,9 @@ def test_format_category_maps_plaid_codes():
     assert format_category("RENT_AND_UTILITIES") == "Rent & Utilities"
     assert format_category("TRANSFER_IN") == "Transfer In"
     assert format_category("TRANSPORTATION_TAXIS_AND_RIDE_SHARES") == "Rideshare"
+    assert format_category("OTHER") == "Miscellaneous"
+    assert format_category("OTHER_OTHER") == "Miscellaneous"
+    assert format_category("   ") == "Uncategorized"
 
 
 def test_format_category_income_salary_hierarchical():

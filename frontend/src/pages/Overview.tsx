@@ -5,6 +5,7 @@ import { useOnSyncComplete } from '../hooks/useSync'
 import AlertsPanel from '../components/AlertsPanel'
 import {
   Eyebrow, GlassCard, ChangeBadge, Tag, ProgressBar, InitialsChip, EmptyState, LoadingRow,
+  SegmentedToggle,
 } from '../components/ui/primitives'
 import { AreaLineChart, Donut, DonutLegend, type AreaLineHover, type DonutSlice } from '../components/ui/charts'
 import { formatCategory, formatTransactionCategory, transactionDisplayIcon } from '../utils/categories'
@@ -160,6 +161,33 @@ function formatChartDate(iso: string) {
   })
 }
 
+/** In-flow size is always the live value so scrubbing can't resize this box
+ *  and fight the 6M/1Y hit target. */
+function HeroFigure({ live, display, loading }: { live: number; display: number; loading?: boolean }) {
+  const locked = splitAmount(live)
+  const shown = splitAmount(display)
+  return (
+    <div className="relative mt-2 w-max">
+      <div
+        className="invisible text-[68px] leading-[0.92] font-bold tracking-[-0.05em] whitespace-nowrap"
+        aria-hidden="true"
+      >
+        {loading ? '—' : locked.dollars}
+        {!loading && <span className="text-[34px] font-semibold tracking-[-0.025em]">{locked.cents}</span>}
+      </div>
+      <div
+        className="absolute left-0 top-0 text-[68px] leading-[0.92] font-bold tracking-[-0.05em] whitespace-nowrap"
+        style={{ textShadow: '0 0 28px rgba(200,220,255,0.14)' }}
+      >
+        {loading ? '—' : shown.dollars}
+        {!loading && (
+          <span className="text-[34px] font-semibold tracking-[-0.025em] text-white/[0.46]">{shown.cents}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Hero sub-sections ──────────────────────────────────────────────────── */
 
 /** One column of the Assets / Liabilities / This month triple beneath the
@@ -225,8 +253,8 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
 
   const monthLabel = selectedMonth ? formatMonthLabel(selectedMonth) : '—'
   const hoverSnap = hoverPoint && nwData ? nwData.snapshots[hoverPoint.index] ?? null : null
-  const netWorth = hoverSnap?.total ?? nwData?.current_net_worth ?? 0
-  const { dollars, cents } = splitAmount(netWorth)
+  const liveNetWorth = nwData?.current_net_worth ?? 0
+  const displayNetWorth = hoverSnap?.total ?? liveNetWorth
   const growthUp = (nwData?.change_amount ?? 0) >= 0
   const chartColor = growthUp ? '#74d8a8' : '#f4907f'
   const hasHistory = Boolean(nwData && nwData.snapshots.length >= 2)
@@ -269,78 +297,70 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
 
       {/* ── Hero: net worth over the drawn history curve ───────────────────
           The chart is the background of this section rather than a card of
-          its own, and a radial scrim under the figures keeps them legible
-          where the curve runs behind them. */}
+          its own. Modest bottom inset keeps the stroke above the breakdown
+          row; a radial scrim under those figures keeps the area fill from
+          competing with the numbers. */}
       <section className="relative h-[410px] shrink-0 mt-1.5 overflow-visible pr-14">
         {hasHistory && (
           <AreaLineChart
             values={nwData!.snapshots.map(s => s.total)}
+            times={nwData!.snapshots.map(s => new Date(s.date + 'T00:00:00').getTime())}
             color={chartColor}
             width={1180}
             height={300}
-            className="absolute top-[50px] z-[1] h-[268px]"
+            padding={{ top: 10, bottom: 22 }}
+            className="absolute top-[50px] z-[1] h-[260px]"
             style={{ left: -18, right: -18, width: 'calc(100% + 36px)' }}
-            maskImage="linear-gradient(90deg, #000 0%, #000 44%, rgba(0,0,0,0.25) 58%, transparent 66%)"
+            maskImage="linear-gradient(90deg, #000 0%, #000 48%, rgba(0,0,0,0.12) 62%, rgba(0,0,0,0.04) 76%, transparent 90%)"
             onHover={setHoverPoint}
           />
         )}
 
-        <div className="absolute left-[2px] top-0 z-20 pointer-events-none ledger-rise-fast">
-          <Eyebrow className="!tracking-[0.2em] !text-white/40">Net worth</Eyebrow>
-          <div
-            /* No tabular-nums: it pads the comma to a full digit cell and
-               visibly breaks "$248,910" into three chunks. */
-            className="mt-2 text-[68px] leading-[0.92] font-bold tracking-[-0.05em]"
-            style={{ textShadow: '0 0 46px rgba(200,220,255,0.3)' }}
-          >
-            {nwLoading ? '—' : dollars}
-            {!nwLoading && (
-              <span className="text-[34px] font-semibold tracking-[-0.025em] text-white/[0.46]">{cents}</span>
-            )}
+        <div
+          className="absolute left-[2px] top-0 z-30 ledger-rise-fast"
+          onPointerEnter={() => setHoverPoint(null)}
+        >
+          <div className="flex items-center gap-3">
+            <Eyebrow className="!tracking-[0.2em] !text-white/40">Net worth</Eyebrow>
+            <SegmentedToggle
+              options={[{ value: '6M', label: '6M' }, { value: '1Y', label: '1Y' }] as const}
+              value={timeRange}
+              onChange={setTimeRange}
+            />
           </div>
+          <HeroFigure live={liveNetWorth} display={displayNetWorth} loading={nwLoading} />
 
-          <div className="mt-[13px] flex items-center gap-2.5 whitespace-nowrap">
-            {hoverSnap ? (
-              <span className="text-[12.5px] text-white/40">{formatChartDate(hoverSnap.date)}</span>
-            ) : (
-              <>
-                {hasHistory && nwData!.change_amount !== 0 && (
-                  <>
-                    <ChangeBadge positive={growthUp}>
-                      {Math.abs(nwData!.change_pct).toFixed(1)}%
-                    </ChangeBadge>
-                    <span className="text-[12.5px] font-semibold" style={{ color: chartColor }}>
-                      {growthUp ? '+' : '−'}${fmt(Math.abs(nwData!.change_amount))}
-                    </span>
-                  </>
-                )}
-                <span className="text-[12.5px] text-white/40">
-                  past {timeRange === '6M' ? '6 months' : '12 months'}
-                </span>
-              </>
-            )}
-            <span className="w-px h-[13px] bg-white/[0.14]" />
-            <div className="flex gap-2.5 text-[11.5px] font-semibold pointer-events-auto">
-              {(['6M', '1Y'] as const).map(range => (
-                <button
-                  key={range}
-                  type="button"
-                  onClick={() => setTimeRange(range)}
-                  className={timeRange === range ? 'text-white' : 'text-white/[0.36] hover:text-white/85'}
-                >
-                  {range}
-                </button>
-              ))}
+          <div className="relative mt-[13px] h-[22px] w-max">
+            <div className={`flex items-center gap-2.5 whitespace-nowrap ${hoverSnap ? 'invisible' : ''}`}>
+              {hasHistory && nwData!.change_amount !== 0 && (
+                <>
+                  <ChangeBadge positive={growthUp}>
+                    {Math.abs(nwData!.change_pct).toFixed(1)}%
+                  </ChangeBadge>
+                  <span className="text-[12.5px] font-semibold" style={{ color: chartColor }}>
+                    {growthUp ? '+' : '−'}${fmt(Math.abs(nwData!.change_amount))}
+                  </span>
+                </>
+              )}
+              <span className="text-[12.5px] text-white/40">
+                past {timeRange === '6M' ? '6 months' : '12 months'}
+              </span>
             </div>
+            {hoverSnap && (
+              <span className="absolute left-0 top-0 h-[22px] flex items-center text-[12.5px] text-white/40">
+                {formatChartDate(hoverSnap.date)}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Scrim: darkens the chart behind the bottom-left breakdown only. */}
+        {/* Scrim: lifts the breakdown off the area fill without pooling a
+            near-black band against the Activity card below. */}
         <div
           className="absolute left-0 bottom-0 w-[600px] h-[200px] z-10 pointer-events-none"
           style={{
             background:
-              'radial-gradient(60% 65% at 20% 100%, rgba(8,11,15,0.92) 0%, rgba(8,11,15,0.6) 45%, rgba(8,11,15,0) 78%)',
+              'radial-gradient(70% 80% at 22% 62%, rgba(10,12,17,0.42) 0%, rgba(10,12,17,0) 72%)',
           }}
         />
 

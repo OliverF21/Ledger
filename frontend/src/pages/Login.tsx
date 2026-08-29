@@ -1,24 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiFetch, setToken } from '../api/client'
+import { apiFetch, apiFetchTimeout, setToken } from '../api/client'
+import { LedgerLoader } from '../components/ui/LedgerLoader'
 import { getResetOptions, requestResetCode, resetPasswordWithEmailCode, type ResetOptions } from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
 
 // Cool-white bloom behind the glass card — same family as the solid CTA.
 const GLOW = '#e8eef8'
-
-/** Minimal ring spinner for the "checking" state (no donut chart). */
-function Spinner() {
-  return (
-    <div
-      className="w-[34px] h-[34px] rounded-full"
-      style={{
-        animation: 'ledger-ring-spin 0.9s linear infinite',
-        border: `2px solid ${alphaColor('#ffffff', 0.22)}`,
-        borderTopColor: '#ffffff',
-      }}
-    />
-  )
-}
 
 interface SetupStatus {
   account_exists: boolean
@@ -55,7 +42,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
   const check = useCallback(() => {
     setPhase('checking')
     setError(null)
-    apiFetch('/api/setup/status')
+    apiFetchTimeout('/api/setup/status')
       .then(r => r.json())
       .then((s: SetupStatus) => {
         // Missing Plaid keys no longer block the app — they're configured in the
@@ -176,9 +163,8 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
         }}
       >
         {phase === 'checking' ? (
-          <div className="relative flex flex-col items-center gap-[16px] py-[20px]">
-            <Spinner />
-            <div className="text-[13px] text-ledger-text-faint">Loading…</div>
+          <div className="relative py-[20px]">
+            <LedgerLoader size="sm" />
           </div>
         ) : (
           <div className="relative w-full flex flex-col items-center">

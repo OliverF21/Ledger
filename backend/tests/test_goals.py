@@ -300,7 +300,7 @@ def test_cash_flow_named_sink_and_unallocated(ctx):
     names = {n["label"] for n in data["allocation_nodes"]}
     assert "Vacation" in names
     assert "Investments" in names
-    assert "Unallocated" in names
+    assert "Savings" in names
 
 
 def test_progress_uses_labels_not_opening_only(ctx):

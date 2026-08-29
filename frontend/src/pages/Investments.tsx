@@ -13,10 +13,11 @@ import {
   type ObjectiveResponse,
 } from '../hooks/useInvestments'
 import {
-  Eyebrow, GlassCard, Chip, StatTile, ChangeBadge, Tag, UnitToggle,
+  Eyebrow, GlassCard, Chip, StatTile, ChangeBadge, Tag, SegmentedToggle, UnitToggle,
   EmptyState, LoadingRow,
 } from '../components/ui/primitives'
 import { AreaLineChart, Donut, DonutLegend, type AreaLineHover, type DonutSlice } from '../components/ui/charts'
+import { visibleAllocationSlices } from '../components/allocationSlices'
 import EfficientFrontierChart, { type ObjectiveMarker } from '../components/EfficientFrontierChart'
 import OptimizationPreferencesPanel from '../components/OptimizationPreferencesPanel'
 
@@ -37,6 +38,33 @@ function splitAmount(value: number): { dollars: string; cents: string } {
   return { dollars: `${value < 0 ? '−' : ''}$${dollars}`, cents }
 }
 
+/** In-flow size is always the live value so scrubbing can't resize this box
+ *  and fight the 6M/1Y hit target. */
+function HeroFigure({ live, display, loading }: { live: number; display: number; loading?: boolean }) {
+  const locked = splitAmount(live)
+  const shown = splitAmount(display)
+  return (
+    <div className="relative mt-2 w-max">
+      <div
+        className="invisible text-[68px] leading-[0.92] font-bold tracking-[-0.05em] whitespace-nowrap"
+        aria-hidden="true"
+      >
+        {loading ? '—' : locked.dollars}
+        {!loading && <span className="text-[34px] font-semibold tracking-[-0.025em]">{locked.cents}</span>}
+      </div>
+      <div
+        className="absolute left-0 top-0 text-[68px] leading-[0.92] font-bold tracking-[-0.05em] whitespace-nowrap"
+        style={{ textShadow: '0 0 28px rgba(200,220,255,0.14)' }}
+      >
+        {loading ? '—' : shown.dollars}
+        {!loading && (
+          <span className="text-[34px] font-semibold tracking-[-0.025em] text-white/[0.46]">{shown.cents}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /** Typographic minus (U+2212), matching every other signed figure in the UI —
  *  a hyphen sits too high and too short next to tabular digits. */
 function fmtPct(n: number | null): string {
@@ -45,7 +73,7 @@ function fmtPct(n: number | null): string {
 }
 
 function formatSecurityType(t: string | null): string {
-  if (!t) return 'Other'
+  if (!t || t.toLowerCase() === 'other') return 'Miscellaneous'
   if (t.toLowerCase() === 'etf') return 'ETF'
   return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ')
 }
@@ -102,6 +130,7 @@ function buildMarkers(optimization: {
   objectives: ObjectiveResponse[]
   current_volatility_pct: number | null
   current_expected_return_pct: number | null
+  current_sharpe: number | null
 }): ObjectiveMarker[] {
   const colors: Record<string, string> = {
     max_sharpe: '#f4907f',
@@ -110,12 +139,19 @@ function buildMarkers(optimization: {
   }
   const markers: ObjectiveMarker[] = optimization.objectives
     .filter(o => o.volatility_pct != null && o.expected_return_pct != null)
-    .map(o => ({ name: o.name, volatility_pct: o.volatility_pct!, return_pct: o.expected_return_pct!, color: colors[o.name] ?? '#82a9f2' }))
+    .map(o => ({
+      name: o.name,
+      volatility_pct: o.volatility_pct!,
+      return_pct: o.expected_return_pct!,
+      sharpe: o.sharpe,
+      color: colors[o.name] ?? '#82a9f2',
+    }))
   if (optimization.current_volatility_pct != null && optimization.current_expected_return_pct != null) {
     markers.push({
       name: 'current',
       volatility_pct: optimization.current_volatility_pct,
       return_pct: optimization.current_expected_return_pct,
+      sharpe: optimization.current_sharpe,
       color: colors.current,
     })
   }
@@ -163,19 +199,6 @@ function Divider() {
   )
 }
 
-/** Keep the hero donut to Overview's ~8-slice density; fold the rest into Other
- *  so the ring still represents the full portfolio. */
-function collapseSlices(slices: DonutSlice[], limit = 8): DonutSlice[] {
-  if (slices.length <= limit) return slices
-  const head = slices.slice(0, limit - 1)
-  const rest = slices.slice(limit - 1)
-  const otherValue = rest.reduce((sum, slice) => sum + slice.value, 0)
-  return [
-    ...head,
-    { key: '__other', label: 'Other', value: otherValue, color: '#adb8cb' },
-  ]
-}
-
 /** Donut / legend cycling order from the V2 design tokens. */
 const ALLOCATION_PALETTE = [
   '#82a9f2', '#63cfcc', '#e6bd79', '#f4907f',
@@ -192,7 +215,7 @@ function buildSecurityAllocation(
 
   for (const account of accounts) {
     for (const position of account.positions) {
-      const key = position.ticker ?? position.name ?? 'Unknown'
+      const key = position.ticker?.trim() || position.name?.trim() || 'Miscellaneous'
       bySecurity.set(key, (bySecurity.get(key) ?? 0) + position.value)
     }
   }
@@ -267,7 +290,7 @@ export default function Investments() {
     [allocationData, allocationView],
   )
   const visibleAllocation = useMemo(
-    () => collapseSlices(allocationSlices),
+    () => visibleAllocationSlices(allocationSlices),
     [allocationSlices],
   )
 
@@ -311,7 +334,6 @@ export default function Investments() {
   const hoverSnap = hoverPoint && history ? history.snapshots[hoverPoint.index] ?? null : null
   const currentValue = history?.snapshots[history.snapshots.length - 1]?.total ?? summary?.total_value ?? 0
   const displayValue = hoverSnap?.total ?? currentValue
-  const { dollars, cents } = splitAmount(displayValue)
   const activeAlloc = activeSlice !== null ? visibleAllocation[activeSlice] ?? null : null
   const activeAllocShare = activeAlloc && currentValue > 0
     ? (activeAlloc.value / currentValue) * 100
@@ -325,70 +347,62 @@ export default function Investments() {
         {hasHistory && (
           <AreaLineChart
             values={history!.snapshots.map(s => s.total)}
+            times={history!.snapshots.map(s => new Date(s.date + 'T00:00:00').getTime())}
             color={chartColor}
             width={1180}
             height={300}
-            className="absolute top-[50px] z-[1] h-[268px]"
+            padding={{ top: 10, bottom: 22 }}
+            className="absolute top-[50px] z-[1] h-[260px]"
             style={{ left: -18, right: -18, width: 'calc(100% + 36px)' }}
-            maskImage="linear-gradient(90deg, #000 0%, #000 44%, rgba(0,0,0,0.25) 58%, transparent 66%)"
+            maskImage="linear-gradient(90deg, #000 0%, #000 48%, rgba(0,0,0,0.12) 62%, rgba(0,0,0,0.04) 76%, transparent 90%)"
             onHover={setHoverPoint}
           />
         )}
 
-        <div className="absolute left-[2px] top-0 z-20 pointer-events-none ledger-rise-fast">
-          <Eyebrow className="!tracking-[0.2em] !text-white/40">Portfolio value</Eyebrow>
-          <div
-            className="mt-2 text-[68px] leading-[0.92] font-bold tracking-[-0.05em]"
-            style={{ textShadow: '0 0 46px rgba(200,220,255,0.3)' }}
-          >
-            {summaryLoading ? '—' : dollars}
-            {!summaryLoading && (
-              <span className="text-[34px] font-semibold tracking-[-0.025em] text-white/[0.46]">{cents}</span>
-            )}
-          </div>
-
-          <div className="mt-[13px] flex items-center gap-2.5 whitespace-nowrap">
-            {hoverSnap ? (
-              <span className="text-[12.5px] text-white/40">{formatActivityDate(hoverSnap.date)}</span>
-            ) : (
-              <>
-                {hasHistory && history!.change_amount !== 0 && (
-                  <>
-                    <ChangeBadge positive={growthUp}>
-                      {Math.abs(history!.change_pct).toFixed(1)}%
-                    </ChangeBadge>
-                    <span className="text-[12.5px] font-semibold" style={{ color: chartColor }}>
-                      {growthUp ? '+' : '−'}${fmt(Math.abs(history!.change_amount))}
-                    </span>
-                  </>
-                )}
-                <span className="text-[12.5px] text-white/40">
-                  past {historyRange === '6M' ? '6 months' : '12 months'}
-                </span>
-              </>
-            )}
-            <span className="w-px h-[13px] bg-white/[0.14]" />
-            <div className="flex gap-2.5 text-[11.5px] font-semibold pointer-events-auto">
-              {(['6M', '1Y'] as const).map(range => (
-                <button
-                  key={range}
-                  type="button"
-                  onClick={() => setHistoryRange(range)}
-                  className={historyRange === range ? 'text-white' : 'text-white/[0.36] hover:text-white/85'}
-                >
-                  {range}
-                </button>
-              ))}
-            </div>
+        <div
+          className="absolute left-[2px] top-0 z-30 ledger-rise-fast"
+          onPointerEnter={() => setHoverPoint(null)}
+        >
+          <div className="flex items-center gap-3">
+            <Eyebrow className="!tracking-[0.2em] !text-white/40">Portfolio value</Eyebrow>
+            <SegmentedToggle
+              options={[{ value: '6M', label: '6M' }, { value: '1Y', label: '1Y' }] as const}
+              value={historyRange}
+              onChange={setHistoryRange}
+            />
             <button
               type="button"
               onClick={handleRefresh}
               disabled={refreshing}
-              className="flex items-center gap-[5px] text-[11.5px] font-semibold text-white/[0.36] hover:text-white/85 disabled:opacity-60 pointer-events-auto"
+              className="flex items-center gap-[5px] text-[11.5px] font-semibold text-white/[0.36] hover:text-white/85 disabled:opacity-60"
             >
               <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} strokeWidth={2} />
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
+          </div>
+          <HeroFigure live={currentValue} display={displayValue} loading={summaryLoading} />
+
+          <div className="relative mt-[13px] h-[22px] w-max">
+            <div className={`flex items-center gap-2.5 whitespace-nowrap ${hoverSnap ? 'invisible' : ''}`}>
+              {hasHistory && history!.change_amount !== 0 && (
+                <>
+                  <ChangeBadge positive={growthUp}>
+                    {Math.abs(history!.change_pct).toFixed(1)}%
+                  </ChangeBadge>
+                  <span className="text-[12.5px] font-semibold" style={{ color: chartColor }}>
+                    {growthUp ? '+' : '−'}${fmt(Math.abs(history!.change_amount))}
+                  </span>
+                </>
+              )}
+              <span className="text-[12.5px] text-white/40">
+                past {historyRange === '6M' ? '6 months' : '12 months'}
+              </span>
+            </div>
+            {hoverSnap && (
+              <span className="absolute left-0 top-0 h-[22px] flex items-center text-[12.5px] text-white/40">
+                {formatActivityDate(hoverSnap.date)}
+              </span>
+            )}
           </div>
         </div>
 
@@ -396,7 +410,7 @@ export default function Investments() {
           className="absolute left-0 bottom-0 w-[600px] h-[200px] z-10 pointer-events-none"
           style={{
             background:
-              'radial-gradient(60% 65% at 20% 100%, rgba(8,11,15,0.92) 0%, rgba(8,11,15,0.6) 45%, rgba(8,11,15,0) 78%)',
+              'radial-gradient(70% 80% at 22% 62%, rgba(10,12,17,0.42) 0%, rgba(10,12,17,0) 72%)',
           }}
         />
 
@@ -475,6 +489,7 @@ export default function Investments() {
                 activeIndex={activeSlice}
                 onHover={setActiveSlice}
                 formatValue={fmtWhole}
+                className="max-h-[268px] overflow-y-auto soft-scrollbar pr-1"
               />
             )}
           </div>
@@ -600,76 +615,60 @@ export default function Investments() {
       {/* Suggested allocation — Black-Litterman engine on main. */}
       {!optimizationLoading && optimization && (
         optimizationPrefs?.advanced_enabled ? (
-          <div className="flex gap-4 items-stretch">
+          <div className="flex gap-4 items-stretch h-[min(26rem,calc(100dvh-7rem))]">
             <OptimizationPreferencesPanel
-              className="w-[520px] shrink-0"
+              className="w-[420px] shrink-0 h-full min-h-0"
               prefs={optimizationPrefs}
               updatePrefs={updateOptimizationPrefs}
               onRun={handleRunOptimization}
               running={runningOptimization}
               heldTickers={optimization.tickers.map(t => t.ticker)}
             />
-            <GlassCard className="flex-1 min-w-0 flex flex-col px-6 py-5 max-h-[760px]" overflow="visible">
-              <div className="shrink-0">
-                <div className="text-[15px] font-bold tracking-[-0.02em]">Efficient frontier</div>
-                <div className="text-[12px] text-white/50 mt-2 max-w-[640px] leading-relaxed">
-                  The line is the best return available at each level of risk given your position cap ({optimization.position_cap_pct.toFixed(0)}%)
-                  and sector limits. The markers are the suggested portfolios. The faint dots are random portfolios
-                  shown only for scale — they ignore your limits.
+            <GlassCard className="flex-1 min-w-0 min-h-0 flex flex-col px-5 py-3.5 h-full" overflow="visible">
+              <div className="shrink-0 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[15px] font-bold tracking-[-0.02em]">Efficient frontier</div>
+                  <div className="text-[11.5px] text-white/50 mt-0.5 leading-snug">
+                    Best return at each risk level given your {optimization.position_cap_pct.toFixed(0)}% position cap and sector limits.
+                    Markers are suggested portfolios; faint dots are random (uncapped) for scale.
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-[22px] mt-4 shrink-0 flex-wrap">
-                <div className="flex items-center gap-[7px] text-[12px] font-semibold text-white/60">
-                  <svg width="16" height="10" viewBox="0 0 16 10"><path d="M1 8 L15 2" stroke="#82a9f2" strokeWidth="2" strokeLinecap="round" /></svg>
-                  Efficient frontier
+                <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
+                  <div className="flex items-center gap-[7px] text-[11.5px] font-semibold text-white/60">
+                    <svg width="16" height="10" viewBox="0 0 16 10"><path d="M1 8 L15 2" stroke="#82a9f2" strokeWidth="2" strokeLinecap="round" /></svg>
+                    Frontier
+                  </div>
+                  <LegendDot color="#f4907f">Max Sharpe</LegendDot>
+                  <LegendDot color="#e6bd79">Max quadratic utility</LegendDot>
+                  <LegendDot color="#adb8cb">Current</LegendDot>
                 </div>
-                <LegendDot color="#f4907f">Max Sharpe</LegendDot>
-                <LegendDot color="#e6bd79">Max quadratic utility</LegendDot>
-                <LegendDot color="#adb8cb">Current</LegendDot>
               </div>
               {runningOptimization && !showOptimizationResults ? (
-                <div className="flex items-center justify-center h-[420px] text-[12.5px] text-ledger-text-faint">
+                <div className="flex-1 min-h-0 flex items-center justify-center text-[12.5px] text-ledger-text-faint">
                   Sweeping the frontier…
                 </div>
               ) : !showOptimizationResults ? (
-                <div className="flex flex-col items-center justify-center text-center px-6 h-[420px]">
+                <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-6">
                   <div className="text-[14px] font-semibold">Set your constraints, then run</div>
                   <div className="mt-1.5 text-[12.5px] text-ledger-text-faint max-w-[380px] leading-relaxed">
                     The frontier is a constrained sweep, so it runs on demand rather than on every slider move.
                   </div>
                 </div>
               ) : optimization.insufficient_data ? (
-                <div className="flex flex-col items-center justify-center text-center px-6 h-[420px]">
+                <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-6">
                   <div className="text-[14px] font-semibold">Not enough price history</div>
                   <div className="mt-1.5 text-[12.5px] text-ledger-text-faint max-w-[380px] leading-relaxed">
                     The optimizer needs at least 30 days of daily closes across two or more priced holdings.
                   </div>
                 </div>
               ) : (
-                <>
+                <div className="flex-1 min-h-0 mt-2">
                   <EfficientFrontierChart
                     frontierPoints={optimization.frontier_points ?? []}
                     markers={buildMarkers(optimization)}
                     randomPortfolios={optimization.random_portfolios ?? []}
                   />
-                  <div className="grid grid-cols-3 gap-2.5 mt-3 shrink-0">
-                    {[
-                      { label: 'Current', ret: optimization.current_expected_return_pct, vol: optimization.current_volatility_pct, sharpe: optimization.current_sharpe },
-                      { label: 'Max Sharpe', ret: optimization.objectives.find(o => o.name === 'max_sharpe')?.expected_return_pct ?? null, vol: optimization.objectives.find(o => o.name === 'max_sharpe')?.volatility_pct ?? null, sharpe: optimization.objectives.find(o => o.name === 'max_sharpe')?.sharpe ?? null },
-                      { label: 'Max utility', ret: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.expected_return_pct ?? null, vol: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.volatility_pct ?? null, sharpe: optimization.objectives.find(o => o.name === 'max_quadratic_utility')?.sharpe ?? null },
-                    ].map(({ label, ret, vol, sharpe }) => (
-                      <div key={label} className="glass-chip px-3 py-2">
-                        <div className="text-[9.5px] uppercase tracking-[0.14em] font-semibold text-white/40">{label}</div>
-                        <div className="mt-1 text-[13px] font-bold tabular-nums">
-                          {ret != null && vol != null ? `${ret.toFixed(1)}% / ${vol.toFixed(1)}%` : '—'}
-                        </div>
-                        <div className="mt-0.5 text-[10px] text-white/40">
-                          return / vol{sharpe != null ? ` · Sharpe ${sharpe.toFixed(2)}` : ''}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
+                </div>
               )}
             </GlassCard>
           </div>

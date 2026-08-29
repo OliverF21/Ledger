@@ -5,7 +5,9 @@ Plaid Link integration endpoints.
 - GET /accounts: List linked accounts
 """
 
+import asyncio
 import os
+import threading
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +24,10 @@ from app.security import encrypt_token, decrypt_token
 from app.sync_engine import get_real_items, sync_item
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
+
+# One Plaid sync at a time. Overlapping POSTs from page refresh would otherwise
+# stack blocking HTTP calls and starve boot/auth requests.
+_sync_lock = threading.Lock()
 
 
 class LinkTokenRequest(BaseModel):
@@ -376,15 +382,22 @@ async def get_sync_status(db: Session = Depends(get_db)):
         log_and_raise(e)
 
 
-@router.post("/sync", response_model=SyncResponse)
-async def sync_transactions(db: Session = Depends(get_db)):
-    """
-    Trigger a sync of transactions for all linked items.
-    Also refreshes account balances from Plaid and takes a balance snapshot for today.
-    """
-    if not PlaidService.is_configured():
-        raise HTTPException(status_code=409, detail="Plaid is not configured. Add your keys in Settings → Plaid.")
+def _run_sync_job() -> SyncResponse:
+    """Blocking Plaid + DB work. Must not run on the asyncio event loop."""
+    if not _sync_lock.acquire(blocking=False):
+        return SyncResponse(
+            success=True,
+            message="Sync already in progress",
+            transactions_synced=0,
+            enrichment_backfilled=0,
+            failed_count=0,
+            items=[],
+        )
+
+    db = None
     try:
+        from app.database import SessionLocal
+        db = SessionLocal()
         real_items = get_real_items(db)
         total_synced = 0
         total_removed = 0
@@ -442,16 +455,33 @@ async def sync_transactions(db: Session = Depends(get_db)):
             import logging
             logging.getLogger("ledger").exception("transfer matching after plaid sync failed")
 
-        message = ", ".join(parts)
-
         return SyncResponse(
             success=failed_count == 0,
-            message=message,
+            message=", ".join(parts),
             transactions_synced=total_synced,
             enrichment_backfilled=total_backfilled,
             failed_count=failed_count,
             items=item_results,
         )
+    finally:
+        if db is not None:
+            db.close()
+        _sync_lock.release()
+
+
+@router.post("/sync", response_model=SyncResponse)
+async def sync_transactions():
+    """
+    Trigger a sync of transactions for all linked items.
+    Also refreshes account balances from Plaid and takes a balance snapshot for today.
+
+    Runs in a worker thread: Plaid's HTTP client is blocking, and doing that
+    work on the event loop freezes /api/auth/me and the loading screen.
+    """
+    if not PlaidService.is_configured():
+        raise HTTPException(status_code=409, detail="Plaid is not configured. Add your keys in Settings → Plaid.")
+    try:
+        return await asyncio.to_thread(_run_sync_job)
     except Exception as e:
         log_and_raise(e, status_code=400)
 

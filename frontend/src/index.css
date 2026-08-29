@@ -101,9 +101,12 @@ code {
   inset: 0;
   z-index: 0;
   overflow: hidden;
+  /* Flat ground + one corner wash. A page-length linear-gradient posters
+     into bands on dark OLED, and glass panels then sit on a different shade
+     than the hero above them. */
   background:
-    radial-gradient(1200px 860px at 90% -14%, rgba(178,200,236,0.22), transparent 66%),
-    linear-gradient(166deg, #101319 0%, #0a0c11 48%, #06070a 100%);
+    radial-gradient(1100px 780px at 88% -12%, rgba(178,200,236,0.08), transparent 70%),
+    #0a0c11;
 }
 
 .aurora-blob {
@@ -118,7 +121,7 @@ code {
   width: 700px;
   height: 460px;
   filter: blur(100px);
-  background: radial-gradient(circle, rgba(84,132,218,0.34), transparent 68%);
+  background: radial-gradient(circle, rgba(84,132,218,0.10), transparent 68%);
 }
 
 .aurora-blob-teal {
@@ -127,7 +130,7 @@ code {
   width: 520px;
   height: 420px;
   filter: blur(90px);
-  background: radial-gradient(circle, rgba(116,206,206,0.22), transparent 66%);
+  background: radial-gradient(circle, rgba(116,206,206,0.06), transparent 66%);
 }
 
 .aurora-blob-warm {
@@ -136,7 +139,7 @@ code {
   width: 560px;
   height: 360px;
   filter: blur(110px);
-  background: radial-gradient(circle, rgba(216,148,116,0.16), transparent 68%);
+  background: radial-gradient(circle, rgba(216,148,116,0.04), transparent 68%);
 }
 
 /* ── Entrance animations ──────────────────────────────────────────────────
@@ -164,6 +167,11 @@ code {
   to   { transform: rotate(360deg); }
 }
 
+.ledger-loader-spin {
+  animation: ledger-ring-spin 1.1s linear infinite;
+  transform-origin: 50% 50%;
+}
+
 .ledger-rise { animation: ledger-rise .8s ease-out both; }
 .ledger-rise-fast { animation: ledger-rise .5s ease-out both; }
 .ledger-fade { animation: ledger-fade .9s ease-out both; }
@@ -185,7 +193,8 @@ code {
   .ledger-rise-fast,
   .ledger-fade,
   .ledger-draw,
-  .ledger-draw-short {
+  .ledger-draw-short,
+  .ledger-loader-spin {
     animation: none;
   }
   .ledger-draw,
@@ -195,9 +204,10 @@ code {
 }
 
 /* ── Glass surfaces ───────────────────────────────────────────────────────
-   Three tiers, all sharing one gradient family so they read as one material:
-     .glass-card   — panels and cards (24px, full shadow stack, blur)
-     .glass-rail   — the nav rail (steeper angle, deeper blur)
+   Three tiers, all sharing one material so they sit in the page rather than
+   floating as milky slabs:
+     .glass-card   — panels and cards (24px, even fill, hairline highlight)
+     .glass-rail   — the nav rail (same fill, deeper blur)
      .glass-chip   — inputs, pills, small tiles (12px, flat, no shadow)
    Nest at most one blurred surface inside another; stacked backdrop-filters
    compound into mud and cost a full-screen composite per layer. */
@@ -205,38 +215,30 @@ code {
 .glass-card {
   position: relative;
   border-radius: 24px;
-  background: linear-gradient(146deg,
-    rgba(255,255,255,0.20) 0%,
-    rgba(255,255,255,0.085) 30%,
-    rgba(255,255,255,0.05) 66%,
-    rgba(255,255,255,0.115) 100%);
-  border: 1px solid rgba(255,255,255,0.24);
-  backdrop-filter: blur(34px) saturate(150%);
-  -webkit-backdrop-filter: blur(34px) saturate(150%);
+  /* Opaque-enough underlay so aurora blobs don't print through as a second
+     gradient. The white wash on top is only a hairline of glass, not a band. */
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%),
+    rgba(11, 14, 20, 0.86);
+  border: 1px solid rgba(255,255,255,0.10);
+  backdrop-filter: blur(24px) saturate(108%);
+  -webkit-backdrop-filter: blur(24px) saturate(108%);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.72),
-    inset 0 -1px 0 rgba(255,255,255,0.24),
-    inset 0 0 50px rgba(255,255,255,0.06),
-    0 36px 74px -32px rgba(0,0,0,0.92),
-    0 0 60px -10px rgba(196,216,252,0.20);
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    0 18px 40px -24px rgba(0,0,0,0.4);
 }
 
 .glass-rail {
   border-radius: 24px;
-  background: linear-gradient(158deg,
-    rgba(255,255,255,0.22) 0%,
-    rgba(255,255,255,0.09) 40%,
-    rgba(255,255,255,0.05) 72%,
-    rgba(255,255,255,0.13) 100%);
-  border: 1px solid rgba(255,255,255,0.24);
-  backdrop-filter: blur(36px) saturate(160%);
-  -webkit-backdrop-filter: blur(36px) saturate(160%);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%),
+    rgba(11, 14, 20, 0.88);
+  border: 1px solid rgba(255,255,255,0.10);
+  backdrop-filter: blur(28px) saturate(110%);
+  -webkit-backdrop-filter: blur(28px) saturate(110%);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.75),
-    inset 0 -1px 0 rgba(255,255,255,0.24),
-    inset 0 0 46px rgba(255,255,255,0.07),
-    0 24px 44px -28px rgba(0,0,0,0.9),
-    0 0 26px -14px rgba(200,218,252,0.2);
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    0 14px 32px -22px rgba(0,0,0,0.4);
 }
 
 .glass-chip {
@@ -259,9 +261,11 @@ code {
 .glass-control {
   border-radius: 11px;
   color: #ffffff;
-  background: linear-gradient(140deg, rgba(255,255,255,0.20), rgba(255,255,255,0.07));
-  border: 1px solid rgba(255,255,255,0.24);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05)),
+    rgba(11, 14, 20, 0.72);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
