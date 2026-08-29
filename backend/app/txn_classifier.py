@@ -205,6 +205,25 @@ def classify_cash_flow_txn(
     ):
         return "transfer"
 
+    if _looks_like_savings_funding(
+        merchant=merchant,
+        original_description=original_description,
+        description_raw=description_raw,
+        category_key=category_key,
+        account_subtype=account_subtype,
+        transaction_code=transaction_code,
+    ):
+        return "savings"
+
+    # A Transaction<->Transaction match is structurally certain to be a
+    # transfer, never investment funding (see app.transfer_matcher's
+    # module docstring) — so it must outrank _looks_like_investment_funding's
+    # text heuristic below, which would otherwise still fire on a card
+    # payment whose merchant/memo text also happens to look investment-ish
+    # (e.g. "Robinhood" + an ACH memo), even with a confirmed match.
+    if not manual_override and has_matched_transfer:
+        return "transfer"
+
     if _looks_like_investment_funding(
         merchant=merchant,
         original_description=original_description,
@@ -216,19 +235,6 @@ def classify_cash_flow_txn(
         has_matched_investment=(has_matched_investment and not manual_override),
     ):
         return "investments"
-
-    if _looks_like_savings_funding(
-        merchant=merchant,
-        original_description=original_description,
-        description_raw=description_raw,
-        category_key=category_key,
-        account_subtype=account_subtype,
-        transaction_code=transaction_code,
-    ):
-        return "savings"
-
-    if not manual_override and has_matched_transfer:
-        return "transfer"
 
     if is_excluded_from_spending(category_key):
         return "transfer"

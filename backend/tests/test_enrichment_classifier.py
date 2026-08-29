@@ -192,6 +192,46 @@ def test_matched_transfer_forces_transfer_role_on_inflow_leg():
     assert role == "transfer"
 
 
+def test_matched_transfer_outranks_investment_funding_text_heuristic():
+    # A Robinhood Gold Card payment's checking-side leg carries the exact
+    # same merchant/ACH/financial_institution-counterparty text that also
+    # appears on genuine Robinhood brokerage funding — the ambiguity this
+    # whole feature exists to resolve. Without a match, that text alone
+    # trips _looks_like_investment_funding's heuristic (see the paired
+    # "no match" case below). A confirmed Transaction<->Transaction match
+    # must outrank that heuristic, since it's structurally certain to be a
+    # transfer, never investment funding.
+    matched = classify_cash_flow_txn(
+        amount=500,
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
+        merchant="Robinhood",
+        original_description="ACH DEBIT ROBINHOOD CCB",
+        transaction_code="transfer",
+        payment_meta={"payment_method": "ACH"},
+        counterparties=[{"name": "Robinhood", "type": "financial_institution"}],
+        account_type="depository",
+        account_subtype="checking",
+        has_matched_transfer=True,
+    )
+    assert matched == "transfer"
+
+    unmatched = classify_cash_flow_txn(
+        amount=500,
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
+        merchant="Robinhood",
+        original_description="ACH DEBIT ROBINHOOD CCB",
+        transaction_code="transfer",
+        payment_meta={"payment_method": "ACH"},
+        counterparties=[{"name": "Robinhood", "type": "financial_institution"}],
+        account_type="depository",
+        account_subtype="checking",
+        has_matched_transfer=False,
+    )
+    assert unmatched == "investments"
+
+
 def test_matched_investment_forces_investments_role_with_no_text_cues():
     role = classify_cash_flow_txn(
         amount=500,
