@@ -3,10 +3,15 @@ Cross-account transfer matching.
 
 Pairs same-amount, opposite-sign transactions across different accounts —
 either two bank Transaction rows (e.g. a checking outflow and a matching
-credit-card payment posting) or a Transaction and an InvestmentTransaction
+credit-card payment posting) or a bank outflow and an InvestmentTransaction
 cash-deposit row (e.g. a checking outflow funding a Roth contribution) — and
 persists the match. app.txn_classifier reads the persisted match as a
 stronger-than-text-heuristic signal for the cash-flow role classifier.
+
+Investment matching is funding-direction only (bank outflow → deposit).
+A checking deposit landing from a brokerage withdrawal is left to the text
+heuristic or a manual recategorization; auto-matching that pair would
+permanently claim the investment row.
 
 A Transaction <-> Transaction match can only ever be a transfer or
 credit-card payment: investment accounts aren't covered by Plaid's
@@ -141,7 +146,12 @@ def match_transfers(
         )
         # Plaid's subtype casing isn't guaranteed; normalize like
         # app.services.returns_service.external_cash_flows does.
-        if (itxn.subtype or "").strip().lower() in EXTERNAL_CASH_FLOW_SUBTYPES
+        # Amount < 0 is deposit-direction (money entering the investment
+        # account). Withdrawals are out of scope this iteration.
+        if (
+            (itxn.subtype or "").strip().lower() in EXTERNAL_CASH_FLOW_SUBTYPES
+            and float(itxn.amount) < 0
+        )
     ]
 
     unclaimed_bank = {txn.id: txn for txn in bank_candidates}
@@ -166,6 +176,10 @@ def match_transfers(
             transfer_pairs += 1
             continue
 
+        # Funding only: skip bank inflows so a checking deposit can't claim
+        # a brokerage withdrawal via the opposite-sign check.
+        if float(txn.amount) <= 0:
+            continue
         investment_match = _best_match(txn, unclaimed_investment)
         if investment_match is not None:
             txn.transfer_match_investment_txn_id = investment_match.id

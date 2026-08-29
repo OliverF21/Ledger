@@ -381,6 +381,32 @@ def test_investment_match_does_not_require_a_transferish_bank_leg(db):
     assert checking_out.transfer_match_investment_txn_id == deposit.id
 
 
+def test_does_not_match_bank_inflow_to_investment_withdrawal(db):
+    # Funding-direction only: a checking deposit (amount < 0) must not pair
+    # with a brokerage withdrawal. That direction is left to the text
+    # heuristic / a manual recategorization — matching it would permanently
+    # claim the investment row and force the cash-flow role to "investments".
+    checking_in = _txn(account_id=1, amount=-500.0, date=date(2026, 8, 14))
+    withdrawal = _investment_txn(
+        account_id=3,
+        amount=500.0,
+        date=date(2026, 8, 14),
+        name="ACH withdrawal",
+        subtype="withdrawal",
+        plaid_investment_transaction_id="itx_wd",
+    )
+    db.add_all([checking_in, withdrawal])
+    db.commit()
+
+    stats = match_transfers(db, today=TODAY)
+
+    db.refresh(checking_in)
+    db.refresh(withdrawal)
+    assert checking_in.transfer_match_investment_txn_id is None
+    assert withdrawal.matched_transaction_id is None
+    assert stats == {"transfer_pairs": 0, "investment_pairs": 0}
+
+
 def test_hidden_transactions_excluded(db):
     checking_out = _txn(account_id=1, amount=500.0, date=date(2026, 8, 14), hidden=True)
     card_in = _txn(account_id=2, amount=-500.0, date=date(2026, 8, 14))
