@@ -76,8 +76,11 @@ def _looks_like_investment_funding(
     counterparties: list[dict[str, Any]] | None,
     transaction_code: str | None,
     category_key: str,
+    has_matched_investment: bool = False,
 ) -> bool:
     if category_key in TRANSFER_OUT_SPENDING_SUBCATEGORIES:
+        return True
+    if has_matched_investment:
         return True
 
     blob = _text_blob(
@@ -160,6 +163,9 @@ def classify_cash_flow_txn(
     counterparties: list[dict[str, Any]] | None = None,
     account_type: str | None = None,
     account_subtype: str | None = None,
+    has_matched_transfer: bool = False,
+    has_matched_investment: bool = False,
+    manual_override: bool = False,
 ) -> CashFlowRole:
     """
     Classify a transaction for Cash Flow.
@@ -182,6 +188,8 @@ def classify_cash_flow_txn(
             category_key=category_key,
         ):
             return "transfer"
+        if not manual_override and has_matched_transfer:
+            return "transfer"
         if is_excluded_from_income(category_key):
             return "exclude"
         return "income"
@@ -197,17 +205,6 @@ def classify_cash_flow_txn(
     ):
         return "transfer"
 
-    if _looks_like_investment_funding(
-        merchant=merchant,
-        original_description=original_description,
-        description_raw=description_raw,
-        payment_meta=payment_meta,
-        counterparties=counterparties,
-        transaction_code=transaction_code,
-        category_key=category_key,
-    ):
-        return "investments"
-
     if _looks_like_savings_funding(
         merchant=merchant,
         original_description=original_description,
@@ -217,6 +214,27 @@ def classify_cash_flow_txn(
         transaction_code=transaction_code,
     ):
         return "savings"
+
+    # A Transaction<->Transaction match is structurally certain to be a
+    # transfer, never investment funding (see app.transfer_matcher's
+    # module docstring) — so it must outrank _looks_like_investment_funding's
+    # text heuristic below, which would otherwise still fire on a card
+    # payment whose merchant/memo text also happens to look investment-ish
+    # (e.g. "Robinhood" + an ACH memo), even with a confirmed match.
+    if not manual_override and has_matched_transfer:
+        return "transfer"
+
+    if _looks_like_investment_funding(
+        merchant=merchant,
+        original_description=original_description,
+        description_raw=description_raw,
+        payment_meta=payment_meta,
+        counterparties=counterparties,
+        transaction_code=transaction_code,
+        category_key=category_key,
+        has_matched_investment=(has_matched_investment and not manual_override),
+    ):
+        return "investments"
 
     if is_excluded_from_spending(category_key):
         return "transfer"
@@ -251,4 +269,7 @@ def classify_orm_transaction(txn: Any, account: Any | None = None) -> CashFlowRo
         counterparties=extra.get("counterparties"),
         account_type=getattr(acct, "type", None) if acct is not None else None,
         account_subtype=getattr(acct, "subtype", None) if acct is not None else None,
+        has_matched_transfer=getattr(txn, "transfer_match_transaction_id", None) is not None,
+        has_matched_investment=getattr(txn, "transfer_match_investment_txn_id", None) is not None,
+        manual_override=bool(getattr(txn, "manual_override", False)),
     )

@@ -52,6 +52,18 @@ def sync_all_items():
                 db.rollback()
                 logger.error(f"Crypto wallet sync failed: {str(e)}")
 
+            try:
+                from app.transfer_matcher import match_transfers
+                match_stats = match_transfers(db)
+                logger.info(
+                    "Transfer matching: %s transfer pair(s), %s investment pair(s)",
+                    match_stats.get("transfer_pairs", 0),
+                    match_stats.get("investment_pairs", 0),
+                )
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Transfer matching failed: {str(e)}")
+
             # Freshly-synced data may have tripped a budget or large-transaction
             # alert; deliver any new ones to ALERT_WEBHOOK_URL (no-op if unset).
             bdb = BudgetsSessionLocal()

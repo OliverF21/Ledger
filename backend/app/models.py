@@ -165,6 +165,11 @@ class Transaction(Base):
     notes = Column(Text, nullable=True)  # User notes
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Cross-account transfer match, set once by app.transfer_matcher.match_transfers.
+    # Mutually exclusive with transfer_match_investment_txn_id.
+    transfer_match_transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    # Cross-table match to an InvestmentTransaction cash deposit (brokerage/retirement funding).
+    transfer_match_investment_txn_id = Column(Integer, ForeignKey("investment_transactions.id"), nullable=True)
 
     # Relationships
     account = relationship("Account", back_populates="transactions")
@@ -439,6 +444,16 @@ class InvestmentTransaction(Base):
     fees = Column(Numeric(19, 4), nullable=True)
     date = Column(Date, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Back-reference set when this cash row is claimed as the investment
+    # side of a match, so a re-run of the matcher never claims it twice.
+    # use_alter breaks the transactions <-> investment_transactions FK cycle:
+    # without it SQLAlchemy can't topologically sort the two CREATE TABLEs
+    # (Postgres then fails on the forward reference; SQLite tolerates it).
+    matched_transaction_id = Column(
+        Integer,
+        ForeignKey("transactions.id", use_alter=True, name="fk_invtxn_matched_txn"),
+        nullable=True,
+    )
 
     # Relationships
     account = relationship("Account", back_populates="investment_transactions")

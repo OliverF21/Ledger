@@ -435,6 +435,13 @@ async def sync_transactions(db: Session = Depends(get_db)):
             import logging
             logging.getLogger("ledger").exception("crypto wallet sync after plaid sync failed")
 
+        try:
+            from app.transfer_matcher import match_transfers
+            match_transfers(db)
+        except Exception:
+            import logging
+            logging.getLogger("ledger").exception("transfer matching after plaid sync failed")
+
         message = ", ".join(parts)
 
         return SyncResponse(
