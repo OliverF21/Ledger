@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { X } from 'lucide-react'
 import { apiFetch } from '../api/client'
 import { useAnalytics } from '../hooks/useAnalytics'
 import { useOnSyncComplete } from '../hooks/useSync'
@@ -197,15 +198,31 @@ function BreakdownColumn({
   total,
   rows,
   labelWidth = 118,
+  onExpand,
 }: {
   label: string
   total: React.ReactNode
   rows: { key: string | number; name: string; value: string }[]
   labelWidth?: number
+  /** When set, renders a "…" trigger next to the label that opens the full
+   *  per-account breakdown — the row list above is capped for space. */
+  onExpand?: () => void
 }) {
   return (
     <div className="min-w-0">
-      <Eyebrow size="sm">{label}</Eyebrow>
+      <div className="flex items-center gap-[6px]">
+        <Eyebrow size="sm">{label}</Eyebrow>
+        {onExpand && (
+          <button
+            type="button"
+            onClick={onExpand}
+            aria-label={`View all ${label.toLowerCase()}`}
+            className="pointer-events-auto text-white/30 hover:text-white/80 transition-colors text-[11px] leading-none tracking-[0.08em]"
+          >
+            •••
+          </button>
+        )}
+      </div>
       <div className="mt-1.5 text-[15px] font-bold tracking-[-0.025em]">{total}</div>
       <div className="mt-2 flex flex-col gap-[3px]">
         {rows.length === 0 ? (
@@ -232,6 +249,86 @@ function Divider() {
   )
 }
 
+/** Full per-account detail behind the Assets/Liabilities "…" trigger — the
+ *  hero row above only has room for a handful of grouped totals. */
+function AccountBreakdownModal({
+  kind,
+  total,
+  assetGroups,
+  accounts,
+  onClose,
+}: {
+  kind: 'assets' | 'liabilities'
+  total: number
+  assetGroups?: ReturnType<typeof groupAssetAccounts>
+  accounts?: AccountBreakdown[]
+  onClose: () => void
+}) {
+  const isAssets = kind === 'assets'
+  return (
+    <div className="glass-overlay fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+      <div
+        className="glass-modal w-[400px] max-h-[80vh] flex flex-col p-[26px]"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-[18px]">
+          <div>
+            <h3 className="text-[15px] font-semibold">{isAssets ? 'Assets' : 'Liabilities'}</h3>
+            <div className={`mt-1 text-[20px] font-bold tracking-[-0.03em] ${isAssets ? 'text-ledger-positive-soft' : 'text-ledger-negative-soft'}`}>
+              {isAssets ? '$' : '−$'}{fmt(total)}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-ledger-text-faint hover:text-ledger-text-primary transition-colors">
+            <X className="w-[16px] h-[16px]" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex flex-col gap-[16px] pr-1 -mr-1">
+          {isAssets && (
+            (assetGroups ?? []).length === 0 ? (
+              <span className="text-[12px] text-ledger-text-faintest italic">No asset accounts linked</span>
+            ) : (
+              assetGroups!.map(group => (
+                <div key={group.group}>
+                  <div className="flex items-baseline justify-between mb-[7px]">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-white/50">
+                      {group.label}
+                    </span>
+                    <span className="text-[12.5px] font-semibold text-white/70">${fmt(group.total)}</span>
+                  </div>
+                  <div className="flex flex-col gap-[6px]">
+                    {group.accounts.map(account => (
+                      <div key={account.id} className="flex items-center justify-between gap-3 text-[12.5px]">
+                        <span className="text-ledger-text-faint truncate">{account.name}</span>
+                        <span className="text-white/80 font-medium whitespace-nowrap">${fmt(account.balance)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )
+          )}
+
+          {!isAssets && (
+            (accounts ?? []).length === 0 ? (
+              <span className="text-[12px] text-ledger-text-faintest italic">No liability accounts linked</span>
+            ) : (
+              <div className="flex flex-col gap-[8px]">
+                {accounts!.map(account => (
+                  <div key={account.id} className="flex items-center justify-between gap-3 text-[12.5px]">
+                    <span className="text-ledger-text-faint truncate">{account.name}</span>
+                    <span className="text-white/80 font-medium whitespace-nowrap">−${fmt(account.balance)}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── Screen ─────────────────────────────────────────────────────────────── */
 
 export default function Overview({ onNavigate, month: selectedMonth }: OverviewProps) {
@@ -239,6 +336,7 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
   const [activeSlice, setActiveSlice] = useState<number | null>(null)
   const [hoverPoint, setHoverPoint] = useState<AreaLineHover | null>(null)
   const [syncRefresh, setSyncRefresh] = useState(0)
+  const [breakdownModal, setBreakdownModal] = useState<'assets' | 'liabilities' | null>(null)
   useOnSyncComplete(useCallback(() => setSyncRefresh(n => n + 1), []))
 
   // Clear any pinned donut slice when the month changes — the categories
@@ -373,6 +471,7 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
               name: group.label,
               value: `$${fmt(group.total)}`,
             }))}
+            onExpand={() => setBreakdownModal('assets')}
           />
           <Divider />
           <BreakdownColumn
@@ -384,6 +483,7 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
               name: account.name,
               value: `−$${fmt(account.balance)}`,
             }))}
+            onExpand={() => setBreakdownModal('liabilities')}
           />
           <Divider />
           <div>
@@ -621,6 +721,16 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
           )}
         </div>
       </section>
+
+      {breakdownModal && (
+        <AccountBreakdownModal
+          kind={breakdownModal}
+          total={breakdownModal === 'assets' ? nwData?.total_assets ?? 0 : nwData?.total_liabilities ?? 0}
+          assetGroups={breakdownModal === 'assets' ? assetGroups : undefined}
+          accounts={breakdownModal === 'liabilities' ? liabilityAccounts : undefined}
+          onClose={() => setBreakdownModal(null)}
+        />
+      )}
     </div>
   )
 }
