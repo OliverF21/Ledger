@@ -29,6 +29,23 @@ _DATE_WINDOW_DAYS = 3
 _TOLERANCE_FLOOR = 5.0
 _TOLERANCE_PCT = 0.01
 
+# Plaid PFC prefixes that mark a bank row as plausibly one leg of a transfer.
+_TRANSFERISH_CATEGORY_PREFIXES = ("TRANSFER_", "LOAN_PAYMENTS")
+
+
+def _looks_transferish(txn: Transaction) -> bool:
+    """Does this bank row already carry a Plaid transfer/loan-payment signal?
+
+    Without this precondition, the $5 tolerance floor lets any two small,
+    unrelated opposite-sign rows on different accounts (e.g. an $8.25 coffee
+    and a $4.10 refund) pair up and get permanently reclassified out of
+    spending/income — the matcher never re-evaluates a pair once made.
+    """
+    for cat in (txn.category_plaid, txn.category_plaid_detailed):
+        if cat and str(cat).upper().startswith(_TRANSFERISH_CATEGORY_PREFIXES):
+            return True
+    return (txn.transaction_code or "").strip().lower() == "transfer"
+
 
 def _within_tolerance(amount_a: float, amount_b: float) -> bool:
     diff = abs(abs(amount_a) - abs(amount_b))
@@ -44,13 +61,24 @@ def _opposite_sign(amount_a: float, amount_b: float) -> bool:
     return (amount_a > 0) != (amount_b > 0)
 
 
-def _best_match(txn: Transaction, pool: dict[int, object]) -> object | None:
+def _best_match(
+    txn: Transaction, pool: dict[int, object], *, require_transferish: bool = False
+) -> object | None:
     """Closest-amount-then-closest-date match for `txn` among `pool`'s
     values. `pool` holds either Transaction or InvestmentTransaction rows;
-    both expose .amount/.date, so the same scan works for either."""
+    both expose .amount/.date, so the same scan works for either.
+
+    `require_transferish` is used for the bank<->bank pool only: at least one
+    of the two legs must already look like a transfer. The investment pool
+    needs no such guard — its candidates are already restricted to external
+    cash-flow types/subtypes.
+    """
+    txn_is_transferish = _looks_transferish(txn) if require_transferish else False
     best = None
     best_key = None
     for other in pool.values():
+        if require_transferish and not txn_is_transferish and not _looks_transferish(other):
+            continue
         other_amount = float(other.amount)
         txn_amount = float(txn.amount)
         if not _opposite_sign(txn_amount, other_amount):
@@ -65,21 +93,33 @@ def _best_match(txn: Transaction, pool: dict[int, object]) -> object | None:
     return best
 
 
-def match_transfers(db: Session, lookback_days: int = 10) -> dict:
+def match_transfers(
+    db: Session,
+    lookback_days: int = 10,
+    *,
+    today: date | None = None,
+    dry_run: bool = False,
+) -> dict:
     """
     Find and persist cross-account transfer matches among recent, unmatched
     transactions. Idempotent: only considers rows with no match set yet, so
     calling this repeatedly (e.g. every sync cycle) never re-touches
     already-matched rows. Commits once at the end. Returns
     {"transfer_pairs": int, "investment_pairs": int} for logging.
+
+    `today` is injectable so callers (and tests) can pin the lookback window.
+    With `dry_run=True` the matches are computed exactly as normal but never
+    committed; the mutated ORM objects are simply left uncommitted for the
+    caller's session lifecycle to discard.
     """
-    cutoff = date.today() - timedelta(days=lookback_days)
+    cutoff = (today or date.today()) - timedelta(days=lookback_days)
 
     bank_candidates = (
         db.query(Transaction)
         .filter(
             Transaction.removed.is_(False),
             Transaction.pending.is_(False),
+            Transaction.hidden.is_(False),
             Transaction.date >= cutoff,
             Transaction.transfer_match_transaction_id.is_(None),
             Transaction.transfer_match_investment_txn_id.is_(None),
@@ -117,7 +157,7 @@ def match_transfers(db: Session, lookback_days: int = 10) -> dict:
         same_account_excluded = {
             tid: t for tid, t in unclaimed_bank.items() if tid != txn.id and t.account_id != txn.account_id
         }
-        bank_match = _best_match(txn, same_account_excluded)
+        bank_match = _best_match(txn, same_account_excluded, require_transferish=True)
         if bank_match is not None:
             txn.transfer_match_transaction_id = bank_match.id
             bank_match.transfer_match_transaction_id = txn.id
@@ -133,6 +173,13 @@ def match_transfers(db: Session, lookback_days: int = 10) -> dict:
             del unclaimed_bank[txn.id]
             del unclaimed_investment[investment_match.id]
             investment_pairs += 1
+
+    if dry_run:
+        return {
+            "transfer_pairs": transfer_pairs,
+            "investment_pairs": investment_pairs,
+            "dry_run": True,
+        }
 
     db.commit()
     return {"transfer_pairs": transfer_pairs, "investment_pairs": investment_pairs}

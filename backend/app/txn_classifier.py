@@ -137,11 +137,8 @@ def _looks_like_card_payment(
     original_description: str | None,
     description_raw: str | None,
     category_key: str,
-    has_matched_transfer: bool = False,
 ) -> bool:
     if category_key.startswith("LOAN_PAYMENTS"):
-        return True
-    if has_matched_transfer:
         return True
     # Credit-side payment posting on the card account (money moving onto the card).
     if (account_type or "").lower() == "credit" and amount < 0:
@@ -168,6 +165,7 @@ def classify_cash_flow_txn(
     account_subtype: str | None = None,
     has_matched_transfer: bool = False,
     has_matched_investment: bool = False,
+    manual_override: bool = False,
 ) -> CashFlowRole:
     """
     Classify a transaction for Cash Flow.
@@ -188,8 +186,9 @@ def classify_cash_flow_txn(
             original_description=original_description,
             description_raw=description_raw,
             category_key=category_key,
-            has_matched_transfer=has_matched_transfer,
         ):
+            return "transfer"
+        if not manual_override and has_matched_transfer:
             return "transfer"
         if is_excluded_from_income(category_key):
             return "exclude"
@@ -203,7 +202,6 @@ def classify_cash_flow_txn(
         original_description=original_description,
         description_raw=description_raw,
         category_key=category_key,
-        has_matched_transfer=has_matched_transfer,
     ):
         return "transfer"
 
@@ -215,7 +213,7 @@ def classify_cash_flow_txn(
         counterparties=counterparties,
         transaction_code=transaction_code,
         category_key=category_key,
-        has_matched_investment=has_matched_investment,
+        has_matched_investment=(has_matched_investment and not manual_override),
     ):
         return "investments"
 
@@ -228,6 +226,9 @@ def classify_cash_flow_txn(
         transaction_code=transaction_code,
     ):
         return "savings"
+
+    if not manual_override and has_matched_transfer:
+        return "transfer"
 
     if is_excluded_from_spending(category_key):
         return "transfer"
@@ -264,4 +265,5 @@ def classify_orm_transaction(txn: Any, account: Any | None = None) -> CashFlowRo
         account_subtype=getattr(acct, "subtype", None) if acct is not None else None,
         has_matched_transfer=getattr(txn, "transfer_match_transaction_id", None) is not None,
         has_matched_investment=getattr(txn, "transfer_match_investment_txn_id", None) is not None,
+        manual_override=bool(getattr(txn, "manual_override", False)),
     )

@@ -446,7 +446,14 @@ class InvestmentTransaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     # Back-reference set when this cash row is claimed as the investment
     # side of a match, so a re-run of the matcher never claims it twice.
-    matched_transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    # use_alter breaks the transactions <-> investment_transactions FK cycle:
+    # without it SQLAlchemy can't topologically sort the two CREATE TABLEs
+    # (Postgres then fails on the forward reference; SQLite tolerates it).
+    matched_transaction_id = Column(
+        Integer,
+        ForeignKey("transactions.id", use_alter=True, name="fk_invtxn_matched_txn"),
+        nullable=True,
+    )
 
     # Relationships
     account = relationship("Account", back_populates="investment_transactions")
