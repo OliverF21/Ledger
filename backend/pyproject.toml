@@ -1,6 +1,6 @@
 [project]
 name = "ledger"
-version = "2.0.0"
+version = "2.0.1"
 description = "Personal Finance Dashboard - Powered by Plaid"
 authors = [
     {name = "Oliver Fichte"}
