@@ -29,11 +29,15 @@ export function notifySyncComplete(result: SyncResult) {
   window.dispatchEvent(new CustomEvent(SYNC_COMPLETE_EVENT, { detail: result }))
 }
 
-/** Re-run `handler` after any successful Plaid sync (manual or on startup). */
-export function useOnSyncComplete(handler: () => void) {
+/** Re-run `handler` after any Plaid sync (manual or on startup). */
+export function useOnSyncComplete(handler: (result: SyncResult) => void) {
   useEffect(() => {
-    window.addEventListener(SYNC_COMPLETE_EVENT, handler)
-    return () => window.removeEventListener(SYNC_COMPLETE_EVENT, handler)
+    const listener = (event: Event) => {
+      const result = (event as CustomEvent<SyncResult>).detail
+      if (result) handler(result)
+    }
+    window.addEventListener(SYNC_COMPLETE_EVENT, listener)
+    return () => window.removeEventListener(SYNC_COMPLETE_EVENT, listener)
   }, [handler])
 }
 

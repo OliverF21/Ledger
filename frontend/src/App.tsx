@@ -17,6 +17,7 @@ import { useAccounts } from './hooks/useAccounts'
 import { useStartupSync } from './hooks/useSync'
 import { apiFetchTimeout, getToken, clearToken } from './api/client'
 import { LedgerLoader } from './components/ui/LedgerLoader'
+import ToastHost from './components/ToastHost'
 import { VALID_SCREENS, type ScreenType } from './utils/screens'
 import {
   getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl,
@@ -299,6 +300,8 @@ function App() {
           </div>
         </main>
       </div>
+
+      <ToastHost />
     </>
   )
 }

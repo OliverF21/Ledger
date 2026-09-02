@@ -15,6 +15,8 @@ import {
 import { type AccountItem } from '../hooks/useAccounts'
 import { useCryptoWallets } from '../hooks/useCryptoWallets'
 import { useSync } from '../hooks/useSync'
+import { showToast } from '../hooks/useToasts'
+import { syncToastFromError } from '../utils/syncToast'
 import PlaidLink, { PlaidUpdateButton } from '../components/PlaidLink'
 import InstitutionAvatar from '../components/InstitutionAvatar'
 import { PLAID_CATEGORY_LABELS } from '../utils/plaidCategories'
@@ -819,6 +821,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
     } catch (error) {
       console.error('Sync failed:', error)
       setSyncMessage(error instanceof Error ? error.message : 'Sync failed')
+      showToast(syncToastFromError(error))
     }
   }
 
