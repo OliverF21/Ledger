@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useSync } from '../hooks/useSync'
+import { showToast } from '../hooks/useToasts'
+import { syncToastFromError } from '../utils/syncToast'
 import { Eyebrow } from './ui/primitives'
 
 interface HeaderProps {
@@ -41,14 +43,9 @@ export default function Header({ eyebrow, title, name, controls, onOpenSettings 
 
   const handleSync = async () => {
     try {
-      const data = await sync()
-      if (data?.success) {
-        alert(`Synced ${data.transactions_synced} transactions`)
-      } else {
-        alert('Sync failed: ' + (data?.message ?? 'unknown error'))
-      }
+      await sync()
     } catch (error) {
-      alert('Sync error: ' + (error instanceof Error ? error.message : String(error)))
+      showToast(syncToastFromError(error))
     }
   }
 

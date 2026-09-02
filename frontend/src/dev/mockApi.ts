@@ -283,7 +283,20 @@ function routes(url: URL): unknown | undefined {
       return { accounts: ACCOUNTS }
 
     case '/api/plaid/sync/status':
-      return { syncing: false, last_synced_at: isoDaysAgo(0) }
+      return { syncing: false, last_synced_at: isoDaysAgo(0), item_count: 3 }
+
+    case '/api/plaid/sync':
+      return {
+        success: true,
+        message: 'Synced 3 new transactions',
+        transactions_synced: 3,
+        enrichment_backfilled: 0,
+        failed_count: 0,
+        items: [
+          { item_id: 1, institution_name: 'Chase', status: 'ok', synced: 2 },
+          { item_id: 2, institution_name: 'Fidelity', status: 'ok', synced: 1 },
+        ],
+      }
 
     case '/api/analytics/summary':
       return {
@@ -564,7 +577,10 @@ export function installMockApi(): void {
     }
 
     // A touch of latency so loading states are visible while designing.
-    await new Promise(resolve => setTimeout(resolve, 90))
+    // Sync is slower so the header button and completion toast can be seen.
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const delay = url.pathname === '/api/plaid/sync' && method === 'POST' ? 700 : 90
+    await new Promise(resolve => setTimeout(resolve, delay))
     return jsonResponse(body, 200)
   }
 
