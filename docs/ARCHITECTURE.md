@@ -141,6 +141,11 @@ Separate from bank `transactions` — not included in spending analytics.
 API: `GET /api/investments/summary|holdings|transactions|history`,
 `POST /api/investments/refresh` (Plaid refresh + resync).
 
+The allocation optimizer (Black–Litterman means, Ledoit–Wolf covariance,
+max Sharpe, max quadratic utility, efficient frontier) is specified in
+[PORTFOLIO_OPTIMIZATION.md](PORTFOLIO_OPTIMIZATION.md). It runs only when
+advanced optimization is enabled.
+
 UI: `#investments` tab between Budgets and Trends.
 
 ---
