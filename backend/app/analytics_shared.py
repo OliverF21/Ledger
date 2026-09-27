@@ -363,8 +363,14 @@ def display_rollup_category(
 
     Investment / retirement funding transfers are kept as their own "Investments"
     sink instead of collapsing into TRANSFER_OUT (which is otherwise excluded).
+    A user category wins: Plaid's investment detailed key must not relabel a
+    row the user filed under something else.
     """
-    for raw in (category_user, category_plaid_detailed, category_plaid):
+    if category_user:
+        investment_sources = (category_user,)
+    else:
+        investment_sources = (category_plaid_detailed, category_plaid)
+    for raw in investment_sources:
         if raw and _exclusion_key(raw) in TRANSFER_OUT_SPENDING_SUBCATEGORIES:
             return "Investments"
 

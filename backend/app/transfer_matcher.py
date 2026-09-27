@@ -8,10 +8,13 @@ cash-deposit row (e.g. a checking outflow funding a Roth contribution) — and
 persists the match. app.txn_classifier reads the persisted match as a
 stronger-than-text-heuristic signal for the cash-flow role classifier.
 
-Investment matching is funding-direction only (bank outflow → deposit).
-A checking deposit landing from a brokerage withdrawal is left to the text
-heuristic or a manual recategorization; auto-matching that pair would
-permanently claim the investment row.
+Investment matching is funding-direction only (bank outflow → deposit),
+and only when the bank leg already looks like a transfer or names a
+brokerage/retirement account. Ordinary spending within the amount tolerance
+is not paired, and card bill-pay memos are not funding. A checking deposit
+landing from a brokerage withdrawal is left to the text heuristic or a
+manual recategorization; auto-matching that pair would permanently claim
+the investment row.
 
 A Transaction <-> Transaction match can only ever be a transfer or
 credit-card payment: investment accounts aren't covered by Plaid's
@@ -29,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.models import InvestmentTransaction, Transaction
 from app.services.returns_service import EXTERNAL_CASH_FLOW_SUBTYPES, EXTERNAL_CASH_FLOW_TYPES
+from app.txn_classifier import memo_has_investment_cue, memo_is_card_billpay
 
 _DATE_WINDOW_DAYS = 3
 _TOLERANCE_FLOOR = 5.0
@@ -66,6 +70,21 @@ def _opposite_sign(amount_a: float, amount_b: float) -> bool:
     return (amount_a > 0) != (amount_b > 0)
 
 
+def _plausible_investment_bank_leg(txn: Transaction) -> bool:
+    """Could this bank outflow actually be brokerage/retirement funding?
+
+    The $5 tolerance floor will otherwise pair ordinary spending with a
+    nearby deposit and permanently classify it as investments. Card bill-pay
+    (Robinhood Gold Card via Coastal Community Bank) is a transfer even when
+    the memo also names the broker.
+    """
+    if memo_is_card_billpay(txn.merchant, txn.original_description):
+        return False
+    if _looks_transferish(txn):
+        return True
+    return memo_has_investment_cue(txn.merchant, txn.original_description)
+
+
 def _best_match(
     txn: Transaction, pool: dict[int, object], *, require_transferish: bool = False
 ) -> object | None:
@@ -74,9 +93,8 @@ def _best_match(
     both expose .amount/.date, so the same scan works for either.
 
     `require_transferish` is used for the bank<->bank pool only: at least one
-    of the two legs must already look like a transfer. The investment pool
-    needs no such guard — its candidates are already restricted to external
-    cash-flow types/subtypes.
+    of the two legs must already look like a transfer. Investment deposits
+    are guarded separately by `_plausible_investment_bank_leg`.
     """
     txn_is_transferish = _looks_transferish(txn) if require_transferish else False
     best = None
@@ -177,8 +195,11 @@ def match_transfers(
             continue
 
         # Funding only: skip bank inflows so a checking deposit can't claim
-        # a brokerage withdrawal via the opposite-sign check.
+        # a brokerage withdrawal via the opposite-sign check. Also skip
+        # spending and card bill-pay, which are not brokerage funding.
         if float(txn.amount) <= 0:
+            continue
+        if not _plausible_investment_bank_leg(txn):
             continue
         investment_match = _best_match(txn, unclaimed_investment)
         if investment_match is not None:

@@ -20,18 +20,58 @@ from app.analytics_shared import (
     category_key_for_spending_rules,
     is_excluded_from_income,
     is_excluded_from_spending,
+    resolve_category_to_pfc_key,
 )
 
 CashFlowRole = Literal["income", "spending", "investments", "savings", "transfer", "exclude"]
 
-# Generic funding / retirement cues in bank memos and payment_meta.
+# Plaid primaries that are purchases, bills, and fees. A keyword in the memo
+# must not pull these into Investments — "ABC Investment Properties" rent and
+# a Fidelity debit-card purchase are still spending.
+_CONSUMPTIVE_PRIMARIES = (
+    "BANK_FEES",
+    "ENTERTAINMENT",
+    "FOOD_AND_DRINK",
+    "GENERAL_MERCHANDISE",
+    "HOME_IMPROVEMENT",
+    "MEDICAL",
+    "PERSONAL_CARE",
+    "GENERAL_SERVICES",
+    "GOVERNMENT_AND_NON_PROFIT",
+    "TRANSPORTATION",
+    "TRAVEL",
+    "RENT_AND_UTILITIES",
+    "SHOPPING",
+    "EDUCATION",
+    "PETS",
+    "OTHER",
+)
+
+# Funding / retirement cues. Short ambiguous tokens are intentionally narrow:
+# bare "ira" matches the first name Ira, bare "457" matches trace numbers,
+# and bare "investment" matches property managers.
 _INVESTMENT_TEXT = re.compile(
-    r"\b("
-    r"brokerage|retirement|roth|ira|401[\s\-]?k|403[\s\-]?b|457\b|"
-    r"pension|hsa\b|investment|securities|mutual\s+fund|etf\b|"
-    r"wealthfront|betterment|vanguard|fidelity|schwab|etrade|e[\s\-]?trade|"
+    r"(?<!\w)(?:"
+    r"brokerage|retirement|"
+    r"roth\s+ira|traditional\s+ira|sep\s+ira|simple\s+ira|"
+    r"ira\s+(?:contribution|deposit|transfer|account|funding)|"
+    r"401[\s\-]?k|403[\s\-]?b|457(?:[\s\-]?b|\s*\(\s*b\s*\))|"
+    r"pension|hsa|"
+    r"investment\s+(?:account|acct|transfer|deposit|contribution|funding|portfolio)|"
+    r"securities|mutual\s+fund|etf|"
+    r"wealthfront|betterment|vanguard|"
+    r"fidelity(?!\s+(?:bank|card|rewards|visa|credit))|"
+    r"schwab(?!\s+bank)|"
+    r"etrade|e[\s\-]?trade|"
     r"robinhood|coinbase|kraken"
-    r")\b",
+    r")(?!\w)",
+    re.IGNORECASE,
+)
+# Robinhood Gold Card bill pay posts through Coastal Community Bank. The
+# checking memo says "CCB" / "Coastal Community Bank" and Plaid often files
+# it under the brokerage merchant, including TRANSFER_OUT_INVESTMENT_*.
+_CARD_BILLPAY_TEXT = re.compile(
+    r"(?<!\w)(?:ccb|coastal\s+community\s+bank)(?!\w)",
     re.IGNORECASE,
 )
 _ACH_TEXT = re.compile(r"\bach\b", re.IGNORECASE)
@@ -57,14 +97,37 @@ def _payment_meta_blob(payment_meta: dict[str, Any] | None) -> str:
     )
 
 
+def memo_is_card_billpay(*parts: str | None) -> bool:
+    """True for brokerage-branded credit-card bill pay (not a brokerage deposit)."""
+    blob = _text_blob(*parts)
+    return bool(blob and _CARD_BILLPAY_TEXT.search(blob))
+
+
+def memo_has_investment_cue(*parts: str | None) -> bool:
+    """True when memo text names a brokerage or a retirement account."""
+    blob = _text_blob(*parts)
+    return bool(blob and _INVESTMENT_TEXT.search(blob))
+
+
 def _has_financial_institution_counterparty(counterparties: list[dict[str, Any]] | None) -> bool:
     if not counterparties:
         return False
     for c in counterparties:
         ctype = str(c.get("type") or "").lower()
-        if ctype in {"financial_institution", "payment_app"}:
+        # payment_app (Venmo, Zelle, Cash App) is not a brokerage counterparty.
+        if ctype == "financial_institution":
             return True
     return False
+
+
+def _is_consumptive_category(category_key: str) -> bool:
+    if not category_key:
+        return False
+    resolved = resolve_category_to_pfc_key(category_key) or category_key
+    upper = resolved.upper().replace(".", "_").replace(" ", "_")
+    return any(
+        upper == primary or upper.startswith(f"{primary}_") for primary in _CONSUMPTIVE_PRIMARIES
+    )
 
 
 def _looks_like_investment_funding(
@@ -77,18 +140,32 @@ def _looks_like_investment_funding(
     transaction_code: str | None,
     category_key: str,
     has_matched_investment: bool = False,
+    ignore_text_heuristic: bool = False,
 ) -> bool:
-    if category_key in TRANSFER_OUT_SPENDING_SUBCATEGORIES:
-        return True
-    if has_matched_investment:
-        return True
-
-    blob = _text_blob(
+    billpay_blob = _text_blob(
         merchant,
         original_description,
         description_raw,
         _payment_meta_blob(payment_meta),
     )
+    # Plaid's investment-transfer category is wrong for Gold Card bill pay.
+    # An explicit user category of that same key still wins (ignore_text_heuristic
+    # is set only for manual overrides, and the category check below honors it).
+    if not ignore_text_heuristic and memo_is_card_billpay(billpay_blob):
+        return False
+    if category_key in TRANSFER_OUT_SPENDING_SUBCATEGORIES:
+        return True
+    # A persisted deposit match must not reclassify rent, groceries, or other
+    # purchases. Those pairs were amount coincidences; Plaid's spending
+    # category is the stronger signal, including for matches already saved.
+    if _is_consumptive_category(category_key):
+        return False
+    if has_matched_investment:
+        return True
+    if ignore_text_heuristic:
+        return False
+
+    blob = billpay_blob
     if _INVESTMENT_TEXT.search(blob):
         # ACH + brokerage/retirement memo is a strong funding signal.
         if _ACH_TEXT.search(blob) or _has_financial_institution_counterparty(counterparties):
@@ -137,13 +214,22 @@ def _looks_like_card_payment(
     original_description: str | None,
     description_raw: str | None,
     category_key: str,
+    manual_override: bool = False,
+    payment_meta: dict[str, Any] | None = None,
 ) -> bool:
     if category_key.startswith("LOAN_PAYMENTS"):
         return True
     # Credit-side payment posting on the card account (money moving onto the card).
     if (account_type or "").lower() == "credit" and amount < 0:
         return True
-    blob = _text_blob(merchant, original_description, description_raw)
+    blob = _text_blob(
+        merchant,
+        original_description,
+        description_raw,
+        _payment_meta_blob(payment_meta),
+    )
+    if not manual_override and memo_is_card_billpay(blob):
+        return True
     if (account_type or "").lower() == "credit" and _PAYMENT_TEXT.search(blob):
         return True
     return False
@@ -186,6 +272,8 @@ def classify_cash_flow_txn(
             original_description=original_description,
             description_raw=description_raw,
             category_key=category_key,
+            manual_override=manual_override,
+            payment_meta=payment_meta,
         ):
             return "transfer"
         if not manual_override and has_matched_transfer:
@@ -202,6 +290,8 @@ def classify_cash_flow_txn(
         original_description=original_description,
         description_raw=description_raw,
         category_key=category_key,
+        manual_override=manual_override,
+        payment_meta=payment_meta,
     ):
         return "transfer"
 
@@ -233,6 +323,7 @@ def classify_cash_flow_txn(
         transaction_code=transaction_code,
         category_key=category_key,
         has_matched_investment=(has_matched_investment and not manual_override),
+        ignore_text_heuristic=manual_override,
     ):
         return "investments"
 

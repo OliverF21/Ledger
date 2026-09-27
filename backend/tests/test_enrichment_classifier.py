@@ -193,14 +193,11 @@ def test_matched_transfer_forces_transfer_role_on_inflow_leg():
 
 
 def test_matched_transfer_outranks_investment_funding_text_heuristic():
-    # A Robinhood Gold Card payment's checking-side leg carries the exact
-    # same merchant/ACH/financial_institution-counterparty text that also
-    # appears on genuine Robinhood brokerage funding — the ambiguity this
-    # whole feature exists to resolve. Without a match, that text alone
-    # trips _looks_like_investment_funding's heuristic (see the paired
-    # "no match" case below). A confirmed Transaction<->Transaction match
-    # must outrank that heuristic, since it's structurally certain to be a
-    # transfer, never investment funding.
+    # A Robinhood Gold Card payment's checking-side leg carries the same
+    # merchant/ACH/financial_institution text as genuine brokerage funding.
+    # "CCB" / Coastal Community Bank is the card bill-pay rail, so the row
+    # is a transfer even with no bank-to-bank match. A confirmed match
+    # agrees with that.
     matched = classify_cash_flow_txn(
         amount=500,
         category_plaid="TRANSFER_OUT",
@@ -229,7 +226,124 @@ def test_matched_transfer_outranks_investment_funding_text_heuristic():
         account_subtype="checking",
         has_matched_transfer=False,
     )
-    assert unmatched == "investments"
+    assert unmatched == "transfer"
+
+
+def test_gold_card_billpay_is_not_investments_even_when_plaid_says_so():
+    # Plaid often files the Robinhood card payment under the brokerage
+    # merchant and the investment-transfer detailed category.
+    role = classify_cash_flow_txn(
+        amount=500,
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
+        merchant="Robinhood",
+        original_description="COASTAL COMMUNITY BANK ROBINHOOD",
+        transaction_code="transfer",
+        payment_meta={"payment_method": "ACH", "payee": "Coastal Community Bank"},
+        counterparties=[{"name": "Robinhood", "type": "financial_institution"}],
+        account_type="depository",
+    )
+    assert role == "transfer"
+
+
+def test_trace_number_457_is_not_a_retirement_plan():
+    role = classify_cash_flow_txn(
+        amount=80,
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
+        merchant="Landlord",
+        original_description="ACH DEBIT REF 457",
+        transaction_code="transfer",
+        payment_meta={"payment_method": "ACH"},
+        account_type="depository",
+    )
+    assert role == "transfer"
+
+
+def test_457b_contribution_is_investments():
+    role = classify_cash_flow_txn(
+        amount=200,
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_OTHER_TRANSFER_OUT",
+        merchant="Employer Plan",
+        original_description="ACH DEPOSIT 457(b) PLAN",
+        account_type="depository",
+    )
+    assert role == "investments"
+
+
+def test_zelle_to_person_named_ira_is_not_investments():
+    role = classify_cash_flow_txn(
+        amount=40,
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_TRANSFER_OUT_FROM_APPS",
+        merchant="Zelle",
+        original_description="ZELLE TO IRA SMITH",
+        transaction_code="transfer",
+        counterparties=[{"name": "Zelle", "type": "payment_app"}],
+        account_type="depository",
+    )
+    assert role == "transfer"
+
+
+def test_rent_to_investment_properties_stays_spending():
+    role = classify_cash_flow_txn(
+        amount=1800,
+        category_plaid="RENT_AND_UTILITIES",
+        category_plaid_detailed="RENT_AND_UTILITIES_RENT",
+        merchant="ABC Investment Properties",
+        original_description="ACH RENT ABC INVESTMENT PROPERTIES",
+        payment_meta={"payment_method": "ACH"},
+        counterparties=[{"name": "First Bank", "type": "financial_institution"}],
+        account_type="depository",
+    )
+    assert role == "spending"
+
+
+def test_schwab_bank_transfer_is_not_brokerage_funding():
+    role = classify_cash_flow_txn(
+        amount=300,
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
+        merchant="Schwab Bank",
+        original_description="ACH TRANSFER SCHWAB BANK",
+        transaction_code="transfer",
+        payment_meta={"payment_method": "ACH"},
+        counterparties=[{"name": "Charles Schwab Bank", "type": "financial_institution"}],
+        account_type="depository",
+    )
+    assert role == "transfer"
+
+
+def test_manual_override_beats_brokerage_text_heuristic():
+    # Custom label (not a PFC spending key) so only the text heuristic could
+    # call this investments. transaction_code is omitted so the transfer-code
+    # fallback cannot explain the spending result.
+    kwargs = dict(
+        amount=42,
+        category_user="Household",
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
+        merchant="Robinhood",
+        original_description="ACH DEBIT ROBINHOOD",
+        payment_meta={"payment_method": "ACH"},
+        counterparties=[{"name": "Robinhood", "type": "financial_institution"}],
+        account_type="depository",
+    )
+    assert classify_cash_flow_txn(**kwargs, manual_override=True) == "spending"
+    assert classify_cash_flow_txn(**kwargs, manual_override=False) == "investments"
+
+
+def test_matched_investment_does_not_override_a_purchase_category():
+    role = classify_cash_flow_txn(
+        amount=8.25,
+        category_plaid="FOOD_AND_DRINK",
+        category_plaid_detailed="FOOD_AND_DRINK_COFFEE",
+        merchant="Blue Bottle",
+        account_type="depository",
+        has_matched_investment=True,
+    )
+    assert role == "spending"
 
 
 def test_matched_investment_forces_investments_role_with_no_text_cues():
