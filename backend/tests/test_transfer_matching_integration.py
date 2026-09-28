@@ -197,6 +197,8 @@ def test_manual_override_beats_matched_investment(db, accounts):
         amount=500.0,
         merchant="Unlabeled ACH",
         category_user="Shopping",
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
         manual_override=True,
         transaction_code=None,
     )
@@ -218,7 +220,10 @@ def test_manual_override_beats_matched_investment(db, accounts):
 
     assert classify_orm_transaction(checking_out, account=accounts["checking"]) == "spending"
 
+    # Drop the user's spending category so the assertion is about the match
+    # itself. A purchase category beats a deposit match either way.
     checking_out.manual_override = False
+    checking_out.category_user = None
     assert classify_orm_transaction(checking_out, account=accounts["checking"]) == "investments"
 
 
@@ -265,11 +270,8 @@ def test_no_text_cue_transfer_pair_both_legs_classify_as_transfer(db, accounts):
 
 
 def test_investment_funding_pair_classifies_bank_leg_as_investments(db, accounts):
-    """A bank outflow matched to an investment cash deposit classifies as
-    "investments". Note the bank<->bank transferish precondition does NOT
-    apply to this path (the investment pool is already restricted to external
-    cash-flow types/subtypes), but a realistic Plaid transaction_code is set
-    here anyway."""
+    """A transfer-like bank outflow matched to an investment cash deposit
+    classifies as "investments"."""
     checking_out = _txn(
         accounts["checking"],
         amount=500.0,

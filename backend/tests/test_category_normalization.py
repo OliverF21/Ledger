@@ -106,6 +106,15 @@ def test_display_rollup_buckets_investment_transfers():
     ) == "Investments"
 
 
+def test_display_rollup_user_category_beats_plaid_investment_key():
+    """Recategorizing a Plaid investment transfer must not keep the Investments label."""
+    assert display_rollup_category(
+        "Restaurants",
+        "TRANSFER_OUT",
+        "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
+    ) == "FOOD_AND_DRINK"
+
+
 def test_excludes_loan_payment_subcategories_from_income():
     assert is_excluded_from_income("LOAN_PAYMENTS_CREDIT_CARD_PAYMENT")
     assert not is_excluded_from_income("INCOME")

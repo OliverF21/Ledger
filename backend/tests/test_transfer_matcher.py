@@ -365,12 +365,52 @@ def test_loan_payment_category_satisfies_the_precondition(db):
     assert checking_out.transfer_match_transaction_id == card_in.id
 
 
-def test_investment_match_does_not_require_a_transferish_bank_leg(db):
-    # The precondition is bank<->bank only; the investment pool is already
-    # restricted to external cash-flow types/subtypes.
-    checking_out = _txn(account_id=1, amount=500.0, date=date(2026, 8, 14), transaction_code=None)
+def test_investment_match_skips_non_transfer_spending(db):
+    # Same failure mode as the bank<->bank tolerance floor: a purchase within
+    # $5 and 3 days of a brokerage deposit used to be claimed forever and
+    # then classified as investments.
+    coffee = _txn(
+        account_id=1,
+        amount=8.25,
+        date=date(2026, 8, 14),
+        merchant="Blue Bottle",
+        category_plaid="FOOD_AND_DRINK",
+        category_plaid_detailed="FOOD_AND_DRINK_COFFEE",
+        transaction_code=None,
+    )
     deposit = _investment_txn(
-        account_id=3, amount=-500.0, date=date(2026, 8, 14), plaid_investment_transaction_id="itx_notc"
+        account_id=3,
+        amount=-10.0,
+        date=date(2026, 8, 15),
+        plaid_investment_transaction_id="itx_coffee",
+    )
+    db.add_all([coffee, deposit])
+    db.commit()
+
+    stats = match_transfers(db, today=TODAY)
+
+    db.refresh(coffee)
+    db.refresh(deposit)
+    assert coffee.transfer_match_investment_txn_id is None
+    assert deposit.matched_transaction_id is None
+    assert stats["investment_pairs"] == 0
+
+
+def test_investment_match_allows_brokerage_memo_without_transfer_category(db):
+    checking_out = _txn(
+        account_id=1,
+        amount=500.0,
+        date=date(2026, 8, 14),
+        merchant="Vanguard",
+        original_description="ACH deposit Roth IRA",
+        transaction_code=None,
+        category_plaid=None,
+    )
+    deposit = _investment_txn(
+        account_id=3,
+        amount=-500.0,
+        date=date(2026, 8, 14),
+        plaid_investment_transaction_id="itx_memo",
     )
     db.add_all([checking_out, deposit])
     db.commit()
@@ -379,6 +419,35 @@ def test_investment_match_does_not_require_a_transferish_bank_leg(db):
 
     db.refresh(checking_out)
     assert checking_out.transfer_match_investment_txn_id == deposit.id
+
+
+def test_card_billpay_does_not_claim_investment_deposit(db):
+    card_payment = _txn(
+        account_id=1,
+        amount=500.0,
+        date=date(2026, 8, 14),
+        merchant="Robinhood",
+        original_description="ACH DEBIT ROBINHOOD CCB",
+        transaction_code="transfer",
+        category_plaid="TRANSFER_OUT",
+        category_plaid_detailed="TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
+    )
+    deposit = _investment_txn(
+        account_id=3,
+        amount=-500.0,
+        date=date(2026, 8, 14),
+        plaid_investment_transaction_id="itx_ccb",
+    )
+    db.add_all([card_payment, deposit])
+    db.commit()
+
+    stats = match_transfers(db, today=TODAY)
+
+    db.refresh(card_payment)
+    db.refresh(deposit)
+    assert card_payment.transfer_match_investment_txn_id is None
+    assert deposit.matched_transaction_id is None
+    assert stats["investment_pairs"] == 0
 
 
 def test_does_not_match_bank_inflow_to_investment_withdrawal(db):
