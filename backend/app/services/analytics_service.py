@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.analytics_shared import (
     CATEGORY_COLORS,
+    _exclusion_key,
     category_key_for_income_rules,
     category_key_for_spending_rules,
     display_rollup_category,
@@ -22,7 +23,7 @@ from app.analytics_shared import (
 )
 from app.enrichment import parse_enrichment_json
 from app.models import Account, BalanceSnapshot, GoalAttribution, Item, Transaction
-from app.txn_classifier import classify_orm_transaction
+from app.txn_classifier import classify_orm_transaction, looks_like_interest_earned
 
 LIABILITY_TYPES = frozenset({"credit", "loan"})
 EXCLUDED_PLAID_ITEMS = frozenset({"manual_import", "test_item"})
@@ -563,7 +564,7 @@ def build_cash_flow(
 
     income_buckets: dict[str, float] = {}
     for txn in income_pool:
-        category = _display_rollup_category(txn, "Other Income")
+        category = _income_source_category(txn)
         income_buckets[category] = income_buckets.get(category, 0.0) + abs(float(txn.amount))
 
     spend_buckets: dict[str, float] = {}
@@ -1036,6 +1037,27 @@ def _display_rollup_category(txn: Transaction, default: str) -> str:
     )
 
 
+def _income_source_category(txn: Transaction) -> str:
+    """Income band for Cash Flow.
+
+    Spending rolls up to a PFC primary, but income subtypes should stay visible.
+    Otherwise an INCOME_INTEREST_EARNED credit is folded into the generic Income
+    band and never shows up as interest.
+    """
+    key = _exclusion_key(_income_category_key(txn))
+    if key.startswith("INCOME_") and key != "INCOME":
+        return key
+    extra = parse_enrichment_json(getattr(txn, "enrichment_json", None)) or {}
+    if looks_like_interest_earned(
+        category_key=key,
+        merchant=txn.merchant,
+        original_description=getattr(txn, "original_description", None),
+        description_raw=extra.get("description_raw"),
+    ):
+        return "INCOME_INTEREST_EARNED"
+    return _display_rollup_category(txn, "Other Income")
+
+
 def _income_category_key(txn: Transaction) -> str:
     return category_key_for_income_rules(
         txn.category_user,
@@ -1057,7 +1079,7 @@ def _effective_amount(txn: Transaction) -> float:
 
 
 def _top_income_txns(pool: list[Transaction], category: str, limit: int = 3) -> list[CashFlowTxnItem]:
-    matching = [txn for txn in pool if _display_rollup_category(txn, "Other Income") == category]
+    matching = [txn for txn in pool if _income_source_category(txn) == category]
     matching.sort(key=lambda txn: abs(float(txn.amount)), reverse=True)
     return [
         CashFlowTxnItem(
