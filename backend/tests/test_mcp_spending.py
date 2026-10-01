@@ -549,6 +549,45 @@ def test_build_cash_flow_excludes_internal_transfer_in(db_session: Session):
     assert income_by_label.get("TRANSFER_IN") == 50.0
 
 
+def test_build_cash_flow_shows_interest_as_income(db_session: Session):
+    """Interest credits stay on the income side, including when Plaid calls them transfers."""
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    db_session.add_all(
+        [
+            Transaction(
+                account=checking,
+                merchant="Savings",
+                amount=Decimal("-12.34"),
+                date=date(2026, 6, 28),
+                category_plaid="INCOME",
+                category_plaid_detailed="INCOME_INTEREST_EARNED",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            Transaction(
+                account=checking,
+                merchant="Ally Bank",
+                amount=Decimal("-4.50"),
+                date=date(2026, 6, 29),
+                category_plaid="TRANSFER_IN",
+                category_plaid_detailed="TRANSFER_IN_ACCOUNT_TRANSFER",
+                original_description="Interest Payment",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_label = {node.label: node.amount for node in result.income_sources}
+    assert by_label["INCOME_INTEREST_EARNED"] == 16.84
+    assert "INCOME" not in by_label
+    assert result.total_income == 3016.84
+
+
 def test_cash_flow_sankey_data_returns_mermaid_links(
     db_session: Session, budgets_session: Session, monkeypatch: pytest.MonkeyPatch
 ):

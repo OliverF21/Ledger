@@ -346,6 +346,53 @@ def test_matched_investment_does_not_override_a_purchase_category():
     assert role == "spending"
 
 
+def test_interest_credit_filed_as_transfer_is_income():
+    role = classify_cash_flow_txn(
+        amount=-4.5,
+        category_plaid="TRANSFER_IN",
+        category_plaid_detailed="TRANSFER_IN_ACCOUNT_TRANSFER",
+        merchant="Ally Bank",
+        original_description="Interest Payment",
+        account_type="depository",
+        account_subtype="savings",
+    )
+    assert role == "income"
+
+
+def test_plaid_interest_earned_is_income():
+    role = classify_cash_flow_txn(
+        amount=-12.34,
+        category_plaid="INCOME",
+        category_plaid_detailed="INCOME_INTEREST_EARNED",
+        merchant="Savings",
+        account_type="depository",
+    )
+    assert role == "income"
+
+
+def test_interest_charge_is_not_income():
+    role = classify_cash_flow_txn(
+        amount=18.2,
+        category_plaid="BANK_FEES",
+        category_plaid_detailed="BANK_FEES_INTEREST_CHARGE",
+        merchant="Interest Charge",
+        account_type="credit",
+    )
+    assert role == "spending"
+
+
+def test_savings_transfer_without_interest_text_stays_out_of_income():
+    role = classify_cash_flow_txn(
+        amount=-3000,
+        category_plaid="TRANSFER_IN",
+        category_plaid_detailed="TRANSFER_IN_SAVINGS",
+        merchant="Online Transfer",
+        account_type="depository",
+        account_subtype="savings",
+    )
+    assert role == "exclude"
+
+
 def test_matched_investment_forces_investments_role_with_no_text_cues():
     role = classify_cash_flow_txn(
         amount=500,

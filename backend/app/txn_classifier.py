@@ -83,6 +83,19 @@ _PAYMENT_TEXT = re.compile(
     r"\b(payment|autopay|auto[\s\-]?pay|thank\s+you|credit\s+card)\b",
     re.IGNORECASE,
 )
+# Bank interest credits are earned income. Plaid often files them as a generic
+# transfer (or only as the word "interest"), which the income exclusion then drops.
+_INTEREST_EARNED_TEXT = re.compile(
+    r"(?<!\w)(?:"
+    r"interest(?:\s+(?:earned|payment|paid|credit|income|pymt))?"
+    r"|intrst(?:\s+pymnt)?"
+    r")(?!\w)",
+    re.IGNORECASE,
+)
+_INTEREST_CHARGE_TEXT = re.compile(
+    r"(?<!\w)(?:interest\s+charge|purchase\s+interest|finance\s+charge)(?!\w)",
+    re.IGNORECASE,
+)
 
 
 def _text_blob(*parts: str | None) -> str:
@@ -206,6 +219,25 @@ def _looks_like_savings_funding(
     return False
 
 
+def looks_like_interest_earned(
+    *,
+    category_key: str,
+    merchant: str | None,
+    original_description: str | None,
+    description_raw: str | None,
+) -> bool:
+    """True for interest credited to the account, not an interest charge."""
+    upper = _exclusion_key(category_key)
+    if upper in {"INCOME_INTEREST_EARNED", "INTEREST"}:
+        return True
+    if "INTEREST_CHARGE" in upper:
+        return False
+    blob = _text_blob(merchant, original_description, description_raw)
+    if not blob or _INTEREST_CHARGE_TEXT.search(blob):
+        return False
+    return bool(_INTEREST_EARNED_TEXT.search(blob))
+
+
 def _looks_like_card_payment(
     *,
     account_type: str | None,
@@ -278,6 +310,14 @@ def classify_cash_flow_txn(
             return "transfer"
         if not manual_override and has_matched_transfer:
             return "transfer"
+        # Interest credits are income even when Plaid files them as a transfer.
+        if looks_like_interest_earned(
+            category_key=category_key,
+            merchant=merchant,
+            original_description=original_description,
+            description_raw=description_raw,
+        ):
+            return "income"
         if is_excluded_from_income(category_key):
             return "exclude"
         return "income"
