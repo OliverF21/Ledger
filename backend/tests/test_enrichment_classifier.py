@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from app.enrichment import apply_enrichment_fields, extract_plaid_enrichment, parse_enrichment_json
-from app.txn_classifier import classify_cash_flow_txn, classify_orm_transaction
+from app.txn_classifier import brokerage_cash_flow_kind, classify_cash_flow_txn, classify_orm_transaction
 
 
 def test_extract_plaid_enrichment_keeps_payment_meta_and_codes():
@@ -379,6 +379,46 @@ def test_interest_charge_is_not_income():
         account_type="credit",
     )
     assert role == "spending"
+
+
+def test_brokerage_dividend_and_reinvestment_kinds():
+    assert brokerage_cash_flow_kind(
+        type="cash",
+        subtype="dividend",
+        name="Cash dividend of $7.68 from SCHD - DIVIDEND",
+    ) == "dividend"
+    assert brokerage_cash_flow_kind(
+        type="cash",
+        subtype="qualified dividend",
+        name="SCHD",
+    ) == "dividend"
+    assert brokerage_cash_flow_kind(
+        type="cash",
+        subtype=None,
+        name="Cash dividend of $7.68 from SCHD - DIVIDEND",
+    ) == "dividend"
+    assert brokerage_cash_flow_kind(
+        type="buy",
+        subtype="dividend reinvestment",
+        name="Dividend reinvestment purchase of 0.233 shares of SCHD for $7.68 total. - DIVIDENDREINVEST",
+    ) == "reinvestment"
+    assert brokerage_cash_flow_kind(
+        type="buy",
+        subtype="buy",
+        name="Dividend reinvestment purchase of 0.233 shares of SCHD for $7.68 total. - DIVIDENDREINVEST",
+    ) == "reinvestment"
+    assert brokerage_cash_flow_kind(type="buy", subtype="buy", name="Buy SCHD") is None
+    assert brokerage_cash_flow_kind(type="cash", subtype="deposit", name="Deposit") is None
+    assert brokerage_cash_flow_kind(
+        type="cash",
+        subtype="withdrawal",
+        name="Dividend cash transferred out",
+    ) is None
+    assert brokerage_cash_flow_kind(
+        type="buy",
+        subtype="interest reinvestment",
+        name="Interest reinvestment",
+    ) is None
 
 
 def test_savings_transfer_without_interest_text_stays_out_of_income():
