@@ -232,8 +232,34 @@ _DIVIDEND_REINVEST_SUBTYPES = frozenset({
 })
 _DIVIDEND_REINVEST_TEXT = re.compile(r"dividend\s*reinvest", re.IGNORECASE)
 _DIVIDEND_WORD_TEXT = re.compile(r"(?<!\w)dividends?(?!\w)", re.IGNORECASE)
+_CASHBACK_TEXT = re.compile(r"(?<!\w)cash\s*back(?!\w)", re.IGNORECASE)
 
 BrokerageCashFlowKind = Literal["dividend", "reinvestment"]
+
+
+def text_looks_like_cashback(*parts: str | None) -> bool:
+    """True for a credit-card rewards credit, not a purchase at a cash-back merchant."""
+    blob = _text_blob(*parts)
+    return bool(blob and _CASHBACK_TEXT.search(blob))
+
+
+def looks_like_brokerage_cashback(
+    *,
+    type: str | None,
+    subtype: str | None,
+    name: str | None,
+) -> bool:
+    """Rewards deposited into a brokerage account, such as a Robinhood transfer."""
+    if not text_looks_like_cashback(name):
+        return False
+    type_key = (type or "").strip().lower()
+    # A buy or sell whose security name mentions cash back is not a reward deposit.
+    if type_key in {"buy", "sell", "fee", "cancel"}:
+        return False
+    subtype_key = (subtype or "").strip().lower()
+    if subtype_key in {"buy", "sell", "fee"}:
+        return False
+    return True
 
 
 def text_looks_like_cash_dividend(*parts: str | None) -> bool:
@@ -350,6 +376,14 @@ def classify_cash_flow_txn(
     )
 
     if amount < 0:
+        if not manual_override and has_matched_transfer:
+            return "transfer"
+        # Rewards credits are income even on a credit card, where every other
+        # inflow is treated as a card payment.
+        if not manual_override and text_looks_like_cashback(
+            merchant, original_description, description_raw
+        ):
+            return "income"
         if _looks_like_card_payment(
             account_type=account_type,
             amount=amount,
@@ -360,8 +394,6 @@ def classify_cash_flow_txn(
             manual_override=manual_override,
             payment_meta=payment_meta,
         ):
-            return "transfer"
-        if not manual_override and has_matched_transfer:
             return "transfer"
         # Interest credits are income even when Plaid files them as a transfer.
         if looks_like_interest_earned(

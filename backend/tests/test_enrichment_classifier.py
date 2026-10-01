@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 
 from app.enrichment import apply_enrichment_fields, extract_plaid_enrichment, parse_enrichment_json
-from app.txn_classifier import brokerage_cash_flow_kind, classify_cash_flow_txn, classify_orm_transaction
+from app.txn_classifier import (
+    brokerage_cash_flow_kind,
+    classify_cash_flow_txn,
+    classify_orm_transaction,
+    looks_like_brokerage_cashback,
+)
 
 
 def test_extract_plaid_enrichment_keeps_payment_meta_and_codes():
@@ -419,6 +424,38 @@ def test_brokerage_dividend_and_reinvestment_kinds():
         subtype="interest reinvestment",
         name="Interest reinvestment",
     ) is None
+
+
+def test_cashback_credit_is_income_even_on_a_credit_card():
+    role = classify_cash_flow_txn(
+        amount=-16.66,
+        category_plaid="TRANSFER_IN",
+        category_plaid_detailed="TRANSFER_IN_ACCOUNT_TRANSFER",
+        merchant="Robinhood",
+        original_description="Credit card cashback rewards of $16.66",
+        account_type="credit",
+    )
+    assert role == "income"
+
+
+def test_card_payment_credit_without_cashback_stays_transfer():
+    role = classify_cash_flow_txn(
+        amount=-200,
+        merchant="Payment thank you",
+        account_type="credit",
+    )
+    assert role == "transfer"
+
+
+def test_brokerage_cashback_transfer_is_recognized():
+    name = (
+        "Credit card cashback rewards of $16.66 transferred to "
+        "Robinhood Brokerage account ending in 4355. - TRANSFER"
+    )
+    assert looks_like_brokerage_cashback(type="transfer", subtype="transfer", name=name)
+    assert looks_like_brokerage_cashback(type="cash", subtype=None, name=name)
+    assert not looks_like_brokerage_cashback(type="buy", subtype="buy", name="Buy Cashback ETF")
+    assert not looks_like_brokerage_cashback(type="transfer", subtype="deposit", name="Deposit")
 
 
 def test_savings_transfer_without_interest_text_stays_out_of_income():

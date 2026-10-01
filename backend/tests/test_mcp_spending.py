@@ -671,6 +671,86 @@ def test_build_cash_flow_does_not_double_count_bank_dividend(db_session: Session
     assert all(node.id != "Reinvestment" for node in result.allocation_nodes)
 
 
+def test_build_cash_flow_shows_brokerage_cashback_as_income_and_investments(db_session: Session):
+    """Rewards deposited into a brokerage are income and an investment."""
+    brokerage = db_session.query(Account).filter_by(plaid_account_id="acct_brokerage").one()
+    db_session.add(
+        InvestmentTransaction(
+            account=brokerage,
+            plaid_investment_transaction_id="itx_cashback",
+            name=(
+                "Credit card cashback rewards of $16.66 transferred to "
+                "Robinhood Brokerage account ending in 4355. - TRANSFER"
+            ),
+            type="transfer",
+            subtype="transfer",
+            amount=Decimal("-16.66"),
+            date=date(2026, 6, 30),
+        )
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_label = {node.label: node.amount for node in result.income_sources}
+    alloc = {node.id: node for node in result.allocation_nodes}
+
+    assert by_label["Cash Back"] == 16.66
+    cashback = next(node for node in result.income_sources if node.label == "Cash Back")
+    assert cashback.top_transactions[0].merchant == "Cash back"
+    assert cashback.top_transactions[0].amount == 16.66
+    assert result.total_income == 3016.66
+    assert alloc["Investments"].amount == 16.66
+    assert alloc["Investments"].top_transactions[0].merchant == "Cash back"
+    # Income and the investment cancel, so leftover savings is unchanged.
+    assert result.savings == 1781.0
+    assert result.total_spending == 1219.0
+    summary = build_monthly_summary(db_session, month="2026-06")
+    assert summary.total_income == 3000.0
+
+
+def test_build_cash_flow_does_not_double_count_bank_cashback(db_session: Session):
+    """A rewards credit already on the card is not added again from the brokerage row."""
+    card = db_session.query(Account).filter_by(plaid_account_id="acct_card").one()
+    brokerage = db_session.query(Account).filter_by(plaid_account_id="acct_brokerage").one()
+    db_session.add_all(
+        [
+            Transaction(
+                account=card,
+                merchant="Robinhood",
+                amount=Decimal("-16.66"),
+                date=date(2026, 6, 30),
+                original_description="Credit card cashback rewards of $16.66",
+                category_plaid="TRANSFER_IN",
+                category_plaid_detailed="TRANSFER_IN_ACCOUNT_TRANSFER",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            InvestmentTransaction(
+                account=brokerage,
+                plaid_investment_transaction_id="itx_cashback_dup",
+                name=(
+                    "Credit card cashback rewards of $16.66 transferred to "
+                    "Robinhood Brokerage account ending in 4355. - TRANSFER"
+                ),
+                type="transfer",
+                subtype="transfer",
+                amount=Decimal("-16.66"),
+                date=date(2026, 6, 30),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_label = {node.label: node.amount for node in result.income_sources}
+    alloc = {node.id: node for node in result.allocation_nodes}
+    assert by_label["Cash Back"] == 16.66
+    assert result.total_income == 3016.66
+    assert alloc["Investments"].amount == 16.66
+    assert result.savings == 1781.0
+
+
 def test_build_cash_flow_shows_interest_as_income(db_session: Session):
     """Interest credits stay on the income side, including when Plaid calls them transfers."""
     checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()

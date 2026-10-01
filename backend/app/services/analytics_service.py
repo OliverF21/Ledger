@@ -26,8 +26,10 @@ from app.models import Account, BalanceSnapshot, GoalAttribution, InvestmentTran
 from app.txn_classifier import (
     brokerage_cash_flow_kind,
     classify_orm_transaction,
+    looks_like_brokerage_cashback,
     looks_like_interest_earned,
     text_looks_like_cash_dividend,
+    text_looks_like_cashback,
 )
 
 LIABILITY_TYPES = frozenset({"credit", "loan"})
@@ -572,9 +574,13 @@ def build_cash_flow(
         category = _income_source_category(txn)
         income_buckets[category] = income_buckets.get(category, 0.0) + abs(float(txn.amount))
 
-    dividend_credits, reinvestments = _brokerage_dividend_activity(db, start, end, income_pool)
+    dividend_credits, reinvestments, cashback_income, cashback_investments = _brokerage_chart_activity(
+        db, start, end, income_pool, investment_pool
+    )
     for credit in dividend_credits:
         income_buckets[DIVIDENDS_CATEGORY] = income_buckets.get(DIVIDENDS_CATEGORY, 0.0) + credit.amount
+    for credit in cashback_income:
+        income_buckets[CASH_BACK_CATEGORY] = income_buckets.get(CASH_BACK_CATEGORY, 0.0) + credit.amount
 
     spend_buckets: dict[str, float] = {}
     for txn in spend_pool:
@@ -590,7 +596,7 @@ def build_cash_flow(
             top_transactions=_merged_income_top(
                 income_pool,
                 category,
-                dividend_credits if category == DIVIDENDS_CATEGORY else [],
+                _extra_income_txns(category, dividend_credits, cashback_income),
             ),
         )
         for index, (category, total) in enumerate(
@@ -616,6 +622,7 @@ def build_cash_flow(
         savings_pool=savings_pool,
         investment_pool=investment_pool,
     )
+    allocation_nodes = _include_cashback_investments(allocation_nodes, cashback_investments)
     if reinvestments:
         allocation_nodes.append(_reinvestment_node(reinvestments))
 
@@ -650,24 +657,27 @@ INVESTMENTS_NODE_ID = "Investments"
 REINVESTMENT_NODE_ID = "Reinvestment"
 UNALLOCATED_NODE_ID = "__unallocated__"
 DIVIDENDS_CATEGORY = "INCOME_DIVIDENDS"
+CASH_BACK_CATEGORY = "Cash Back"
 SAVINGS_COLOR = "#4ec38a"
 INVESTMENTS_COLOR = "#8a7df0"
 REINVESTMENT_COLOR = "#5ec8c4"
 UNALLOCATED_COLOR = "#7a808c"
 
 
-def _brokerage_dividend_activity(
+def _brokerage_chart_activity(
     db: Session,
     start: date,
     end: date,
     income_pool: list[Transaction],
-) -> tuple[list[CashFlowTxnItem], list[CashFlowTxnItem]]:
-    """Dividend credits and dividend-reinvestment buys for the cash-flow chart.
+    investment_pool: list[Transaction],
+) -> tuple[list[CashFlowTxnItem], list[CashFlowTxnItem], list[CashFlowTxnItem], list[CashFlowTxnItem]]:
+    """Brokerage rows that belong on the cash-flow chart.
 
-    These rows live on investment_transactions and stay off every other surface.
-    A cash dividend that was reinvested the same day is still income; the buy is
-    the matching outflow. A dividend that also posted to a bank account as income
-    is skipped so the chart does not count it twice.
+    Dividends, dividend reinvestments, and credit-card cash-back deposits live
+    on investment_transactions and stay off every other surface. A cash dividend
+    that was reinvested the same day is still income; the buy is the matching
+    outflow. Cash back deposited into the brokerage is income and an investment.
+    A credit that already posted on a bank account is not counted twice.
     """
     rows = (
         db.query(InvestmentTransaction)
@@ -685,9 +695,19 @@ def _brokerage_dividend_activity(
     }
     dividends: list[CashFlowTxnItem] = []
     reinvestments: list[CashFlowTxnItem] = []
+    cashback_income: list[CashFlowTxnItem] = []
+    cashback_investments: list[CashFlowTxnItem] = []
     for row in rows:
-        kind = brokerage_cash_flow_kind(type=row.type, subtype=row.subtype, name=row.name)
         amount = float(row.amount)
+        if looks_like_brokerage_cashback(type=row.type, subtype=row.subtype, name=row.name) and amount < 0:
+            credited = abs(amount)
+            item = _activity_item(row, credited, merchant="Cash back")
+            if not _bank_already_has_cashback(income_pool, row.date, credited):
+                cashback_income.append(item)
+            if not _bank_already_invested_cashback(investment_pool, row.date, credited):
+                cashback_investments.append(item)
+            continue
+        kind = brokerage_cash_flow_kind(type=row.type, subtype=row.subtype, name=row.name)
         if kind == "dividend" and amount < 0:
             credited = abs(amount)
             paired = (row.account_id, row.date, _cents(credited)) in reinvest_keys
@@ -696,7 +716,7 @@ def _brokerage_dividend_activity(
             dividends.append(_activity_item(row, credited))
         elif kind == "reinvestment" and amount > 0:
             reinvestments.append(_activity_item(row, amount))
-    return dividends, reinvestments
+    return dividends, reinvestments, cashback_income, cashback_investments
 
 
 def _is_reinvestment_outflow(row: InvestmentTransaction) -> bool:
@@ -724,10 +744,44 @@ def _bank_already_has_dividend(income_pool: list[Transaction], when: date, credi
     return False
 
 
-def _activity_item(row: InvestmentTransaction, amount: float) -> CashFlowTxnItem:
+def _bank_already_has_cashback(income_pool: list[Transaction], when: date, credited: float) -> bool:
+    wanted = _cents(credited)
+    for txn in income_pool:
+        if txn.date != when or _cents(abs(float(txn.amount))) != wanted:
+            continue
+        if _income_source_category(txn) == CASH_BACK_CATEGORY:
+            return True
+        extra = parse_enrichment_json(getattr(txn, "enrichment_json", None)) or {}
+        if text_looks_like_cashback(
+            txn.merchant,
+            getattr(txn, "original_description", None),
+            extra.get("description_raw"),
+        ):
+            return True
+    return False
+
+
+def _bank_already_invested_cashback(
+    investment_pool: list[Transaction], when: date, credited: float
+) -> bool:
+    wanted = _cents(credited)
+    for txn in investment_pool:
+        if txn.date != when or _cents(abs(float(txn.amount))) != wanted:
+            continue
+        extra = parse_enrichment_json(getattr(txn, "enrichment_json", None)) or {}
+        if text_looks_like_cashback(
+            txn.merchant,
+            getattr(txn, "original_description", None),
+            extra.get("description_raw"),
+        ):
+            return True
+    return False
+
+
+def _activity_item(row: InvestmentTransaction, amount: float, merchant: str | None = None) -> CashFlowTxnItem:
     security = row.security
     ticker = security.ticker_symbol if security is not None else None
-    merchant = (ticker or "").strip() or (row.name or "").strip() or "Dividend"
+    merchant = (merchant or "").strip() or (ticker or "").strip() or (row.name or "").strip() or "Dividend"
     return CashFlowTxnItem(
         merchant=merchant,
         amount=round(amount, 2),
@@ -744,6 +798,57 @@ def _reinvestment_node(items: list[CashFlowTxnItem]) -> CashFlowNodeItem:
         color=REINVESTMENT_COLOR,
         top_transactions=ranked[:3],
     )
+
+
+def _extra_income_txns(
+    category: str,
+    dividend_credits: list[CashFlowTxnItem],
+    cashback_income: list[CashFlowTxnItem],
+) -> list[CashFlowTxnItem]:
+    if category == DIVIDENDS_CATEGORY:
+        return dividend_credits
+    if category == CASH_BACK_CATEGORY:
+        return cashback_income
+    return []
+
+
+def _include_cashback_investments(
+    nodes: list[CashFlowNodeItem],
+    cashback: list[CashFlowTxnItem],
+) -> list[CashFlowNodeItem]:
+    if not cashback:
+        return nodes
+    extra = round(sum(item.amount for item in cashback), 2)
+    ranked = sorted(cashback, key=lambda item: item.amount, reverse=True)
+    updated: list[CashFlowNodeItem] = []
+    merged = False
+    for node in nodes:
+        if node.id != INVESTMENTS_NODE_ID:
+            updated.append(node)
+            continue
+        tops = sorted([*node.top_transactions, *ranked], key=lambda item: item.amount, reverse=True)
+        updated.append(
+            CashFlowNodeItem(
+                id=node.id,
+                label=node.label,
+                amount=round(node.amount + extra, 2),
+                color=node.color,
+                top_transactions=tops[:3],
+            )
+        )
+        merged = True
+    if merged:
+        return updated
+    updated.append(
+        CashFlowNodeItem(
+            id=INVESTMENTS_NODE_ID,
+            label="Investments",
+            amount=extra,
+            color=INVESTMENTS_COLOR,
+            top_transactions=ranked[:3],
+        )
+    )
+    return updated
 
 
 def _merged_income_top(
@@ -1169,9 +1274,15 @@ def _income_source_category(txn: Transaction) -> str:
     band and never shows up as interest.
     """
     key = _exclusion_key(_income_category_key(txn))
+    extra = parse_enrichment_json(getattr(txn, "enrichment_json", None)) or {}
+    if not (txn.category_user or "").strip() and text_looks_like_cashback(
+        txn.merchant,
+        getattr(txn, "original_description", None),
+        extra.get("description_raw"),
+    ):
+        return CASH_BACK_CATEGORY
     if key.startswith("INCOME_") and key != "INCOME":
         return key
-    extra = parse_enrichment_json(getattr(txn, "enrichment_json", None)) or {}
     if looks_like_interest_earned(
         category_key=key,
         merchant=txn.merchant,
