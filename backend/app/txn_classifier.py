@@ -219,6 +219,59 @@ def _looks_like_savings_funding(
     return False
 
 
+# Plaid investment-transaction subtypes. A cash dividend is income; the paired
+# buy that puts those dollars back into shares is a reinvestment, not new funding.
+_DIVIDEND_INCOME_SUBTYPES = frozenset({
+    "dividend",
+    "qualified dividend",
+    "non-qualified dividend",
+    "nonqualified dividend",
+})
+_DIVIDEND_REINVEST_SUBTYPES = frozenset({
+    "dividend reinvestment",
+})
+_DIVIDEND_REINVEST_TEXT = re.compile(r"dividend\s*reinvest", re.IGNORECASE)
+_DIVIDEND_WORD_TEXT = re.compile(r"(?<!\w)dividends?(?!\w)", re.IGNORECASE)
+
+BrokerageCashFlowKind = Literal["dividend", "reinvestment"]
+
+
+def text_looks_like_cash_dividend(*parts: str | None) -> bool:
+    """True for a dividend credit memo, not a dividend-reinvestment buy."""
+    blob = _text_blob(*parts)
+    return bool(blob and _DIVIDEND_WORD_TEXT.search(blob) and not _DIVIDEND_REINVEST_TEXT.search(blob))
+
+
+def brokerage_cash_flow_kind(
+    *,
+    type: str | None,
+    subtype: str | None,
+    name: str | None,
+) -> BrokerageCashFlowKind | None:
+    """Cash-flow role for one investment-account activity row.
+
+    Only dividends and dividend reinvestments belong on the cash-flow chart.
+    Buys, sells, deposits, and fees stay on the Investments tab.
+    """
+    subtype_key = (subtype or "").strip().lower()
+    type_key = (type or "").strip().lower()
+    blob = name or ""
+    if subtype_key in _DIVIDEND_REINVEST_SUBTYPES or _DIVIDEND_REINVEST_TEXT.search(blob):
+        return "reinvestment"
+    if subtype_key in _DIVIDEND_INCOME_SUBTYPES:
+        return "dividend"
+    # Robinhood-style memos ("Cash dividend of $7.68 from SCHD - DIVIDEND")
+    # sometimes arrive with type cash and the word only in the name. A withdrawal
+    # or deposit that merely mentions a dividend is a transfer, not a second credit.
+    if (
+        type_key == "cash"
+        and subtype_key not in {"deposit", "withdrawal", "contribution", "distribution", "transfer", "send", "request"}
+        and _DIVIDEND_WORD_TEXT.search(blob)
+    ):
+        return "dividend"
+    return None
+
+
 def looks_like_interest_earned(
     *,
     category_key: str,

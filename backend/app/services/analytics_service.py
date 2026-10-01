@@ -22,8 +22,13 @@ from app.analytics_shared import (
     month_bounds,
 )
 from app.enrichment import parse_enrichment_json
-from app.models import Account, BalanceSnapshot, GoalAttribution, Item, Transaction
-from app.txn_classifier import classify_orm_transaction, looks_like_interest_earned
+from app.models import Account, BalanceSnapshot, GoalAttribution, InvestmentTransaction, Item, Transaction
+from app.txn_classifier import (
+    brokerage_cash_flow_kind,
+    classify_orm_transaction,
+    looks_like_interest_earned,
+    text_looks_like_cash_dividend,
+)
 
 LIABILITY_TYPES = frozenset({"credit", "loan"})
 EXCLUDED_PLAID_ITEMS = frozenset({"manual_import", "test_item"})
@@ -567,6 +572,10 @@ def build_cash_flow(
         category = _income_source_category(txn)
         income_buckets[category] = income_buckets.get(category, 0.0) + abs(float(txn.amount))
 
+    dividend_credits, reinvestments = _brokerage_dividend_activity(db, start, end, income_pool)
+    for credit in dividend_credits:
+        income_buckets[DIVIDENDS_CATEGORY] = income_buckets.get(DIVIDENDS_CATEGORY, 0.0) + credit.amount
+
     spend_buckets: dict[str, float] = {}
     for txn in spend_pool:
         category = _display_rollup_category(txn, "Uncategorized")
@@ -578,7 +587,11 @@ def build_cash_flow(
             label=category,
             amount=round(total, 2),
             color=_income_colors()[index % len(_income_colors())],
-            top_transactions=_top_income_txns(income_pool, category),
+            top_transactions=_merged_income_top(
+                income_pool,
+                category,
+                dividend_credits if category == DIVIDENDS_CATEGORY else [],
+            ),
         )
         for index, (category, total) in enumerate(
             sorted(income_buckets.items(), key=lambda item: item[1], reverse=True)
@@ -603,6 +616,8 @@ def build_cash_flow(
         savings_pool=savings_pool,
         investment_pool=investment_pool,
     )
+    if reinvestments:
+        allocation_nodes.append(_reinvestment_node(reinvestments))
 
     total_income = round(sum(item.amount for item in income_sources), 2)
     total_spending = round(sum(item.amount for item in spending_categories), 2)
@@ -632,10 +647,119 @@ def build_cash_flow(
 
 SAVINGS_NODE_ID = "__savings__"
 INVESTMENTS_NODE_ID = "Investments"
+REINVESTMENT_NODE_ID = "Reinvestment"
 UNALLOCATED_NODE_ID = "__unallocated__"
+DIVIDENDS_CATEGORY = "INCOME_DIVIDENDS"
 SAVINGS_COLOR = "#4ec38a"
 INVESTMENTS_COLOR = "#8a7df0"
+REINVESTMENT_COLOR = "#5ec8c4"
 UNALLOCATED_COLOR = "#7a808c"
+
+
+def _brokerage_dividend_activity(
+    db: Session,
+    start: date,
+    end: date,
+    income_pool: list[Transaction],
+) -> tuple[list[CashFlowTxnItem], list[CashFlowTxnItem]]:
+    """Dividend credits and dividend-reinvestment buys for the cash-flow chart.
+
+    These rows live on investment_transactions and stay off every other surface.
+    A cash dividend that was reinvested the same day is still income; the buy is
+    the matching outflow. A dividend that also posted to a bank account as income
+    is skipped so the chart does not count it twice.
+    """
+    rows = (
+        db.query(InvestmentTransaction)
+        .options(joinedload(InvestmentTransaction.security))
+        .filter(
+            InvestmentTransaction.date >= start,
+            InvestmentTransaction.date < end,
+        )
+        .all()
+    )
+    reinvest_keys = {
+        (row.account_id, row.date, _cents(float(row.amount)))
+        for row in rows
+        if _is_reinvestment_outflow(row)
+    }
+    dividends: list[CashFlowTxnItem] = []
+    reinvestments: list[CashFlowTxnItem] = []
+    for row in rows:
+        kind = brokerage_cash_flow_kind(type=row.type, subtype=row.subtype, name=row.name)
+        amount = float(row.amount)
+        if kind == "dividend" and amount < 0:
+            credited = abs(amount)
+            paired = (row.account_id, row.date, _cents(credited)) in reinvest_keys
+            if not paired and _bank_already_has_dividend(income_pool, row.date, credited):
+                continue
+            dividends.append(_activity_item(row, credited))
+        elif kind == "reinvestment" and amount > 0:
+            reinvestments.append(_activity_item(row, amount))
+    return dividends, reinvestments
+
+
+def _is_reinvestment_outflow(row: InvestmentTransaction) -> bool:
+    if float(row.amount) <= 0:
+        return False
+    return (
+        brokerage_cash_flow_kind(type=row.type, subtype=row.subtype, name=row.name) == "reinvestment"
+    )
+
+
+def _bank_already_has_dividend(income_pool: list[Transaction], when: date, credited: float) -> bool:
+    wanted = _cents(credited)
+    for txn in income_pool:
+        if txn.date != when or _cents(abs(float(txn.amount))) != wanted:
+            continue
+        if _income_source_category(txn) == DIVIDENDS_CATEGORY:
+            return True
+        extra = parse_enrichment_json(getattr(txn, "enrichment_json", None)) or {}
+        if text_looks_like_cash_dividend(
+            txn.merchant,
+            getattr(txn, "original_description", None),
+            extra.get("description_raw"),
+        ):
+            return True
+    return False
+
+
+def _activity_item(row: InvestmentTransaction, amount: float) -> CashFlowTxnItem:
+    security = row.security
+    ticker = security.ticker_symbol if security is not None else None
+    merchant = (ticker or "").strip() or (row.name or "").strip() or "Dividend"
+    return CashFlowTxnItem(
+        merchant=merchant,
+        amount=round(amount, 2),
+        date=row.date.isoformat(),
+    )
+
+
+def _reinvestment_node(items: list[CashFlowTxnItem]) -> CashFlowNodeItem:
+    ranked = sorted(items, key=lambda item: item.amount, reverse=True)
+    return CashFlowNodeItem(
+        id=REINVESTMENT_NODE_ID,
+        label="Reinvestment",
+        amount=round(sum(item.amount for item in items), 2),
+        color=REINVESTMENT_COLOR,
+        top_transactions=ranked[:3],
+    )
+
+
+def _merged_income_top(
+    pool: list[Transaction],
+    category: str,
+    extras: list[CashFlowTxnItem],
+) -> list[CashFlowTxnItem]:
+    combined = _top_income_txns(pool, category, limit=10)
+    if extras:
+        combined = combined + extras
+    combined.sort(key=lambda item: item.amount, reverse=True)
+    return combined[:3]
+
+
+def _cents(amount: float) -> int:
+    return int(round(abs(amount) * 100))
 
 
 def _allocation_nodes(
