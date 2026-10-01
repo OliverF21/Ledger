@@ -25,7 +25,17 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 from app.budgets_db import Budget, BudgetsBase  # noqa: E402
-from app.models import Account, BalanceSnapshot, Base, Holding, Item, Security, Transaction, User  # noqa: E402
+from app.models import (
+    Account,
+    BalanceSnapshot,
+    Base,
+    Holding,
+    InvestmentTransaction,
+    Item,
+    Security,
+    Transaction,
+    User,
+)  # noqa: E402
 from app.routes.analytics import get_monthly_summary  # noqa: E402
 from app.services.analytics_service import (  # noqa: E402
     build_budget_vs_actual,
@@ -547,6 +557,198 @@ def test_build_cash_flow_excludes_internal_transfer_in(db_session: Session):
     income_by_label = {node.label: node.amount for node in result.income_sources}
     assert income_by_label.get("Paycheck") == 3000.0
     assert income_by_label.get("TRANSFER_IN") == 50.0
+
+
+def test_build_cash_flow_shows_dividend_and_reinvestment(db_session: Session):
+    """A brokerage cash dividend is income; the same-day DRIP is a chart outflow."""
+    brokerage = db_session.query(Account).filter_by(plaid_account_id="acct_brokerage").one()
+    schd = Security(
+        plaid_security_id="sec_schd",
+        ticker_symbol="SCHD",
+        name="Schwab US Dividend Equity ETF",
+        type="etf",
+        iso_currency_code="USD",
+    )
+    db_session.add(schd)
+    db_session.flush()
+    db_session.add_all(
+        [
+            InvestmentTransaction(
+                account=brokerage,
+                security=schd,
+                plaid_investment_transaction_id="itx_schd_div",
+                name="Cash dividend of $7.68 from SCHD - DIVIDEND",
+                type="cash",
+                subtype="dividend",
+                amount=Decimal("-7.68"),
+                quantity=None,
+                price=None,
+                date=date(2026, 6, 28),
+            ),
+            InvestmentTransaction(
+                account=brokerage,
+                security=schd,
+                plaid_investment_transaction_id="itx_schd_drip",
+                name="Dividend reinvestment purchase of 0.233 shares of SCHD for $7.68 total. - DIVIDENDREINVEST",
+                type="buy",
+                subtype="dividend reinvestment",
+                amount=Decimal("7.68"),
+                quantity=Decimal("0.233000"),
+                price=Decimal("32.96"),
+                date=date(2026, 6, 28),
+            ),
+            InvestmentTransaction(
+                account=brokerage,
+                security=schd,
+                plaid_investment_transaction_id="itx_schd_buy",
+                name="Buy SCHD",
+                type="buy",
+                subtype="buy",
+                amount=Decimal("100.00"),
+                quantity=Decimal("3.000000"),
+                price=Decimal("33.33"),
+                date=date(2026, 6, 15),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_label = {node.label: node.amount for node in result.income_sources}
+    alloc = {node.id: node for node in result.allocation_nodes}
+
+    assert by_label["INCOME_DIVIDENDS"] == 7.68
+    dividends = next(node for node in result.income_sources if node.label == "INCOME_DIVIDENDS")
+    assert dividends.top_transactions[0].merchant == "SCHD"
+    assert dividends.top_transactions[0].amount == 7.68
+    assert result.total_income == 3007.68
+    assert alloc["Reinvestment"].amount == 7.68
+    assert alloc["Reinvestment"].label == "Reinvestment"
+    assert alloc["Reinvestment"].top_transactions[0].merchant == "SCHD"
+    assert "Investments" not in alloc
+    # Dividend in and reinvestment out cancel, so leftover savings is unchanged.
+    assert result.savings == 1781.0
+    assert result.total_spending == 1219.0
+    # Investments tab totals and the monthly summary stay on bank transactions only.
+    summary = build_monthly_summary(db_session, month="2026-06")
+    assert summary.total_income == 3000.0
+
+
+def test_build_cash_flow_does_not_double_count_bank_dividend(db_session: Session):
+    """A dividend that already hit checking as income is not added again from the brokerage."""
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    brokerage = db_session.query(Account).filter_by(plaid_account_id="acct_brokerage").one()
+    db_session.add_all(
+        [
+            Transaction(
+                account=checking,
+                merchant="SCHD",
+                amount=Decimal("-7.68"),
+                date=date(2026, 6, 28),
+                category_plaid="INCOME",
+                category_plaid_detailed="INCOME_DIVIDENDS",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            InvestmentTransaction(
+                account=brokerage,
+                plaid_investment_transaction_id="itx_schd_div_dup",
+                name="Cash dividend of $7.68 from SCHD - DIVIDEND",
+                type="cash",
+                subtype="dividend",
+                amount=Decimal("-7.68"),
+                date=date(2026, 6, 28),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_label = {node.label: node.amount for node in result.income_sources}
+    assert by_label["INCOME_DIVIDENDS"] == 7.68
+    assert result.total_income == 3007.68
+    assert all(node.id != "Reinvestment" for node in result.allocation_nodes)
+
+
+def test_build_cash_flow_shows_brokerage_cashback_as_income_and_investments(db_session: Session):
+    """Rewards deposited into a brokerage are income and an investment."""
+    brokerage = db_session.query(Account).filter_by(plaid_account_id="acct_brokerage").one()
+    db_session.add(
+        InvestmentTransaction(
+            account=brokerage,
+            plaid_investment_transaction_id="itx_cashback",
+            name=(
+                "Credit card cashback rewards of $16.66 transferred to "
+                "Robinhood Brokerage account ending in 4355. - TRANSFER"
+            ),
+            type="transfer",
+            subtype="transfer",
+            amount=Decimal("-16.66"),
+            date=date(2026, 6, 30),
+        )
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_label = {node.label: node.amount for node in result.income_sources}
+    alloc = {node.id: node for node in result.allocation_nodes}
+
+    assert by_label["Cash Back"] == 16.66
+    cashback = next(node for node in result.income_sources if node.label == "Cash Back")
+    assert cashback.top_transactions[0].merchant == "Cash back"
+    assert cashback.top_transactions[0].amount == 16.66
+    assert result.total_income == 3016.66
+    assert alloc["Investments"].amount == 16.66
+    assert alloc["Investments"].top_transactions[0].merchant == "Cash back"
+    # Income and the investment cancel, so leftover savings is unchanged.
+    assert result.savings == 1781.0
+    assert result.total_spending == 1219.0
+    summary = build_monthly_summary(db_session, month="2026-06")
+    assert summary.total_income == 3000.0
+
+
+def test_build_cash_flow_does_not_double_count_bank_cashback(db_session: Session):
+    """A rewards credit already on the card is not added again from the brokerage row."""
+    card = db_session.query(Account).filter_by(plaid_account_id="acct_card").one()
+    brokerage = db_session.query(Account).filter_by(plaid_account_id="acct_brokerage").one()
+    db_session.add_all(
+        [
+            Transaction(
+                account=card,
+                merchant="Robinhood",
+                amount=Decimal("-16.66"),
+                date=date(2026, 6, 30),
+                original_description="Credit card cashback rewards of $16.66",
+                category_plaid="TRANSFER_IN",
+                category_plaid_detailed="TRANSFER_IN_ACCOUNT_TRANSFER",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            InvestmentTransaction(
+                account=brokerage,
+                plaid_investment_transaction_id="itx_cashback_dup",
+                name=(
+                    "Credit card cashback rewards of $16.66 transferred to "
+                    "Robinhood Brokerage account ending in 4355. - TRANSFER"
+                ),
+                type="transfer",
+                subtype="transfer",
+                amount=Decimal("-16.66"),
+                date=date(2026, 6, 30),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    result = build_cash_flow(db_session, month="2026-06")
+    by_label = {node.label: node.amount for node in result.income_sources}
+    alloc = {node.id: node for node in result.allocation_nodes}
+    assert by_label["Cash Back"] == 16.66
+    assert result.total_income == 3016.66
+    assert alloc["Investments"].amount == 16.66
+    assert result.savings == 1781.0
 
 
 def test_build_cash_flow_shows_interest_as_income(db_session: Session):
