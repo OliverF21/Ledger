@@ -2,13 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { apiFetch } from '../api/client'
 import { formatCategory } from '../utils/categories'
 import { useOnSyncComplete } from '../hooks/useSync'
-import { getMonthOptions } from '../utils/months'
+import { useRollingMonth } from '../hooks/useCalendarMonth'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-
-const MONTH_OPTIONS = getMonthOptions(12)
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -340,7 +338,7 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function Spending() {
-  const [selectedMonth, setSelectedMonth] = useState(MONTH_OPTIONS[0].value)
+  const { monthOptions, selectedMonth, setSelectedMonth } = useRollingMonth(12)
   const [data, setData] = useState<CashFlowData | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncRefresh, setSyncRefresh] = useState(0)
@@ -423,7 +421,7 @@ export default function Spending() {
           onChange={e => setSelectedMonth(e.target.value)}
           className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none"
         >
-          {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {monthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
         {data && (

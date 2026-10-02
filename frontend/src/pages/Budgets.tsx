@@ -8,7 +8,8 @@ import {
 } from 'lucide-react'
 import { apiFetch } from '../api/client'
 import { formatCategory } from '../utils/categories'
-import { getMonthOptions, currentMonthValue } from '../utils/months'
+import { currentMonthValue } from '../utils/months'
+import { useRollingMonth } from '../hooks/useCalendarMonth'
 import { alphaColor } from '../utils/color'
 import { useSubscriptions, type SubscriptionItem } from '../hooks/useSubscriptions'
 import { Eyebrow, GlassCard, ProgressBar, InitialsChip } from '../components/ui/primitives'
@@ -93,8 +94,6 @@ function categoryIcon(category: string): LucideIcon {
   if (/electric|power/.test(c)) return Zap
   return Circle
 }
-
-const MONTH_OPTIONS = getMonthOptions(6)
 
 const PALETTE = [
   '#82a9f2', '#63cfcc', '#a196fa', '#74d8a8', '#e6bd79',
@@ -265,9 +264,10 @@ type Insight = {
 }
 
 export default function Budgets() {
-  // Default to the current month so budgets set for "this month" (incl. ones
-  // applied from the AI Advisor) are visible immediately.
-  const [selectedMonth, setSelectedMonth] = useState(MONTH_OPTIONS[0].value)
+  // Rebuilt from today's date, not from the moment this file was first imported.
+  // A session left open through the end of September otherwise has no October
+  // entry, so a budget saved for the new month stays hidden until a reload.
+  const { monthOptions, selectedMonth, setSelectedMonth } = useRollingMonth(6)
   const [data, setData] = useState<BudgetsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -447,7 +447,7 @@ export default function Budgets() {
                 aria-label="Budget month"
                 className="glass-chip px-[10px] py-[6px] text-[12px] text-ledger-text-primary cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
               >
-                {MONTH_OPTIONS.map(o => (
+                {monthOptions.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
