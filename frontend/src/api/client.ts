@@ -20,8 +20,14 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const headers = new Headers(init.headers)
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  // Ask caches not to reuse this response. The desktop webview is WebKit,
+  // which will replay a GET for the same URL when the response omitted
+  // Cache-Control (see the /api no-store middleware). `cache: 'no-store'`
+  // is what actually skips an entry already sitting in that cache; the
+  // response header only stops the next one from being stored.
+  if (!headers.has('Cache-Control')) headers.set('Cache-Control', 'no-cache')
 
-  const res = await fetch(path, { ...init, headers })
+  const res = await fetch(path, { ...init, headers, cache: 'no-store' })
 
   // A 401 on a normal API call means the session is gone/expired. Drop the
   // stale token and let the app shell send the user back to the login screen.

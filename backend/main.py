@@ -12,7 +12,7 @@ import os
 from app.bootstrap import bootstrap_desktop
 bootstrap_desktop()
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -99,6 +99,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _api_responses_are_not_cached(request: Request, call_next):
+    """Stop the desktop webview from replaying a previous API GET.
+
+    The shell is a WebKit view of http://127.0.0.1. That cache already had
+    to be disabled for /health and index.html: a stored GET is served again
+    for the same URL, and WebKit keeps it across launches. Optimizer runs
+    are the sharp case. The Investments page always requests
+    /api/investments/risk/optimize?lookback_days=1095, so the second click
+    of Run optimization was the first solve, after the sliders had already
+    been saved. Hashed /assets files are left cacheable.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 # Auth + setup endpoints are intentionally unauthenticated (login/first-run).
 app.include_router(auth_routes.router, prefix="/api")
