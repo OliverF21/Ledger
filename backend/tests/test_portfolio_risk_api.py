@@ -112,6 +112,15 @@ def test_get_optimization_rejects_out_of_range_lookback(client):
     assert resp.status_code == 422
 
 
+def test_optimize_response_is_not_cacheable(client, db_session):
+    """Run optimization repeats one URL. A stored GET would keep the first
+    allocation after the user changed caps and clicked Run again. `run` is
+    the cache-buster the page appends; it must not 422."""
+    resp = client.get("/api/investments/risk/optimize?run=2")
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "no-store"
+
+
 @pytest.fixture()
 def db_session(memdb):
     """A Session bound to the SAME engine `client`'s per-request sessions use
@@ -231,6 +240,38 @@ def seeded_ticker_classifications(db_session, seeded_price_history):
     db_session.add_all(classifications)
     db_session.commit()
     return classifications
+
+
+def _max_sharpe_weights(body: dict) -> dict[str, float]:
+    objective = next(o for o in body["objectives"] if o["name"] == "max_sharpe")
+    return {t["ticker"]: t["suggested_weight_pct"] for t in objective["tickers"]}
+
+
+def test_changing_position_cap_changes_suggested_weights(
+    client, db_session, seeded_price_history, seeded_ticker_classifications,
+):
+    """The solve reads User.optimization_position_cap_pct. A 10% cap and a
+    40% cap on this 12-name book must not come back as the same allocation.
+    Concentration is pinned at 0 so the cap, not the penalty, is what moves."""
+    user = db_session.query(User).filter_by(id=1).one()
+    user.optimization_advanced_enabled = True
+    user.optimization_concentration_strength = 0
+    user.optimization_position_cap_pct = 10
+    db_session.commit()
+
+    tight = client.get("/api/investments/risk/optimize?lookback_days=90")
+    assert tight.status_code == 200
+
+    user.optimization_position_cap_pct = 40
+    db_session.commit()
+    loose = client.get("/api/investments/risk/optimize?lookback_days=90")
+    assert loose.status_code == 200
+
+    tight_weights = _max_sharpe_weights(tight.json())
+    loose_weights = _max_sharpe_weights(loose.json())
+    assert tight_weights != loose_weights
+    assert max(tight_weights.values()) == pytest.approx(10.0, abs=0.05)
+    assert max(loose_weights.values()) > max(tight_weights.values()) + 5
 
 
 def test_optimize_endpoint_advanced_mode_shape_without_cap_relax(client, db_session, seeded_price_history, seeded_ticker_classifications):

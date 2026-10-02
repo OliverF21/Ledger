@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   useSectorConstraints, useTickerConstraints,
   type OptimizationSettings, type SectorConstraint,
@@ -318,10 +318,14 @@ function SectorConstraintsGrid({ constraints, resettingId, onFloorChange, onCapC
 // full backend re-solve (two SLSQP objectives + a 20-point frontier sweep)
 // on every tick of a native <input type="range">, which is many times per
 // second while dragging; this also fixes that.
+//
+// Run waits for those writes to finish. The button sits directly under the
+// sliders, so a click in the same moment as the last drag used to start the
+// solve before the PUT committed and the new weights came back identical.
 export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun, running, heldTickers = [], className = '' }: {
   prefs: OptimizationSettings | null
   updatePrefs: (patch: Partial<OptimizationSettings>) => Promise<OptimizationSettings>
-  onRun: () => void
+  onRun: () => void | Promise<void>
   running: boolean
   heldTickers?: string[]
   className?: string
@@ -331,12 +335,22 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
   const [resettingSectorId, setResettingSectorId] = useState<number | null>(null)
   const [removingTickerId, setRemovingTickerId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [starting, setStarting] = useState(false)
+  const inflight = useRef(new Set<Promise<unknown>>())
+
+  const track = <T,>(mutation: Promise<T>): Promise<T> => {
+    inflight.current.add(mutation)
+    const clear = () => inflight.current.delete(mutation)
+    mutation.then(clear, clear)
+    return mutation
+  }
 
   // Every mutation in this panel routes through here so failures are always
   // visible (previously: console.error only, so e.g. dragging an existing
   // constraint's floor above its own cap -- which the backend correctly
   // rejects with 422 -- silently did nothing from the user's perspective).
   const runMutation = async <T,>(mutation: Promise<T>, fallbackMessage: string): Promise<T | undefined> => {
+    track(mutation)
     try {
       const result = await mutation
       setError(null)
@@ -344,6 +358,19 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
     } catch (err) {
       setError(err instanceof Error ? err.message : fallbackMessage)
       return undefined
+    }
+  }
+
+  const handleRunClick = async () => {
+    if (running || starting) return
+    setStarting(true)
+    try {
+      while (inflight.current.size > 0) {
+        await Promise.allSettled([...inflight.current])
+      }
+      await onRun()
+    } finally {
+      setStarting(false)
     }
   }
 
@@ -457,11 +484,11 @@ export default function OptimizationPreferencesPanel({ prefs, updatePrefs, onRun
 
           <button
             type="button"
-            onClick={onRun}
-            disabled={running}
+            onClick={handleRunClick}
+            disabled={running || starting}
             className="solid-cta rounded-[13px] flex items-center justify-center gap-2 h-11 mt-3.5 text-[13.5px] font-bold shrink-0"
           >
-            {running ? 'Optimizing…' : 'Run optimization'}
+            {running || starting ? 'Optimizing…' : 'Run optimization'}
           </button>
         </>
       )}

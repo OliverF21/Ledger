@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '../api/client'
 
 // Shared read helper for every GET hook in this file.
@@ -273,6 +273,12 @@ export interface OptimizationSuggestion {
 export function useInvestmentsOptimization(lookbackDays: number = 365) {
   const [data, setData] = useState<OptimizationSuggestion | null>(null)
   const [loading, setLoading] = useState(true)
+  // The page fetches once on mount and again on Run optimization. A slow
+  // first solve can finish after the run the user just asked for and
+  // overwrite the new weights with the old ones. Only the latest request
+  // is allowed to write state. `run` is also on the query string so a
+  // URL-keyed webview cache cannot treat two solves as the same GET.
+  const requestId = useRef(0)
 
   // Exposes `refetch` (mirroring useOptimizationPreferences' useCallback
   // shape below) because the advanced-mode view in Investments.tsx is gated
@@ -292,10 +298,19 @@ export function useInvestmentsOptimization(lookbackDays: number = 365) {
   // previous data visible until the new response lands is the right
   // behaviour for a background refresh.
   const refetch = useCallback(() => {
-    return fetchJson<OptimizationSuggestion>(`/api/investments/risk/optimize?lookback_days=${lookbackDays}`)
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
+    const id = ++requestId.current
+    return fetchJson<OptimizationSuggestion>(
+      `/api/investments/risk/optimize?lookback_days=${lookbackDays}&run=${id}`,
+    )
+      .then(next => {
+        if (id === requestId.current) setData(next)
+      })
+      .catch(() => {
+        if (id === requestId.current) setData(null)
+      })
+      .finally(() => {
+        if (id === requestId.current) setLoading(false)
+      })
   }, [lookbackDays])
 
   useEffect(() => { refetch() }, [refetch])
