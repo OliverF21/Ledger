@@ -325,7 +325,7 @@ def test_get_spending_by_category_rolls_up_detailed_categories(db_session: Sessi
 
     assert result.total_spending == 1219.0
     assert result.transaction_count == 3
-    # Subcategory overrides (Dining Out) merge into FOOD_AND_DRINK — same as Cash Flow.
+    # Overview stays on PFC primaries. Cash Flow splits Dining Out from Groceries.
     assert [item.name for item in result.categories] == ["GENERAL_MERCHANDISE", "FOOD_AND_DRINK"]
     assert result.categories[0].transaction_count == 1
     assert result.categories[1].value == 220.0

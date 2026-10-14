@@ -61,6 +61,18 @@ def test_cash_flow_bucket_splits_only_mixed_parents():
     assert cash_flow_spending_bucket("Paycheck", None, None) == "Paycheck"
 
 
+def test_cash_flow_bucket_accepts_dotted_plaid_keys_and_keeps_parent_overrides():
+    """Dotted PFC keys still split. A user label of the parent itself does not."""
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK.GROCERIES") == "Groceries"
+    assert cash_flow_spending_bucket(None, "TRANSPORTATION", "TRANSPORTATION.GAS") == "Gas"
+    assert cash_flow_spending_bucket(None, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES.GAS_AND_ELECTRICITY") == "Utilities"
+    assert cash_flow_spending_bucket(None, "SHOPPING", "SHOPPING.ELECTRONICS", expanded=True) == "Electronics"
+    # The user chose the parent, so Plaid's gas detail must not leak into expanded view.
+    assert cash_flow_spending_bucket(
+        "Transportation", "TRANSPORTATION", "TRANSPORTATION_GAS", expanded=True
+    ) == "TRANSPORTATION"
+
+
 def test_cash_flow_bucket_expanded_lists_each_activity():
     assert cash_flow_spending_bucket("Coffee", None, None, expanded=True) == "Coffee"
     assert cash_flow_spending_bucket("Dining Out", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES", expanded=True) == "Restaurants"

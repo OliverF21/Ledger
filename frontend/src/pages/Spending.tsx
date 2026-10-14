@@ -362,7 +362,10 @@ export default function Spending() {
   useOnSyncComplete(useCallback(() => setSyncRefresh(n => n + 1), []))
 
   const leftCount = data?.income_sources.length ?? 0
-  const rightCount = data ? data.spending_categories.length + (data.savings > 0.01 ? 1 : 0) : 0
+  // Count every right-hand band the layout draws. Savings alone under-counts
+  // goals and investments, and expanded view then clips the bottom ribbons.
+  const allocationCount = (data?.allocation_nodes ?? []).filter(n => n.amount > 0.01).length
+  const rightCount = data ? data.spending_categories.length + allocationCount : 0
   const incomeMinH = leftCount > 0
     ? leftCount * MIN_INCOME_BAND_H + Math.max(0, leftCount - 1) * INCOME_GAP + PAD_Y * 2
     : MIN_SVG_H
@@ -372,10 +375,19 @@ export default function Spending() {
   const SVG_H = Math.max(incomeMinH, outcomeMinH, MIN_SVG_H)
 
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
+    setHovered(null)
     const detail = expanded ? '&expanded=true' : ''
     apiFetch(`/api/analytics/cash-flow?month=${selectedMonth}${detail}`)
-      .then(r => r.json()).then(setData).catch(() => setData(null)).finally(() => setLoading(false))
+      .then(r => {
+        if (!r.ok) throw new Error(`cash-flow ${r.status}`)
+        return r.json()
+      })
+      .then(next => { if (!cancelled) setData(next) })
+      .catch(() => { if (!cancelled) setData(null) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [selectedMonth, expanded, syncRefresh])
 
   const onResize = useCallback(() => {
