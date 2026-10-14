@@ -16,6 +16,7 @@ from app.analytics_shared import (
     _exclusion_key,
     category_key_for_income_rules,
     category_key_for_spending_rules,
+    cash_flow_spending_bucket,
     display_rollup_category,
     is_excluded_from_income,
     is_excluded_from_spending,
@@ -537,6 +538,8 @@ def build_cash_flow(
     db: Session,
     month: str | None = None,
     goals_db: Session | None = None,
+    *,
+    expanded: bool = False,
 ) -> CashFlowData:
     """Return monthly income, consumptive spending, and allocation sinks."""
     _, _, start, end, month_key = resolve_month_window(month)
@@ -584,7 +587,7 @@ def build_cash_flow(
 
     spend_buckets: dict[str, float] = {}
     for txn in spend_pool:
-        category = _display_rollup_category(txn, "Uncategorized")
+        category = _cash_flow_spend_bucket(txn, expanded=expanded)
         spend_buckets[category] = spend_buckets.get(category, 0.0) + _effective_amount(txn)
 
     income_sources = [
@@ -609,7 +612,7 @@ def build_cash_flow(
             label=category,
             amount=round(total, 2),
             color=CATEGORY_COLORS[index % len(CATEGORY_COLORS)],
-            top_transactions=_top_spending_txns(spend_pool, category),
+            top_transactions=_top_spending_txns(spend_pool, category, expanded=expanded),
         )
         for index, (category, total) in enumerate(
             sorted(spend_buckets.items(), key=lambda item: item[1], reverse=True)
@@ -1178,8 +1181,8 @@ def _aggregate_spending(
     for txn, _, _, _ in rows:
         if not _is_consumptive_spend(txn):
             continue
-        # Merge subcategory overrides into PFC primaries (same as Cash Flow) so
-        # Overview doesn't show duplicate truncated "Food…" / "Rent…" rows.
+        # Overview stays on PFC primaries so it doesn't grow a row per activity.
+        # Cash Flow uses cash_flow_spending_bucket, which splits a few mixed parents.
         category = _display_rollup_category(txn, "Uncategorized")
 
         bucket = buckets.setdefault(category, {"value": 0.0, "transaction_count": 0})
@@ -1266,6 +1269,15 @@ def _display_rollup_category(txn: Transaction, default: str) -> str:
     )
 
 
+def _cash_flow_spend_bucket(txn: Transaction, *, expanded: bool) -> str:
+    return cash_flow_spending_bucket(
+        txn.category_user,
+        txn.category_plaid,
+        txn.category_plaid_detailed,
+        expanded=expanded,
+    )
+
+
 def _income_source_category(txn: Transaction) -> str:
     """Income band for Cash Flow.
 
@@ -1326,8 +1338,16 @@ def _top_income_txns(pool: list[Transaction], category: str, limit: int = 3) -> 
     ]
 
 
-def _top_spending_txns(pool: list[Transaction], category: str, limit: int = 3) -> list[CashFlowTxnItem]:
-    matching = [txn for txn in pool if _display_rollup_category(txn, "Uncategorized") == category]
+def _top_spending_txns(
+    pool: list[Transaction],
+    category: str,
+    limit: int = 3,
+    *,
+    expanded: bool = False,
+) -> list[CashFlowTxnItem]:
+    matching = [
+        txn for txn in pool if _cash_flow_spend_bucket(txn, expanded=expanded) == category
+    ]
     matching.sort(key=_effective_amount, reverse=True)
     return [
         CashFlowTxnItem(

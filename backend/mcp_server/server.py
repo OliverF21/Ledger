@@ -120,6 +120,8 @@ mcp = FastMCP(
         "Visual chart tools (return inline SVG images — no embed widgets):\n"
         "- chart_cash_flow / chart_sankey — ALWAYS use for cash-flow Sankey diagrams; "
         "they match the Ledger Cash Flow page. Do not redraw Mermaid from cash_flow_sankey_data. "
+        "Default bands group mixed parents (Dining vs Groceries, Gas vs Other Transportation, "
+        "Rent vs Utilities). Pass expanded=true for one band per detailed activity. "
         "Labeled transfers appear as named sinks (e.g. Vacation); unlabeled HYSA/investments "
         "stay generic; leftover is Savings — never a goal.\n\n"
         "Advisor / write-intent tools (you CANNOT change the user's data):\n"
@@ -153,17 +155,17 @@ def _cash_flow_node_result(node) -> CashFlowNodeResult:
     )
 
 
-def _load_cash_flow(month: str | None):
+def _load_cash_flow(month: str | None, *, expanded: bool = False):
     with ledger_session() as db:
         try:
             with budgets_session() as bdb:
-                return build_cash_flow(db, month=month, goals_db=bdb)
+                return build_cash_flow(db, month=month, goals_db=bdb, expanded=expanded)
         except FileNotFoundError:
-            return build_cash_flow(db, month=month)
+            return build_cash_flow(db, month=month, expanded=expanded)
 
 
-def _build_cash_flow_sankey_result(month: str | None) -> CashFlowSankeyResult:
-    flow = _load_cash_flow(month)
+def _build_cash_flow_sankey_result(month: str | None, *, expanded: bool = False) -> CashFlowSankeyResult:
+    flow = _load_cash_flow(month, expanded=expanded)
 
     payload = build_cash_flow_sankey_payload(flow)
     svg = build_cash_flow_sankey_svg(flow)
@@ -199,13 +201,22 @@ def get_cash_flow_sankey_data(
         str | None,
         Field(description="Calendar month in YYYY-MM format. Defaults to the current month."),
     ] = None,
+    expanded: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, one band per detailed activity (coffee, rideshare, each utility). "
+                "Default groups those into Dining, Other Transportation, and Utilities."
+            )
+        ),
+    ] = False,
 ) -> CashFlowSankeyResult:
     """Cash-flow Sankey data (JSON). Use chart_cash_flow for the inline SVG chart."""
-    return _build_cash_flow_sankey_result(month)
+    return _build_cash_flow_sankey_result(month, expanded=expanded)
 
 
-def _build_cash_flow_chart(month: str | None) -> ToolResult:
-    flow = _load_cash_flow(month)
+def _build_cash_flow_chart(month: str | None, *, expanded: bool = False) -> ToolResult:
+    flow = _load_cash_flow(month, expanded=expanded)
     svg = build_cash_flow_sankey_svg(flow)
     return cash_flow_chart_result(flow, svg)
 
@@ -220,9 +231,18 @@ def chart_cash_flow(
         str | None,
         Field(description="Calendar month in YYYY-MM format. Defaults to the current month."),
     ] = None,
+    expanded: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, one band per detailed activity. Default matches the Cash Flow "
+                "page grouped view (Dining, Groceries, Gas, Other Transportation, Rent, Utilities)."
+            )
+        ),
+    ] = False,
 ) -> ToolResult:
     """Show the cash-flow Sankey ribbon diagram as an inline image."""
-    return _build_cash_flow_chart(month)
+    return _build_cash_flow_chart(month, expanded=expanded)
 
 
 @mcp.tool(
@@ -235,9 +255,13 @@ def chart_sankey(
         str | None,
         Field(description="Calendar month in YYYY-MM format. Defaults to the current month."),
     ] = None,
+    expanded: Annotated[
+        bool,
+        Field(description="When true, one band per detailed activity. Default is the grouped view."),
+    ] = False,
 ) -> ToolResult:
     """Alias for chart_cash_flow."""
-    return _build_cash_flow_chart(month)
+    return _build_cash_flow_chart(month, expanded=expanded)
 
 
 @mcp.tool(name="net_worth_data", tags={"analytics", "net-worth"})
@@ -398,9 +422,13 @@ def get_cash_flow(
         str | None,
         Field(description="Calendar month in YYYY-MM format. Defaults to the current month."),
     ] = None,
+    expanded: Annotated[
+        bool,
+        Field(description="When true, one spending band per detailed activity. Default is grouped."),
+    ] = False,
 ) -> CashFlowResult:
     """Return income sources, spending, named allocation sinks, and leftover Savings (JSON). For Sankey diagrams use cash_flow_sankey_data instead."""
-    result = _load_cash_flow(month)
+    result = _load_cash_flow(month, expanded=expanded)
 
     return CashFlowResult(
         month=result.month,

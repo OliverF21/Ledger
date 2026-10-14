@@ -327,7 +327,35 @@ function routes(url: URL): unknown | undefined {
         change_pct: 17.2,
       }
 
-    case '/api/analytics/cash-flow':
+    case '/api/analytics/cash-flow': {
+      const expanded = url.searchParams.get('expanded') === 'true'
+      const spending = expanded
+        ? [
+            { name: 'Rent', value: 1708, color: '#82a9f2' },
+            { name: 'Gas & Electric', value: 142, color: '#95c8ff' },
+            { name: 'Groceries', value: 480, color: '#63cfcc' },
+            { name: 'Restaurants', value: 200, color: '#4fc4c4' },
+            { name: 'Coffee', value: 62.18, color: '#7fb0ff' },
+            { name: 'GENERAL_MERCHANDISE', value: 562.4, color: '#e6bd79' },
+            { name: 'ENTERTAINMENT', value: 512.6, color: '#f4907f' },
+            { name: 'Gas', value: 250, color: '#a196fa' },
+            { name: 'Rideshare & Taxis', value: 138.45, color: '#8a7df0' },
+            { name: 'MEDICAL', value: 299.1, color: '#adb8cb' },
+            { name: 'PERSONAL_CARE', value: 268.3, color: '#74d8a8' },
+            { name: 'LOAN_PAYMENTS', value: 189.97, color: '#d9a85b' },
+          ]
+        : [
+            { name: 'RENT_AND_UTILITIES', value: 1850, color: '#82a9f2' },
+            { name: 'Groceries', value: 480, color: '#63cfcc' },
+            { name: 'Dining', value: 262.18, color: '#4fc4c4' },
+            { name: 'GENERAL_MERCHANDISE', value: 562.4, color: '#e6bd79' },
+            { name: 'ENTERTAINMENT', value: 512.6, color: '#f4907f' },
+            { name: 'Gas', value: 250, color: '#a196fa' },
+            { name: 'Other Transportation', value: 138.45, color: '#8a7df0' },
+            { name: 'MEDICAL', value: 299.1, color: '#adb8cb' },
+            { name: 'PERSONAL_CARE', value: 268.3, color: '#74d8a8' },
+            { name: 'LOAN_PAYMENTS', value: 189.97, color: '#d9a85b' },
+          ]
       return {
         month: url.searchParams.get('month') ?? monthValue(0),
         total_income: 7240,
@@ -338,7 +366,7 @@ function routes(url: URL): unknown | undefined {
           { id: 'dividends', label: 'Dividends', amount: 520, color: '#63cfcc', top_transactions: [] },
           { id: 'refunds', label: 'Refunds', amount: 240, color: '#95c8ff', top_transactions: [] },
         ],
-        spending_categories: CATEGORIES.map(c => ({
+        spending_categories: spending.map(c => ({
           id: c.name,
           label: c.name,
           amount: c.value,
@@ -346,6 +374,7 @@ function routes(url: URL): unknown | undefined {
           top_transactions: TRANSACTIONS.filter(t => t.category_plaid === c.name).slice(0, 3),
         })),
       }
+    }
 
     case '/api/analytics/trends': {
       const range = Number(url.searchParams.get('months') ?? 6)

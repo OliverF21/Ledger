@@ -242,12 +242,16 @@ def _cash_flow_node(node) -> CashFlowNode:
 @router.get("/cash-flow", response_model=CashFlowResponse)
 async def get_cash_flow(
     month: Optional[str] = Query(None, description="YYYY-MM, defaults to current month"),
+    expanded: bool = Query(
+        False,
+        description="Split spending into detailed activities (coffee, rideshare, each utility).",
+    ),
     db: Session = Depends(get_db),
     bdb: Session = Depends(get_budgets_db),
 ):
     """Income sources, consumptive spending, and named allocation sinks for the Sankey."""
     try:
-        cash_flow = build_cash_flow(db, month=month, goals_db=bdb)
+        cash_flow = build_cash_flow(db, month=month, goals_db=bdb, expanded=expanded)
         return CashFlowResponse(
             month=cash_flow.month,
             total_income=cash_flow.total_income,

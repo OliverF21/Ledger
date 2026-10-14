@@ -149,11 +149,21 @@ function isAllocationNode(id: string): boolean {
     || id.startsWith('goal:')
 }
 
+/** PFC keys still go through the shared formatter. Bucket names such as
+ *  "Groceries" or "Other Transportation" are already display text — formatting
+ *  them again prefixes the parent ("Food & Drink · Groceries") and the Sankey
+ *  column truncates it. */
+function spendingBandLabel(raw: string): string {
+  const trimmed = raw.trim()
+  if (/^[A-Z0-9_.]+$/.test(trimmed)) return formatCategory(trimmed)
+  return trimmed
+}
+
 function allocationLabel(n: FlowNode): string {
   if (n.id === SAVINGS_NODE_ID) return 'HYSA'
   if (n.id === UNALLOCATED_NODE_ID) return 'Savings'
   if (n.id.startsWith('goal:')) return n.label
-  return formatCategory(n.label)
+  return spendingBandLabel(n.label)
 }
 
 function buildLayout(data: CashFlowData, W: number, H: number) {
@@ -341,6 +351,7 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
 
 export default function Spending() {
   const [selectedMonth, setSelectedMonth] = useState(MONTH_OPTIONS[0].value)
+  const [expanded, setExpanded] = useState(false)
   const [data, setData] = useState<CashFlowData | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncRefresh, setSyncRefresh] = useState(0)
@@ -362,9 +373,10 @@ export default function Spending() {
 
   useEffect(() => {
     setLoading(true)
-    apiFetch(`/api/analytics/cash-flow?month=${selectedMonth}`)
+    const detail = expanded ? '&expanded=true' : ''
+    apiFetch(`/api/analytics/cash-flow?month=${selectedMonth}${detail}`)
       .then(r => r.json()).then(setData).catch(() => setData(null)).finally(() => setLoading(false))
-  }, [selectedMonth, syncRefresh])
+  }, [selectedMonth, expanded, syncRefresh])
 
   const onResize = useCallback(() => {
     if (wrapRef.current) setSvgW(wrapRef.current.clientWidth)
@@ -417,7 +429,7 @@ export default function Spending() {
   return (
     <div className="flex flex-col gap-[16px]">
       {/* Controls */}
-      <div className="flex items-center gap-[12px]">
+      <div className="flex items-center gap-[12px] flex-wrap">
         <select
           value={selectedMonth}
           onChange={e => setSelectedMonth(e.target.value)}
@@ -425,6 +437,17 @@ export default function Spending() {
         >
           {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+        <button
+          type="button"
+          aria-pressed={expanded}
+          title="Show coffee, rideshare, each utility, and other detailed categories"
+          onClick={() => setExpanded(on => !on)}
+          className={`glass-chip px-[10px] py-[8px] text-[13px] cursor-pointer transition-colors hover:border-white/40 ${
+            expanded ? 'border-white/60 text-ledger-text-primary' : 'text-ledger-text-secondary'
+          }`}
+        >
+          Expanded view
+        </button>
 
         {data && (
           <div className="flex gap-[20px] ml-[6px] text-[13px]">
