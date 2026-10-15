@@ -409,3 +409,89 @@ def display_rollup_category(
                 return normalize_category_key(parent)
 
     return category
+
+
+# Legacy labels that point at the same detailed activity under a second key.
+_PFC_DETAILED_ALIASES = {
+    "FOOD_AND_DRINK_RESTAURANTS": "FOOD_AND_DRINK_RESTAURANT",
+    "FOOD_AND_DRINK_ALCOHOL_AND_BARS": "FOOD_AND_DRINK_BEER_WINE_AND_LIQUOR",
+}
+
+
+def _pfc_key_for_cash_flow(
+    category_user: str | None,
+    category_plaid: str | None,
+    category_plaid_detailed: str | None,
+) -> str | None:
+    """PFC key for Sankey bucketing.
+
+    A human user label that maps into the taxonomy wins over Plaid detail, so
+    recategorizing groceries as Restaurants lands in dining. A custom label
+    with no taxonomy mapping returns None and the caller keeps that label.
+    """
+    from mcp_server.category_labels import label_to_pfc_key
+
+    if category_user and category_user.strip():
+        stripped = category_user.strip()
+        if not stripped.isupper():
+            mapped = label_to_pfc_key(stripped)
+            if not mapped:
+                return None
+            return normalize_category_key(mapped).upper().replace(".", "_")
+        return normalize_category_key(stripped).upper().replace(".", "_")
+    if category_plaid_detailed:
+        return normalize_category_key(category_plaid_detailed).upper().replace(".", "_")
+    if category_plaid:
+        return normalize_category_key(category_plaid).upper().replace(".", "_")
+    return None
+
+
+def cash_flow_spending_bucket(
+    category_user: str | None,
+    category_plaid: str | None,
+    category_plaid_detailed: str | None,
+    default: str = "Uncategorized",
+    *,
+    expanded: bool = False,
+) -> str:
+    """Spending band for the cash-flow Sankey.
+
+    The default view only splits three mixed parents into two bands each:
+    Groceries/Dining, Gas/Other Transportation, and Rent/Utilities. Everything
+    else stays on its Plaid primary. Expanded view gives each detailed
+    activity its own band (Coffee, Rideshare, Internet & Cable, …).
+    """
+    rolled = display_rollup_category(
+        category_user, category_plaid, category_plaid_detailed, default
+    )
+    if rolled in {default, "Investments"}:
+        return rolled
+
+    key = _pfc_key_for_cash_flow(category_user, category_plaid, category_plaid_detailed)
+    if not key:
+        return rolled
+    key = _PFC_DETAILED_ALIASES.get(key, key)
+    parent = parent_from_pfc_detailed(key)
+    if parent not in PLAID_PFC_PRIMARIES and parent not in KNOWN_CATEGORY_KEYS:
+        return rolled
+    if key == parent:
+        return rolled
+
+    if expanded:
+        from mcp_server.category_labels import short_activity_label
+
+        return short_activity_label(key)
+
+    if key == "FOOD_AND_DRINK_GROCERIES":
+        return "Groceries"
+    if parent == "FOOD_AND_DRINK":
+        return "Dining"
+    if key == "TRANSPORTATION_GAS":
+        return "Gas"
+    if parent == "TRANSPORTATION":
+        return "Other Transportation"
+    if key == "RENT_AND_UTILITIES_RENT":
+        return "Rent"
+    if parent == "RENT_AND_UTILITIES":
+        return "Utilities"
+    return rolled

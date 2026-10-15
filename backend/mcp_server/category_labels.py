@@ -322,6 +322,23 @@ def _hierarchical_label_for_detailed_key(detailed: str) -> str | None:
     return None
 
 
+def short_activity_label(key: str) -> str:
+    """Short label for one detailed activity, without a parent prefix.
+
+    Cash-flow expanded view uses this so a node reads "Coffee" rather than
+    "Food & Drink · Coffee".
+    """
+    normalized = key.strip().upper().replace(".", "_")
+    if normalized in _PLAID_V2_DETAILED_LABELS:
+        return _PLAID_V2_DETAILED_LABELS[normalized]
+    if normalized in _PLAID_V2_PRIMARY_LABELS:
+        return _PLAID_V2_PRIMARY_LABELS[normalized]
+    override = _NORMALIZED_OVERRIDES.get(normalized)
+    if override and not _is_pfc_key(override):
+        return override
+    return format_category(key)
+
+
 def format_category(raw: str | None) -> str:
     if not raw or not str(raw).strip():
         return "Uncategorized"

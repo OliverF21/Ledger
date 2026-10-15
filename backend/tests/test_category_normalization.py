@@ -1,5 +1,6 @@
 from app.analytics_shared import (
     budget_parent_key,
+    cash_flow_spending_bucket,
     category_key_for_income_rules,
     category_key_for_spending_rules,
     display_rollup_category,
@@ -40,6 +41,54 @@ def test_rollup_keeps_detailed_user_override_bucket():
     assert rollup_category_key("Dining Out", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "Dining Out"
     assert rollup_category_key("Video Games", "ENTERTAINMENT", "ENTERTAINMENT_VIDEO_GAMES") == "Video Games"
     assert rollup_category_key("Restaurants", "GENERAL_MERCHANDISE", None) == "Restaurants"
+
+
+def test_cash_flow_bucket_splits_only_mixed_parents():
+    """Default Sankey splits three mixed parents and leaves the rest grouped."""
+    assert cash_flow_spending_bucket("Restaurants", "GENERAL_MERCHANDISE", None) == "Dining"
+    assert cash_flow_spending_bucket("Dining Out", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "Dining"
+    assert cash_flow_spending_bucket("Coffee", None, None) == "Dining"
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "Groceries"
+    assert cash_flow_spending_bucket("Gas", "GENERAL_MERCHANDISE", None) == "Gas"
+    assert cash_flow_spending_bucket("Rideshare & Taxis", None, None) == "Other Transportation"
+    assert cash_flow_spending_bucket(None, "TRANSPORTATION", "TRANSPORTATION_PARKING") == "Other Transportation"
+    assert cash_flow_spending_bucket(None, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT") == "Rent"
+    assert cash_flow_spending_bucket("Gas & Electric", None, None) == "Utilities"
+    assert cash_flow_spending_bucket("Internet & Cable", None, None) == "Utilities"
+    # Parent-only food stays one band — there is no detail to split on.
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", None) == "FOOD_AND_DRINK"
+    assert cash_flow_spending_bucket("Flights", None, None) == "TRAVEL"
+    assert cash_flow_spending_bucket("Paycheck", None, None) == "Paycheck"
+
+
+def test_cash_flow_bucket_accepts_dotted_plaid_keys_and_keeps_parent_overrides():
+    """Dotted PFC keys still split. A user label of the parent itself does not."""
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK.GROCERIES") == "Groceries"
+    assert cash_flow_spending_bucket(None, "TRANSPORTATION", "TRANSPORTATION.GAS") == "Gas"
+    assert cash_flow_spending_bucket(None, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES.GAS_AND_ELECTRICITY") == "Utilities"
+    assert cash_flow_spending_bucket(None, "SHOPPING", "SHOPPING.ELECTRONICS", expanded=True) == "Electronics"
+    # The user chose the parent, so Plaid's gas detail must not leak into expanded view.
+    assert cash_flow_spending_bucket(
+        "Transportation", "TRANSPORTATION", "TRANSPORTATION_GAS", expanded=True
+    ) == "TRANSPORTATION"
+
+
+def test_cash_flow_bucket_expanded_lists_each_activity():
+    assert cash_flow_spending_bucket("Coffee", None, None, expanded=True) == "Coffee"
+    assert cash_flow_spending_bucket("Dining Out", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES", expanded=True) == "Restaurants"
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK_FAST_FOOD", expanded=True) == "Fast Food"
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES", expanded=True) == "Groceries"
+    assert cash_flow_spending_bucket("Gas", None, None, expanded=True) == "Gas"
+    assert cash_flow_spending_bucket("Rideshare & Taxis", None, None, expanded=True) == "Rideshare & Taxis"
+    assert cash_flow_spending_bucket("Gas & Electric", None, None, expanded=True) == "Gas & Electric"
+    assert cash_flow_spending_bucket(None, "ENTERTAINMENT", "ENTERTAINMENT_VIDEO_GAMES", expanded=True) == "Video Games"
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", None, expanded=True) == "FOOD_AND_DRINK"
+    assert cash_flow_spending_bucket(
+        "Restaurants",
+        "TRANSFER_OUT",
+        "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
+        expanded=True,
+    ) == "Restaurants"
 
 
 def test_display_rollup_merges_subcategory_into_primary():

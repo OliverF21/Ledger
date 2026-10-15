@@ -325,7 +325,7 @@ def test_get_spending_by_category_rolls_up_detailed_categories(db_session: Sessi
 
     assert result.total_spending == 1219.0
     assert result.transaction_count == 3
-    # Subcategory overrides (Dining Out) merge into FOOD_AND_DRINK — same as Cash Flow.
+    # Overview stays on PFC primaries. Cash Flow splits Dining Out from Groceries.
     assert [item.name for item in result.categories] == ["GENERAL_MERCHANDISE", "FOOD_AND_DRINK"]
     assert result.categories[0].transaction_count == 1
     assert result.categories[1].value == 220.0
@@ -401,8 +401,8 @@ def test_build_cash_flow_matches_expected_totals(db_session: Session):
     assert result.income_sources[0].label == "Paycheck"
 
 
-def test_build_cash_flow_rolls_subcategory_into_primary(db_session: Session):
-    """Manual 'Dining Out' / 'Restaurants' overrides merge into Food & Drink on cash flow."""
+def test_build_cash_flow_splits_dining_and_groceries(db_session: Session):
+    """Groceries stay separate from dining; restaurants and dining-out share Dining."""
     card = db_session.query(Account).filter_by(plaid_account_id="acct_card").one()
     db_session.add(
         Transaction(
@@ -421,10 +421,70 @@ def test_build_cash_flow_rolls_subcategory_into_primary(db_session: Session):
 
     result = build_cash_flow(db_session, month="2026-06")
     by_id = {node.id: node for node in result.spending_categories}
+    assert "FOOD_AND_DRINK" not in by_id
     assert "Restaurants" not in by_id
-    assert "Dining Out" not in by_id
-    # Groceries (120) + Dining Out split (100) + Restaurants (40)
-    assert by_id["FOOD_AND_DRINK"].amount == 260.0
+    # Corner Market groceries
+    assert by_id["Groceries"].amount == 120.0
+    # Cafe split (100) + Bistro (40)
+    assert by_id["Dining"].amount == 140.0
+    dining = by_id["Dining"]
+    assert {txn.merchant for txn in dining.top_transactions} <= {"Neighborhood Cafe", "Bistro"}
+
+
+def test_build_cash_flow_expanded_splits_niche_activities(db_session: Session):
+    card = db_session.query(Account).filter_by(plaid_account_id="acct_card").one()
+    db_session.add_all(
+        [
+            Transaction(
+                account=card,
+                merchant="Blue Bottle",
+                amount=Decimal("6.00"),
+                date=date(2026, 6, 21),
+                category_plaid="FOOD_AND_DRINK",
+                category_plaid_detailed="FOOD_AND_DRINK_COFFEE",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            Transaction(
+                account=card,
+                merchant="Shell",
+                amount=Decimal("48.00"),
+                date=date(2026, 6, 21),
+                category_plaid="TRANSPORTATION",
+                category_plaid_detailed="TRANSPORTATION_GAS",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            Transaction(
+                account=card,
+                merchant="Uber",
+                amount=Decimal("22.00"),
+                date=date(2026, 6, 22),
+                category_user="Rideshare & Taxis",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    grouped = build_cash_flow(db_session, month="2026-06")
+    grouped_ids = {node.id: node.amount for node in grouped.spending_categories}
+    assert grouped_ids["Dining"] == 106.0  # cafe split 100 + coffee 6
+    assert grouped_ids["Gas"] == 48.0
+    assert grouped_ids["Other Transportation"] == 22.0
+
+    expanded = build_cash_flow(db_session, month="2026-06", expanded=True)
+    expanded_ids = {node.id: node.amount for node in expanded.spending_categories}
+    assert expanded_ids["Restaurants"] == 100.0
+    assert expanded_ids["Coffee"] == 6.0
+    assert "Dining" not in expanded_ids
+    assert expanded_ids["Gas"] == 48.0
+    assert expanded_ids["Rideshare & Taxis"] == 22.0
+    assert "Other Transportation" not in expanded_ids
 
 
 def test_build_cash_flow_shows_investment_transfer_out(db_session: Session):
