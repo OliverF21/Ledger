@@ -425,8 +425,12 @@ def test_build_cash_flow_splits_dining_and_groceries(db_session: Session):
     assert "Restaurants" not in by_id
     # Corner Market groceries
     assert by_id["Groceries"].amount == 120.0
+    assert by_id["Groceries"].parent_id == "FOOD_AND_DRINK"
+    assert by_id["Groceries"].parent_label == "Food & Drink"
     # Cafe split (100) + Bistro (40)
     assert by_id["Dining"].amount == 140.0
+    assert by_id["Dining"].parent_id == "FOOD_AND_DRINK"
+    assert by_id["GENERAL_MERCHANDISE"].parent_id is None
     dining = by_id["Dining"]
     assert {txn.merchant for txn in dining.top_transactions} <= {"Neighborhood Cafe", "Bistro"}
 
@@ -485,6 +489,11 @@ def test_build_cash_flow_expanded_splits_niche_activities(db_session: Session):
     assert expanded_ids["Gas"] == 48.0
     assert expanded_ids["Rideshare & Taxis"] == 22.0
     assert "Other Transportation" not in expanded_ids
+    by_node = {node.id: node for node in expanded.spending_categories}
+    assert by_node["Coffee"].parent_id == "FOOD_AND_DRINK"
+    assert by_node["Groceries"].parent_label == "Food & Drink"
+    assert by_node["Rideshare & Taxis"].parent_label == "Transportation"
+    assert by_node["Gas"].parent_id == "TRANSPORTATION"
 
 
 def test_build_cash_flow_shows_investment_transfer_out(db_session: Session):
@@ -870,6 +879,11 @@ def test_cash_flow_sankey_data_returns_mermaid_links(
     assert result.total_income == 3000.0
     assert result.mermaid.startswith("sankey-beta")
     assert "Paycheck,Income pool,3000" in result.mermaid
+    assert "Income pool,Food & Drink,220.0" in result.mermaid
+    assert "Food & Drink,Groceries,120.0" in result.mermaid
+    assert "Food & Drink,Dining,100.0" in result.mermaid
+    assert "Income pool,Dining," not in result.mermaid
+    assert any(link.source == "Food & Drink" and link.target == "Dining" for link in result.sankey_links)
     assert any(link.target == "Savings" for link in result.sankey_links)
     assert "<svg" in result.svg
     assert "INCOME" in result.svg

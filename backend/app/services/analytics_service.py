@@ -17,6 +17,8 @@ from app.analytics_shared import (
     category_key_for_income_rules,
     category_key_for_spending_rules,
     cash_flow_spending_bucket,
+    cash_flow_spending_group,
+    display_label_for_key,
     display_rollup_category,
     is_excluded_from_income,
     is_excluded_from_spending,
@@ -121,6 +123,9 @@ class CashFlowNodeItem:
     amount: float
     color: str
     top_transactions: list[CashFlowTxnItem]
+    # Set when this leaf hangs off a parent band (Food & Drink → Dining).
+    parent_id: str | None = None
+    parent_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -585,10 +590,27 @@ def build_cash_flow(
     for credit in cashback_income:
         income_buckets[CASH_BACK_CATEGORY] = income_buckets.get(CASH_BACK_CATEGORY, 0.0) + credit.amount
 
-    spend_buckets: dict[str, float] = {}
+    spend_buckets: dict[str, dict[str, float | str | None]] = {}
     for txn in spend_pool:
         category = _cash_flow_spend_bucket(txn, expanded=expanded)
-        spend_buckets[category] = spend_buckets.get(category, 0.0) + _effective_amount(txn)
+        parent_id = cash_flow_spending_group(
+            txn.category_user,
+            txn.category_plaid,
+            txn.category_plaid_detailed,
+            expanded=expanded,
+        )
+        bucket = spend_buckets.setdefault(
+            category,
+            {
+                "value": 0.0,
+                "label": category,
+                "parent_id": parent_id,
+                "parent_label": display_label_for_key(parent_id) if parent_id else None,
+            },
+        )
+        bucket["value"] = float(bucket["value"]) + _effective_amount(txn)
+
+    _collapse_lone_sankey_parents(spend_buckets)
 
     income_sources = [
         CashFlowNodeItem(
@@ -608,15 +630,15 @@ def build_cash_flow(
     ]
     spending_categories = [
         CashFlowNodeItem(
-            id=category,
-            label=category,
-            amount=round(total, 2),
+            id=f"other:{category}" if bucket["label"] == "Other" else category,
+            label=str(bucket["label"]),
+            amount=round(float(bucket["value"]), 2),
             color=CATEGORY_COLORS[index % len(CATEGORY_COLORS)],
             top_transactions=_top_spending_txns(spend_pool, category, expanded=expanded),
+            parent_id=bucket["parent_id"] if isinstance(bucket["parent_id"], str) else None,
+            parent_label=bucket["parent_label"] if isinstance(bucket["parent_label"], str) else None,
         )
-        for index, (category, total) in enumerate(
-            sorted(spend_buckets.items(), key=lambda item: item[1], reverse=True)
-        )
+        for index, (category, bucket) in enumerate(_ordered_sankey_leaves(spend_buckets))
     ]
 
     allocation_nodes = _allocation_nodes(
@@ -1267,6 +1289,41 @@ def _display_rollup_category(txn: Transaction, default: str) -> str:
     return display_rollup_category(
         txn.category_user, txn.category_plaid, txn.category_plaid_detailed, default
     )
+
+
+def _collapse_lone_sankey_parents(buckets: dict[str, dict[str, float | str | None]]) -> None:
+    """Drop a parent that only repeats itself. Name an unspecified remainder Other."""
+    members: dict[str, list[str]] = {}
+    for leaf_id, bucket in buckets.items():
+        parent_id = bucket.get("parent_id")
+        if isinstance(parent_id, str):
+            members.setdefault(parent_id, []).append(leaf_id)
+    for parent_id, leaf_ids in members.items():
+        if len(leaf_ids) == 1 and leaf_ids[0] == parent_id:
+            buckets[parent_id]["parent_id"] = None
+            buckets[parent_id]["parent_label"] = None
+        elif parent_id in leaf_ids:
+            buckets[parent_id]["label"] = "Other"
+
+
+def _ordered_sankey_leaves(
+    buckets: dict[str, dict[str, float | str | None]],
+) -> list[tuple[str, dict[str, float | str | None]]]:
+    """Keep siblings together so a parent bar can span Dining and Groceries."""
+    groups: dict[str, list[tuple[str, dict[str, float | str | None]]]] = {}
+    for leaf_id, bucket in buckets.items():
+        parent_id = bucket.get("parent_id")
+        key = parent_id if isinstance(parent_id, str) else f"\0{leaf_id}"
+        groups.setdefault(key, []).append((leaf_id, bucket))
+
+    def group_total(items: list[tuple[str, dict[str, float | str | None]]]) -> float:
+        return sum(float(bucket["value"]) for _, bucket in items)
+
+    ordered: list[tuple[str, dict[str, float | str | None]]] = []
+    for _, items in sorted(groups.items(), key=lambda item: group_total(item[1]), reverse=True):
+        items.sort(key=lambda item: float(item[1]["value"]), reverse=True)
+        ordered.extend(items)
+    return ordered
 
 
 def _cash_flow_spend_bucket(txn: Transaction, *, expanded: bool) -> str:

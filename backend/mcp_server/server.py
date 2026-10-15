@@ -120,8 +120,9 @@ mcp = FastMCP(
         "Visual chart tools (return inline SVG images — no embed widgets):\n"
         "- chart_cash_flow / chart_sankey — ALWAYS use for cash-flow Sankey diagrams; "
         "they match the Ledger Cash Flow page. Do not redraw Mermaid from cash_flow_sankey_data. "
-        "Default bands group mixed parents (Dining vs Groceries, Gas vs Other Transportation, "
-        "Rent vs Utilities). Pass expanded=true for one band per detailed activity. "
+        "Parents branch off the income pool (Food & Drink, Transportation, Rent & Utilities) "
+        "and their leaves branch off the parent (Dining, Groceries, Gas). "
+        "Pass expanded=true for one leaf per detailed activity, still under its parent. "
         "Labeled transfers appear as named sinks (e.g. Vacation); unlabeled HYSA/investments "
         "stay generic; leftover is Savings — never a goal.\n\n"
         "Advisor / write-intent tools (you CANNOT change the user's data):\n"
@@ -152,6 +153,8 @@ def _cash_flow_node_result(node) -> CashFlowNodeResult:
             )
             for txn in node.top_transactions
         ],
+        parent_id=getattr(node, "parent_id", None),
+        parent_label=getattr(node, "parent_label", None),
     )
 
 

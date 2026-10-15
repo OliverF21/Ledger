@@ -14,7 +14,15 @@ const MONTH_OPTIONS = getMonthOptions(12)
 
 interface FlowTxn { merchant: string; amount: number; date: string }
 
-interface FlowNode { id: string; label: string; amount: number; color: string; top_transactions?: FlowTxn[] }
+interface FlowNode {
+  id: string
+  label: string
+  amount: number
+  color: string
+  top_transactions?: FlowTxn[]
+  parent_id?: string | null
+  parent_label?: string | null
+}
 
 interface CashFlowData {
   month: string
@@ -41,6 +49,8 @@ const INCOME_GAP = 8         // vertical gap between income bands + stream slice
 const OUTCOME_GAP = 8        // vertical gap between expense/savings bands + stream slices
 const LEFT_COL_X = 130 // fixed far-left column for income source bars + labels
 const TUNNEL_FLOW_BIAS = 0.40  // amalgamation bar position across the flow span (0=left, 1=right)
+const BRANCH_TUNNEL_BIAS = 0.18 // shift the account left so a parent column fits before the leaves
+const PARENT_SPAN = 156 // parent label + bar, sitting just left of the leaf column
 // Available horizontal room for label text on each side before it would run past the SVG edge.
 const LEFT_LABEL_MAX_W  = LEFT_COL_X - LABEL_GAP - LABEL_MARGIN
 const RIGHT_LABEL_MAX_W = RIGHT_PAD - LABEL_GAP - LABEL_MARGIN
@@ -56,10 +66,18 @@ function truncateLabel(text: string, maxWidth: number, fontSize = 13): string {
 interface LNode {
   id: string; label: string; amount: number; color: string
   x: number; y: number; h: number; labelCy: number
-  slotTop: number; slotH: number; side: 'left' | 'right'
+  slotTop: number; slotH: number; side: 'left' | 'right' | 'mid'
   top_transactions: FlowTxn[]
+  parent_id: string | null
+  parent_label: string | null
 }
-interface LLink { id: string; color: string; sx: number; sy0: number; sy1: number; tx: number; ty0: number; ty1: number; straightTop?: boolean }
+interface LLink {
+  id: string
+  group: string
+  color: string
+  sx: number; sy0: number; sy1: number; tx: number; ty0: number; ty1: number
+  straightTop?: boolean
+}
 
 /**
  * Right column: band heights track outflow share (mirrors left income layout).
@@ -93,6 +111,8 @@ function stackOutcomeBands(
       slotH: h,
       side: 'right',
       top_transactions: items[i].top_transactions ?? [],
+      parent_id: items[i].parent_id ?? null,
+      parent_label: items[i].parent_label ?? null,
     })
     y += h + (i < items.length - 1 ? OUTCOME_GAP : 0)
   }
@@ -131,6 +151,8 @@ function stackIncomeBands(
       slotH: h,
       side: 'left',
       top_transactions: items[i].top_transactions ?? [],
+      parent_id: null,
+      parent_label: null,
     })
     y += h + (i < items.length - 1 ? INCOME_GAP : 0)
   }
@@ -176,12 +198,14 @@ function buildLayout(data: CashFlowData, W: number, H: number) {
   ]
   const totalOutflow = rightItems.reduce((sum, item) => sum + item.amount, 0) || 1
 
+  const branched = rightItems.some(item => item.parent_id)
   const leftNodeX = LEFT_COL_X
   const rightNodeX = W - RIGHT_PAD - NODE_W
   const flowStart = leftNodeX + NODE_W
   const flowEnd = rightNodeX
-  // Income inputs stay far left; amalgamation tunnel sits toward the middle of the flow.
-  const tunnelX = Math.floor(flowStart + (flowEnd - flowStart) * TUNNEL_FLOW_BIAS - TUNNEL_W / 2)
+  // Parents sit between the account and the leaves, so the account shifts left.
+  const tunnelBias = branched ? BRANCH_TUNNEL_BIAS : TUNNEL_FLOW_BIAS
+  const tunnelX = Math.floor(flowStart + (flowEnd - flowStart) * tunnelBias - TUNNEL_W / 2)
 
   const tunnelH = avail
   const tunnelY = PAD_Y
@@ -201,6 +225,7 @@ function buildLayout(data: CashFlowData, W: number, H: number) {
       const rh = Math.max((src.amount / totalIncome) * tunnelFlow, 1)
       leftLinks.push({
         id: src.id,
+        group: src.id,
         color: src.color,
         sx: leftNodeX + NODE_W,
         sy0: src.y,
@@ -214,32 +239,117 @@ function buildLayout(data: CashFlowData, W: number, H: number) {
     }
   }
 
-  // Right ribbons: proportional tunnel slices → outcome bands; gaps stay visible
+  const { rightLinks, parentNodes } = branchRightLinks(rightNodes, tunnelX, tunnelY, tunnelH, rightNodeX, totalOutflow)
+
+  return { leftNodes, rightNodes, parentNodes, leftLinks, rightLinks, tunnelX, tunnelY, tunnelH }
+}
+
+/** Account → parent, then parent → dining / groceries / the other leaves. */
+function branchRightLinks(
+  rightNodes: LNode[],
+  tunnelX: number,
+  tunnelY: number,
+  tunnelH: number,
+  rightNodeX: number,
+  totalOutflow: number,
+): { rightLinks: LLink[]; parentNodes: LNode[] } {
   const rightLinks: LLink[] = []
-  {
-    const tunnelGaps = Math.max(0, rightNodes.length - 1) * OUTCOME_GAP
-    const tunnelFlow = tunnelH - tunnelGaps
-    let offset = 0
-    for (let i = 0; i < rightNodes.length; i++) {
-      const tgt = rightNodes[i]
-      const rh = Math.max((tgt.amount / totalOutflow) * tunnelFlow, 1)
+  const parentNodes: LNode[] = []
+  if (!rightNodes.length) return { rightLinks, parentNodes }
+
+  const tunnelGaps = Math.max(0, rightNodes.length - 1) * OUTCOME_GAP
+  const tunnelFlow = tunnelH - tunnelGaps
+  const slices: { node: LNode; y0: number; y1: number }[] = []
+  let offset = 0
+  for (let i = 0; i < rightNodes.length; i++) {
+    const node = rightNodes[i]
+    const rh = Math.max((node.amount / totalOutflow) * tunnelFlow, 1)
+    slices.push({ node, y0: tunnelY + offset, y1: tunnelY + offset + rh })
+    offset += rh + (i < rightNodes.length - 1 ? OUTCOME_GAP : 0)
+  }
+
+  let index = 0
+  while (index < slices.length) {
+    const head = slices[index]
+    const parentId = head.node.parent_id
+    if (!parentId) {
+      const color = isAllocationNode(head.node.id) && (head.node.id === SAVINGS_NODE_ID || head.node.id === UNALLOCATED_NODE_ID)
+        ? SAVINGS_COLOR
+        : head.node.color
       rightLinks.push({
-        id: tgt.id,
-        color: isAllocationNode(tgt.id) && (tgt.id === SAVINGS_NODE_ID || tgt.id === UNALLOCATED_NODE_ID)
-          ? SAVINGS_COLOR
-          : tgt.color,
+        id: head.node.id,
+        group: head.node.id,
+        color,
         sx: tunnelX + TUNNEL_W,
-        sy0: tunnelY + offset,
-        sy1: tunnelY + offset + rh,
+        sy0: head.y0,
+        sy1: head.y1,
         tx: rightNodeX,
-        ty0: tgt.y,
-        ty1: tgt.y + tgt.h,
+        ty0: head.node.y,
+        ty1: head.node.y + head.node.h,
       })
-      offset += rh + (i < rightNodes.length - 1 ? OUTCOME_GAP : 0)
+      index += 1
+      continue
+    }
+
+    const start = index
+    while (index < slices.length && slices[index].node.parent_id === parentId) index += 1
+    const group = slices.slice(start, index)
+    const children = group.map(entry => entry.node)
+    const parentAmount = children.reduce((sum, child) => sum + child.amount, 0) || 1
+    const parentY = children[0].y
+    const parentBottom = children[children.length - 1].y + children[children.length - 1].h
+    const parentH = Math.max(parentBottom - parentY, 1)
+    const parentX = rightNodeX - PARENT_SPAN
+    const largest = children.reduce((best, child) => child.amount > best.amount ? child : best, children[0])
+    parentNodes.push({
+      id: parentId,
+      label: head.node.parent_label || parentId,
+      amount: parentAmount,
+      color: largest.color,
+      x: parentX,
+      y: parentY,
+      h: parentH,
+      labelCy: parentY + parentH / 2,
+      slotTop: parentY,
+      slotH: parentH,
+      side: 'mid',
+      top_transactions: [],
+      parent_id: null,
+      parent_label: null,
+    })
+    rightLinks.push({
+      id: parentId,
+      group: parentId,
+      color: largest.color,
+      sx: tunnelX + TUNNEL_W,
+      sy0: group[0].y0,
+      sy1: group[group.length - 1].y1,
+      tx: parentX,
+      ty0: parentY,
+      ty1: parentBottom,
+    })
+    const childGaps = Math.max(0, children.length - 1) * OUTCOME_GAP
+    const flowH = Math.max(parentH - childGaps, 1)
+    let childOffset = 0
+    for (let c = 0; c < children.length; c++) {
+      const child = children[c]
+      const rh = Math.max((child.amount / parentAmount) * flowH, 1)
+      rightLinks.push({
+        id: child.id,
+        group: parentId,
+        color: child.color,
+        sx: parentX + NODE_W,
+        sy0: parentY + childOffset,
+        sy1: parentY + childOffset + rh,
+        tx: child.x,
+        ty0: child.y,
+        ty1: child.y + child.h,
+      })
+      childOffset += rh + (c < children.length - 1 ? OUTCOME_GAP : 0)
     }
   }
 
-  return { leftNodes, rightNodes, leftLinks, rightLinks, tunnelX, tunnelY, tunnelH }
+  return { rightLinks, parentNodes }
 }
 
 function ribbon(sx: number, sy0: number, sy1: number, tx: number, ty0: number, ty1: number) {
@@ -310,11 +420,10 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
   const textAnchor = n.side === 'left' ? 'end' : 'start'
   const labelMaxW = n.side === 'left' ? LEFT_LABEL_MAX_W : RIGHT_LABEL_MAX_W
   const label = truncateLabel(formatLabel(n), labelMaxW)
-  const tunnelRight = tunnelX + TUNNEL_W
   const hit =
     n.side === 'left'
       ? { x: 0, y: n.slotTop - 2, width: tunnelX - 4, height: n.slotH + 4 }
-      : { x: tunnelRight + 4, y: n.slotTop - 2, width: chartW - tunnelRight - 4, height: n.slotH + 4 }
+      : { x: n.x - 6, y: n.slotTop - 2, width: chartW - (n.x - 6), height: n.slotH + 4 }
 
   return (
     <g onMouseEnter={() => onHover(n.id)} onMouseLeave={() => onHover(null)} style={{ cursor: 'default' }}>
@@ -407,21 +516,28 @@ export default function Spending() {
   // Hovering a right node keeps left ribbons visible.
   const leftNodeIds  = layout ? new Set(layout.leftNodes.map(n => n.id))  : new Set<string>()
   const rightNodeIds = layout ? new Set(layout.rightNodes.map(n => n.id)) : new Set<string>()
+  const parentNodeIds = layout ? new Set(layout.parentNodes.map(n => n.id)) : new Set<string>()
   const hoverIsLeft  = hovered && leftNodeIds.has(hovered)
-  const hoverIsRight = hovered && rightNodeIds.has(hovered)
+  const hoverIsRight = hovered && (rightNodeIds.has(hovered) || parentNodeIds.has(hovered))
   const hoverIsTunnel = hovered === '__tunnel__'
+  const hoveredParent = layout
+    ? (layout.rightNodes.find(n => n.id === hovered)?.parent_id
+      ?? (hovered && parentNodeIds.has(hovered) ? hovered : null))
+    : null
 
-  const nodeVis = (id: string) => {
+  const nodeVis = (id: string, parentId?: string | null) => {
     if (!hovered || hoverIsTunnel) return true
-    return hovered === id
+    if (hovered === id) return true
+    if (hoveredParent && (id === hoveredParent || parentId === hoveredParent)) return true
+    return false
   }
   const leftRibbonVis = (srcId: string) => {
     if (!hovered || hoverIsTunnel || hoverIsRight) return true
     return hovered === srcId
   }
-  const rightRibbonVis = (tgtId: string) => {
+  const rightRibbonVis = (link: LLink) => {
     if (!hovered || hoverIsTunnel || hoverIsLeft) return true
-    return hovered === tgtId
+    return hovered === link.id || hovered === link.group || hoveredParent === link.group
   }
 
   const allocationNodes = data?.allocation_nodes ?? []
@@ -435,7 +551,10 @@ export default function Spending() {
   const deficit = data ? Math.max(0, data.total_spending - data.total_income) : 0
 
   const hoveredNode: LNode | null = hovered && layout && hovered !== '__tunnel__'
-    ? (layout.leftNodes.find(n => n.id === hovered) ?? layout.rightNodes.find(n => n.id === hovered) ?? null)
+    ? (layout.leftNodes.find(n => n.id === hovered)
+      ?? layout.rightNodes.find(n => n.id === hovered)
+      ?? layout.parentNodes.find(n => n.id === hovered)
+      ?? null)
     : null
 
   return (
@@ -514,11 +633,11 @@ export default function Spending() {
               ))}
 
               {/* Right ribbons (tunnel → expenses) */}
-              {layout.rightLinks.map(l => (
-                <path key={l.id}
+              {layout.rightLinks.map((l, i) => (
+                <path key={`${l.group}-${l.id}-${i}`}
                   d={ribbon(l.sx, l.sy0, l.sy1, l.tx, l.ty0, l.ty1)}
                   fill={l.color}
-                  opacity={rightRibbonVis(l.id) ? 0.28 : 0.03}
+                  opacity={rightRibbonVis(l) ? 0.28 : 0.03}
                   style={{ transition: 'opacity 0.15s', cursor: 'default' }}
                   onMouseEnter={() => setHovered(l.id)}
                   onMouseLeave={() => setHovered(null)}
@@ -547,13 +666,41 @@ export default function Spending() {
               </g>
 
               {/* Left income-source nodes */}
+              {layout.parentNodes.map(n => (
+                <g key={n.id} onMouseEnter={() => setHovered(n.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: 'default' }}>
+                  <rect x={n.x} y={n.y} width={NODE_W} height={n.h} fill={n.color} rx={3}
+                    opacity={nodeVis(n.id) ? 1 : 0.08} style={{ transition: 'opacity 0.15s', pointerEvents: 'none' }} />
+                  <text x={n.x - LABEL_GAP} y={n.labelCy - (n.h >= 28 ? 6 : 4)}
+                    textAnchor="end" fontSize={12}
+                    fill={nodeVis(n.id) ? '#d4dae4' : '#2a3040'}
+                    fontWeight={500}
+                    style={{ userSelect: 'none', pointerEvents: 'none' }}
+                  >{truncateLabel(spendingBandLabel(n.label), PARENT_SPAN - NODE_W - LABEL_GAP - 8, 12)}</text>
+                  {n.h >= 28 && (
+                    <text x={n.x - LABEL_GAP} y={n.labelCy + 11}
+                      textAnchor="end" fontSize={11}
+                      fill={nodeVis(n.id) ? '#9aa2b2' : '#2a3040'}
+                      style={{ userSelect: 'none', pointerEvents: 'none' }}
+                    >${fmt(n.amount)}</text>
+                  )}
+                  <rect
+                    x={n.x - (PARENT_SPAN - NODE_W)}
+                    y={n.y}
+                    width={PARENT_SPAN}
+                    height={n.h}
+                    fill="transparent"
+                    pointerEvents="all"
+                  />
+                </g>
+              ))}
+
               {layout.leftNodes.map(n => (
                 <NodeGroup
                   key={n.id}
                   n={n}
                   chartW={svgW}
                   tunnelX={layout.tunnelX}
-                  nodeVis={nodeVis}
+                  nodeVis={id => nodeVis(id)}
                   formatLabel={n => formatCategory(n.label)}
                   amountPrefix="+"
                   amountClass="#74d8a8"
@@ -568,7 +715,7 @@ export default function Spending() {
                   n={n}
                   chartW={svgW}
                   tunnelX={layout.tunnelX}
-                  nodeVis={nodeVis}
+                  nodeVis={id => nodeVis(id, layout.rightNodes.find(n => n.id === id)?.parent_id)}
                   formatLabel={n => allocationLabel(n)}
                   amountPrefix=""
                   amountClass={isAllocationNode(n.id) ? (n.id === SAVINGS_NODE_ID || n.id === UNALLOCATED_NODE_ID ? SAVINGS_COLOR : n.color) : '#9aa2b2'}

@@ -214,6 +214,8 @@ class CashFlowNode(BaseModel):
     amount: float
     color: str
     top_transactions: list[CashFlowTxn] = []
+    parent_id: str | None = None
+    parent_label: str | None = None
 
 
 class CashFlowResponse(BaseModel):
@@ -236,6 +238,8 @@ def _cash_flow_node(node) -> CashFlowNode:
             CashFlowTxn(merchant=txn.merchant, amount=txn.amount, date=txn.date)
             for txn in node.top_transactions
         ],
+        parent_id=node.parent_id,
+        parent_label=node.parent_label,
     )
 
 

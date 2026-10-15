@@ -24,6 +24,8 @@ MIN_OUTCOME_BAND_H = 32
 INCOME_GAP = 8
 OUTCOME_GAP = 8
 TUNNEL_FLOW_BIAS = 0.40
+BRANCH_TUNNEL_BIAS = 0.18
+PARENT_SPAN = 156
 LEFT_COL_X = 130
 RIGHT_PAD = 172
 MIN_FLOW_W = 360
@@ -98,7 +100,38 @@ def build_cash_flow_sankey_payload(flow: CashFlowData) -> CashFlowSankeyPayload:
         if row:
             mermaid_rows.append(row)
 
-    for use in uses:
+    index = 0
+    spending = list(flow.spending_categories)
+    while index < len(spending):
+        use = spending[index]
+        parent_label = use.parent_label
+        if not parent_label:
+            label = _display_label(use.id, use.label)
+            links.append(SankeyLink(source=INCOME_HUB, target=label, value=use.amount))
+            row = _sankey_row(INCOME_HUB, label, use.amount)
+            if row:
+                mermaid_rows.append(row)
+            index += 1
+            continue
+        children: list[CashFlowNodeItem] = []
+        while index < len(spending) and spending[index].parent_label == parent_label:
+            children.append(spending[index])
+            index += 1
+        parent_total = round(sum(child.amount for child in children), 2)
+        links.append(SankeyLink(source=INCOME_HUB, target=parent_label, value=parent_total))
+        row = _sankey_row(INCOME_HUB, parent_label, parent_total)
+        if row:
+            mermaid_rows.append(row)
+        for child in children:
+            label = _display_label(child.id, child.label)
+            if label == "Other":
+                label = f"{parent_label} · Other"
+            links.append(SankeyLink(source=parent_label, target=label, value=child.amount))
+            row = _sankey_row(parent_label, label, child.amount)
+            if row:
+                mermaid_rows.append(row)
+
+    for use in flow.allocation_nodes or []:
         label = _display_label(use.id, use.label)
         links.append(SankeyLink(source=INCOME_HUB, target=label, value=use.amount))
         row = _sankey_row(INCOME_HUB, label, use.amount)
@@ -210,6 +243,7 @@ class _LayoutNode:
     h: float
     label_cy: float
     side: str
+    label_anchor: str = "start"
 
 
 @dataclass(frozen=True)
@@ -229,6 +263,7 @@ class _LayoutLink:
 class _Layout:
     left_nodes: list[_LayoutNode]
     right_nodes: list[_LayoutNode]
+    parent_nodes: list[_LayoutNode]
     left_links: list[_LayoutLink]
     right_links: list[_LayoutLink]
     tunnel_x: float
@@ -238,6 +273,108 @@ class _Layout:
     height: int
     left_label_x: float
     right_label_x: float
+
+
+def _branch_right_links(
+    right_items: list[CashFlowNodeItem],
+    right_nodes: list[_LayoutNode],
+    *,
+    tunnel_x: float,
+    tunnel_y: float,
+    tunnel_h: float,
+    right_node_x: float,
+    total_outflow: float,
+) -> tuple[list[_LayoutLink], list[_LayoutNode]]:
+    """Ribbons leave the account into a parent, then the parent splits into leaves."""
+    if not right_nodes:
+        return [], []
+
+    tunnel_gaps = max(0, len(right_nodes) - 1) * OUTCOME_GAP
+    tunnel_flow = tunnel_h - tunnel_gaps
+    slices: list[tuple[CashFlowNodeItem, _LayoutNode, float, float]] = []
+    offset = 0.0
+    for index, (item, node) in enumerate(zip(right_items, right_nodes)):
+        ribbon_h = max((node.amount / total_outflow) * tunnel_flow, 1.0)
+        slices.append((item, node, tunnel_y + offset, tunnel_y + offset + ribbon_h))
+        offset += ribbon_h + (OUTCOME_GAP if index < len(right_nodes) - 1 else 0)
+
+    links: list[_LayoutLink] = []
+    parents: list[_LayoutNode] = []
+    index = 0
+    while index < len(slices):
+        item, node, y0, y1 = slices[index]
+        parent_id = item.parent_id
+        if not parent_id:
+            links.append(
+                _LayoutLink(
+                    id=node.id,
+                    color=SAVINGS_COLOR if node.id in {SAVINGS_ID, UNALLOCATED_ID} else node.color,
+                    sx=tunnel_x + TUNNEL_W,
+                    sy0=y0,
+                    sy1=y1,
+                    tx=right_node_x,
+                    ty0=node.y,
+                    ty1=node.y + node.h,
+                )
+            )
+            index += 1
+            continue
+
+        start = index
+        while index < len(slices) and slices[index][0].parent_id == parent_id:
+            index += 1
+        group = slices[start:index]
+        children = [entry[1] for entry in group]
+        parent_amount = sum(child.amount for child in children) or 1.0
+        parent_y = children[0].y
+        parent_bottom = children[-1].y + children[-1].h
+        parent_h = max(parent_bottom - parent_y, 1.0)
+        parent_x = right_node_x - PARENT_SPAN
+        largest = max(children, key=lambda child: child.amount)
+        parents.append(
+            _LayoutNode(
+                id=parent_id,
+                label=item.parent_label or parent_id,
+                amount=round(parent_amount, 2),
+                color=largest.color,
+                x=parent_x,
+                y=parent_y,
+                h=parent_h,
+                label_cy=parent_y + parent_h / 2,
+                side="mid",
+            )
+        )
+        links.append(
+            _LayoutLink(
+                id=parent_id,
+                color=largest.color,
+                sx=tunnel_x + TUNNEL_W,
+                sy0=group[0][2],
+                sy1=group[-1][3],
+                tx=parent_x,
+                ty0=parent_y,
+                ty1=parent_bottom,
+            )
+        )
+        child_gaps = max(0, len(children) - 1) * OUTCOME_GAP
+        flow_h = max(parent_h - child_gaps, 1.0)
+        child_offset = 0.0
+        for child_index, child in enumerate(children):
+            ribbon_h = max((child.amount / parent_amount) * flow_h, 1.0)
+            links.append(
+                _LayoutLink(
+                    id=child.id,
+                    color=child.color,
+                    sx=parent_x + NODE_W,
+                    sy0=parent_y + child_offset,
+                    sy1=parent_y + child_offset + ribbon_h,
+                    tx=child.x,
+                    ty0=child.y,
+                    ty1=child.y + child.h,
+                )
+            )
+            child_offset += ribbon_h + (OUTCOME_GAP if child_index < len(children) - 1 else 0)
+    return links, parents
 
 
 def _fmt_amount(value: float) -> str:
@@ -425,9 +562,11 @@ def _build_layout(flow: CashFlowData, width: int | None = None) -> _Layout | Non
     height = int(max(income_min_h, outcome_min_h, MIN_SVG_H))
     avail = height - PAD_Y * 2
 
+    branched = any(getattr(item, "parent_id", None) for item in flow.spending_categories)
     flow_start = left_node_x + NODE_W
     flow_end = right_node_x
-    tunnel_x = flow_start + (flow_end - flow_start) * TUNNEL_FLOW_BIAS - TUNNEL_W / 2
+    bias = BRANCH_TUNNEL_BIAS if branched else TUNNEL_FLOW_BIAS
+    tunnel_x = flow_start + (flow_end - flow_start) * bias - TUNNEL_W / 2
     tunnel_y = float(PAD_Y)
     tunnel_h = float(avail)
 
@@ -455,29 +594,20 @@ def _build_layout(flow: CashFlowData, width: int | None = None) -> _Layout | Non
         )
         offset += ribbon_h + (INCOME_GAP if index < len(left_nodes) - 1 else 0)
 
-    right_links: list[_LayoutLink] = []
-    tunnel_gaps = max(0, len(right_nodes) - 1) * OUTCOME_GAP
-    tunnel_flow = tunnel_h - tunnel_gaps
-    offset = 0.0
-    for index, tgt in enumerate(right_nodes):
-        ribbon_h = max((tgt.amount / total_outflow) * tunnel_flow, 1.0)
-        right_links.append(
-            _LayoutLink(
-                id=tgt.id,
-                color=SAVINGS_COLOR if tgt.id in {SAVINGS_ID, UNALLOCATED_ID} else tgt.color,
-                sx=tunnel_x + TUNNEL_W,
-                sy0=tunnel_y + offset,
-                sy1=tunnel_y + offset + ribbon_h,
-                tx=right_node_x,
-                ty0=tgt.y,
-                ty1=tgt.y + tgt.h,
-            )
-        )
-        offset += ribbon_h + (OUTCOME_GAP if index < len(right_nodes) - 1 else 0)
+    right_links, parent_nodes = _branch_right_links(
+        right_items,
+        right_nodes,
+        tunnel_x=tunnel_x,
+        tunnel_y=tunnel_y,
+        tunnel_h=tunnel_h,
+        right_node_x=right_node_x,
+        total_outflow=total_outflow,
+    )
 
     return _Layout(
         left_nodes=left_nodes,
         right_nodes=right_nodes,
+        parent_nodes=parent_nodes,
         left_links=left_links,
         right_links=right_links,
         tunnel_x=tunnel_x,
@@ -541,6 +671,8 @@ def build_cash_flow_sankey_svg(flow: CashFlowData, width: int | None = None) -> 
 
     for node in layout.left_nodes:
         parts.append(_render_node(node, layout.left_label_x, layout.right_label_x, flow.total_income))
+    for node in layout.parent_nodes:
+        parts.append(_render_node(node, layout.left_label_x, layout.right_label_x, flow.total_income))
     for node in layout.right_nodes:
         parts.append(_render_node(node, layout.left_label_x, layout.right_label_x, flow.total_income))
 
@@ -554,12 +686,15 @@ def _render_node(
     right_label_x: float,
     total_income: float,
 ) -> str:
-    label = _truncate_label(
-        _display_label(node.id, node.label),
-        (LEFT_COL_X - LABEL_GAP - 8) if node.side == "left" else (RIGHT_PAD - LABEL_GAP - 8),
-    )
-    label_x = left_label_x if node.side == "left" else right_label_x
-    text_anchor = "end" if node.side == "left" else "start"
+    if node.side == "mid":
+        label_x = node.x - LABEL_GAP
+        text_anchor = "end"
+        label_room = PARENT_SPAN - NODE_W - LABEL_GAP - 8
+    else:
+        label_x = left_label_x if node.side == "left" else right_label_x
+        text_anchor = "end" if node.side == "left" else "start"
+        label_room = (LEFT_COL_X - LABEL_GAP - 8) if node.side == "left" else (RIGHT_PAD - LABEL_GAP - 8)
+    label = _truncate_label(_display_label(node.id, node.label), label_room)
     amount_prefix = "+" if node.side == "left" else ""
     amount_color = (
         SAVINGS_COLOR
