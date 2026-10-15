@@ -329,29 +329,33 @@ function routes(url: URL): unknown | undefined {
 
     case '/api/analytics/cash-flow': {
       const expanded = url.searchParams.get('expanded') === 'true'
+      const food = { parent_id: 'FOOD_AND_DRINK', parent_label: 'Food & Drink' }
+      const transit = { parent_id: 'TRANSPORTATION', parent_label: 'Transportation' }
+      const housing = { parent_id: 'RENT_AND_UTILITIES', parent_label: 'Rent & Utilities' }
       const spending = expanded
         ? [
-            { name: 'Rent', value: 1708, color: '#82a9f2' },
-            { name: 'Gas & Electric', value: 142, color: '#95c8ff' },
-            { name: 'Groceries', value: 480, color: '#63cfcc' },
-            { name: 'Restaurants', value: 200, color: '#4fc4c4' },
-            { name: 'Coffee', value: 62.18, color: '#7fb0ff' },
+            { name: 'Rent', value: 1708, color: '#82a9f2', ...housing },
+            { name: 'Gas & Electric', value: 142, color: '#95c8ff', ...housing },
+            { name: 'Groceries', value: 480, color: '#63cfcc', ...food },
+            { name: 'Restaurants', value: 200, color: '#4fc4c4', ...food },
+            { name: 'Coffee', value: 62.18, color: '#7fb0ff', ...food },
             { name: 'GENERAL_MERCHANDISE', value: 562.4, color: '#e6bd79' },
             { name: 'ENTERTAINMENT', value: 512.6, color: '#f4907f' },
-            { name: 'Gas', value: 250, color: '#a196fa' },
-            { name: 'Rideshare & Taxis', value: 138.45, color: '#8a7df0' },
+            { name: 'Gas', value: 250, color: '#a196fa', ...transit },
+            { name: 'Rideshare & Taxis', value: 138.45, color: '#8a7df0', ...transit },
             { name: 'MEDICAL', value: 299.1, color: '#adb8cb' },
             { name: 'PERSONAL_CARE', value: 268.3, color: '#74d8a8' },
             { name: 'LOAN_PAYMENTS', value: 189.97, color: '#d9a85b' },
           ]
         : [
-            { name: 'RENT_AND_UTILITIES', value: 1850, color: '#82a9f2' },
-            { name: 'Groceries', value: 480, color: '#63cfcc' },
-            { name: 'Dining', value: 262.18, color: '#4fc4c4' },
+            { name: 'Rent', value: 1708, color: '#82a9f2', ...housing },
+            { name: 'Utilities', value: 142, color: '#95c8ff', ...housing },
+            { name: 'Groceries', value: 480, color: '#63cfcc', ...food },
+            { name: 'Dining', value: 262.18, color: '#4fc4c4', ...food },
             { name: 'GENERAL_MERCHANDISE', value: 562.4, color: '#e6bd79' },
             { name: 'ENTERTAINMENT', value: 512.6, color: '#f4907f' },
-            { name: 'Gas', value: 250, color: '#a196fa' },
-            { name: 'Other Transportation', value: 138.45, color: '#8a7df0' },
+            { name: 'Gas', value: 250, color: '#a196fa', ...transit },
+            { name: 'Other Transportation', value: 138.45, color: '#8a7df0', ...transit },
             { name: 'MEDICAL', value: 299.1, color: '#adb8cb' },
             { name: 'PERSONAL_CARE', value: 268.3, color: '#74d8a8' },
             { name: 'LOAN_PAYMENTS', value: 189.97, color: '#d9a85b' },
@@ -371,6 +375,8 @@ function routes(url: URL): unknown | undefined {
           label: c.name,
           amount: c.value,
           color: c.color,
+          parent_id: 'parent_id' in c ? c.parent_id : null,
+          parent_label: 'parent_label' in c ? c.parent_label : null,
           top_transactions: TRANSACTIONS.filter(t => t.category_plaid === c.name).slice(0, 3),
         })),
       }

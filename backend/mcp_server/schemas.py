@@ -87,6 +87,8 @@ class CashFlowNodeResult(BaseModel):
     amount: float
     color: str
     top_transactions: list[CashFlowTransactionResult]
+    parent_id: str | None = None
+    parent_label: str | None = None
 
 
 class CashFlowResult(BaseModel):

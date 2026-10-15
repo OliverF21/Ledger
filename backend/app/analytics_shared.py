@@ -495,3 +495,40 @@ def cash_flow_spending_bucket(
     if parent == "RENT_AND_UTILITIES":
         return "Utilities"
     return rolled
+
+
+# Parents that branch off the account in the default Sankey. Their leaves
+# (Dining, Groceries, …) hang off the parent, not off the account itself.
+_SANKEY_BRANCH_PARENTS = {"FOOD_AND_DRINK", "TRANSPORTATION", "RENT_AND_UTILITIES"}
+
+
+def cash_flow_spending_group(
+    category_user: str | None,
+    category_plaid: str | None,
+    category_plaid_detailed: str | None,
+    default: str = "Uncategorized",
+    *,
+    expanded: bool = False,
+) -> str | None:
+    """PFC primary a Sankey leaf hangs from, or None when it leaves the account directly.
+
+    Food, transportation, and rent always branch (Dining under Food, Gas under
+    Transportation). Expanded view does the same for every detailed activity.
+    A later pass drops the parent when it would only repeat a single leaf.
+    """
+    rolled = display_rollup_category(
+        category_user, category_plaid, category_plaid_detailed, default
+    )
+    if rolled in {default, "Investments"}:
+        return None
+
+    key = _pfc_key_for_cash_flow(category_user, category_plaid, category_plaid_detailed)
+    if not key:
+        return None
+    key = _PFC_DETAILED_ALIASES.get(key, key)
+    parent = parent_from_pfc_detailed(key)
+    if parent not in PLAID_PFC_PRIMARIES and parent not in KNOWN_CATEGORY_KEYS:
+        return None
+    if expanded or parent in _SANKEY_BRANCH_PARENTS:
+        return parent
+    return None
