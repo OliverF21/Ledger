@@ -120,9 +120,9 @@ mcp = FastMCP(
         "Visual chart tools (return inline SVG images — no embed widgets):\n"
         "- chart_cash_flow / chart_sankey — ALWAYS use for cash-flow Sankey diagrams; "
         "they match the Ledger Cash Flow page. Do not redraw Mermaid from cash_flow_sankey_data. "
-        "Parents branch off the income pool (Food & Drink, Transportation, Rent & Utilities) "
-        "and their leaves branch off the parent (Dining, Groceries, Gas). "
-        "Pass expanded=true for one leaf per detailed activity, still under its parent. "
+        "The default matches the Cash Flow page: one band per primary category. "
+        "Pass expanded=true for the parental breakout (Food & Drink → Groceries, "
+        "Restaurants, Coffee, and the same shape for every other category). "
         "Labeled transfers appear as named sinks (e.g. Vacation); unlabeled HYSA/investments "
         "stay generic; leftover is Savings — never a goal.\n\n"
         "Advisor / write-intent tools (you CANNOT change the user's data):\n"
@@ -208,8 +208,8 @@ def get_cash_flow_sankey_data(
         bool,
         Field(
             description=(
-                "When true, one band per detailed activity (coffee, rideshare, each utility). "
-                "Default groups those into Dining, Other Transportation, and Utilities."
+                "When true, activities branch out of their parent category "
+                "(Food & Drink → Groceries, Restaurants). Default is one band per primary."
             )
         ),
     ] = False,
@@ -238,8 +238,8 @@ def chart_cash_flow(
         bool,
         Field(
             description=(
-                "When true, one band per detailed activity. Default matches the Cash Flow "
-                "page grouped view (Dining, Groceries, Gas, Other Transportation, Rent, Utilities)."
+                "When true, activities branch out of their parent category. "
+                "Default matches the Cash Flow page: one band per primary."
             )
         ),
     ] = False,
@@ -260,7 +260,7 @@ def chart_sankey(
     ] = None,
     expanded: Annotated[
         bool,
-        Field(description="When true, one band per detailed activity. Default is the grouped view."),
+        Field(description="When true, activities branch out of their parent. Default is one band per primary."),
     ] = False,
 ) -> ToolResult:
     """Alias for chart_cash_flow."""
@@ -427,7 +427,7 @@ def get_cash_flow(
     ] = None,
     expanded: Annotated[
         bool,
-        Field(description="When true, one spending band per detailed activity. Default is grouped."),
+        Field(description="When true, activities branch out of their parent. Default is one band per primary."),
     ] = False,
 ) -> CashFlowResult:
     """Return income sources, spending, named allocation sinks, and leftover Savings (JSON). For Sankey diagrams use cash_flow_sankey_data instead."""

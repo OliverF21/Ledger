@@ -325,7 +325,7 @@ def test_get_spending_by_category_rolls_up_detailed_categories(db_session: Sessi
 
     assert result.total_spending == 1219.0
     assert result.transaction_count == 3
-    # Overview stays on PFC primaries. Cash Flow splits Dining Out from Groceries.
+    # Overview and the default cash-flow chart both stay on PFC primaries.
     assert [item.name for item in result.categories] == ["GENERAL_MERCHANDISE", "FOOD_AND_DRINK"]
     assert result.categories[0].transaction_count == 1
     assert result.categories[1].value == 220.0
@@ -401,8 +401,8 @@ def test_build_cash_flow_matches_expected_totals(db_session: Session):
     assert result.income_sources[0].label == "Paycheck"
 
 
-def test_build_cash_flow_splits_dining_and_groceries(db_session: Session):
-    """Groceries stay separate from dining; restaurants and dining-out share Dining."""
+def test_build_cash_flow_keeps_standard_categories(db_session: Session):
+    """Default cash flow stays on the primary. Dining and groceries share Food & Drink."""
     card = db_session.query(Account).filter_by(plaid_account_id="acct_card").one()
     db_session.add(
         Transaction(
@@ -421,18 +421,15 @@ def test_build_cash_flow_splits_dining_and_groceries(db_session: Session):
 
     result = build_cash_flow(db_session, month="2026-06")
     by_id = {node.id: node for node in result.spending_categories}
-    assert "FOOD_AND_DRINK" not in by_id
+    assert "Groceries" not in by_id
+    assert "Dining" not in by_id
     assert "Restaurants" not in by_id
-    # Corner Market groceries
-    assert by_id["Groceries"].amount == 120.0
-    assert by_id["Groceries"].parent_id == "FOOD_AND_DRINK"
-    assert by_id["Groceries"].parent_label == "Food & Drink"
-    # Cafe split (100) + Bistro (40)
-    assert by_id["Dining"].amount == 140.0
-    assert by_id["Dining"].parent_id == "FOOD_AND_DRINK"
+    # Groceries 120 + cafe split 100 + bistro 40
+    food = by_id["FOOD_AND_DRINK"]
+    assert food.amount == 260.0
+    assert food.parent_id is None
+    assert {txn.merchant for txn in food.top_transactions} <= {"Corner Market", "Neighborhood Cafe", "Bistro"}
     assert by_id["GENERAL_MERCHANDISE"].parent_id is None
-    dining = by_id["Dining"]
-    assert {txn.merchant for txn in dining.top_transactions} <= {"Neighborhood Cafe", "Bistro"}
 
 
 def test_build_cash_flow_expanded_splits_niche_activities(db_session: Session):
@@ -476,10 +473,14 @@ def test_build_cash_flow_expanded_splits_niche_activities(db_session: Session):
     db_session.commit()
 
     grouped = build_cash_flow(db_session, month="2026-06")
-    grouped_ids = {node.id: node.amount for node in grouped.spending_categories}
-    assert grouped_ids["Dining"] == 106.0  # cafe split 100 + coffee 6
-    assert grouped_ids["Gas"] == 48.0
-    assert grouped_ids["Other Transportation"] == 22.0
+    grouped_by_id = {node.id: node for node in grouped.spending_categories}
+    # Cafe split 100 + groceries 120 + coffee 6 stay on the standard food band.
+    assert grouped_by_id["FOOD_AND_DRINK"].amount == 226.0
+    assert grouped_by_id["FOOD_AND_DRINK"].parent_id is None
+    assert grouped_by_id["TRANSPORTATION"].amount == 70.0
+    assert grouped_by_id["TRANSPORTATION"].parent_id is None
+    assert "Dining" not in grouped_by_id
+    assert "Gas" not in grouped_by_id
 
     expanded = build_cash_flow(db_session, month="2026-06", expanded=True)
     expanded_ids = {node.id: node.amount for node in expanded.spending_categories}
@@ -880,10 +881,9 @@ def test_cash_flow_sankey_data_returns_mermaid_links(
     assert result.mermaid.startswith("sankey-beta")
     assert "Paycheck,Income pool,3000" in result.mermaid
     assert "Income pool,Food & Drink,220.0" in result.mermaid
-    assert "Food & Drink,Groceries,120.0" in result.mermaid
-    assert "Food & Drink,Dining,100.0" in result.mermaid
-    assert "Income pool,Dining," not in result.mermaid
-    assert any(link.source == "Food & Drink" and link.target == "Dining" for link in result.sankey_links)
+    assert "Food & Drink,Groceries," not in result.mermaid
+    assert "Food & Drink,Dining," not in result.mermaid
+    assert any(link.source == "Income pool" and link.target == "Food & Drink" and link.value == 220.0 for link in result.sankey_links)
     assert any(link.target == "Savings" for link in result.sankey_links)
     assert "<svg" in result.svg
     assert "INCOME" in result.svg

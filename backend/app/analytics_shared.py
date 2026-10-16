@@ -456,15 +456,14 @@ def cash_flow_spending_bucket(
 ) -> str:
     """Spending band for the cash-flow Sankey.
 
-    The default view only splits three mixed parents into two bands each:
-    Groceries/Dining, Gas/Other Transportation, and Rent/Utilities. Everything
-    else stays on its Plaid primary. Expanded view gives each detailed
-    activity its own band (Coffee, Rideshare, Internet & Cable, …).
+    The default view stays on the standard primary (Food & Drink, Transportation,
+    Rent & Utilities). Expanded view gives each detailed activity its own band
+    (Groceries, Restaurants, Gas, Rideshare, …) so those can branch off the parent.
     """
     rolled = display_rollup_category(
         category_user, category_plaid, category_plaid_detailed, default
     )
-    if rolled in {default, "Investments"}:
+    if not expanded or rolled in {default, "Investments"}:
         return rolled
 
     key = _pfc_key_for_cash_flow(category_user, category_plaid, category_plaid_detailed)
@@ -477,29 +476,9 @@ def cash_flow_spending_bucket(
     if key == parent:
         return rolled
 
-    if expanded:
-        from mcp_server.category_labels import short_activity_label
+    from mcp_server.category_labels import short_activity_label
 
-        return short_activity_label(key)
-
-    if key == "FOOD_AND_DRINK_GROCERIES":
-        return "Groceries"
-    if parent == "FOOD_AND_DRINK":
-        return "Dining"
-    if key == "TRANSPORTATION_GAS":
-        return "Gas"
-    if parent == "TRANSPORTATION":
-        return "Other Transportation"
-    if key == "RENT_AND_UTILITIES_RENT":
-        return "Rent"
-    if parent == "RENT_AND_UTILITIES":
-        return "Utilities"
-    return rolled
-
-
-# Parents that branch off the account in the default Sankey. Their leaves
-# (Dining, Groceries, …) hang off the parent, not off the account itself.
-_SANKEY_BRANCH_PARENTS = {"FOOD_AND_DRINK", "TRANSPORTATION", "RENT_AND_UTILITIES"}
+    return short_activity_label(key)
 
 
 def cash_flow_spending_group(
@@ -510,12 +489,15 @@ def cash_flow_spending_group(
     *,
     expanded: bool = False,
 ) -> str | None:
-    """PFC primary a Sankey leaf hangs from, or None when it leaves the account directly.
+    """PFC primary a Sankey leaf hangs from in expanded view.
 
-    Food, transportation, and rent always branch (Dining under Food, Gas under
-    Transportation). Expanded view does the same for every detailed activity.
+    The default chart leaves the income pool directly, one band per primary.
+    Expanded view hangs each activity off that parent (Food & Drink → Groceries).
     A later pass drops the parent when it would only repeat a single leaf.
     """
+    if not expanded:
+        return None
+
     rolled = display_rollup_category(
         category_user, category_plaid, category_plaid_detailed, default
     )
@@ -529,6 +511,4 @@ def cash_flow_spending_group(
     parent = parent_from_pfc_detailed(key)
     if parent not in PLAID_PFC_PRIMARIES and parent not in KNOWN_CATEGORY_KEYS:
         return None
-    if expanded or parent in _SANKEY_BRANCH_PARENTS:
-        return parent
-    return None
+    return parent

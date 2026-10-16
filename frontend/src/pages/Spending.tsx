@@ -571,7 +571,7 @@ export default function Spending() {
         <button
           type="button"
           aria-pressed={expanded}
-          title="Show coffee, rideshare, each utility, and other detailed categories"
+          title="Break activities out of their parent, such as Food & Drink into dining and groceries"
           onClick={() => setExpanded(on => !on)}
           className={`glass-chip px-[10px] py-[8px] text-[13px] cursor-pointer transition-colors hover:border-white/40 ${
             expanded ? 'border-white/60 text-ledger-text-primary' : 'text-ledger-text-secondary'

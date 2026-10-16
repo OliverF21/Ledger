@@ -43,29 +43,29 @@ def test_rollup_keeps_detailed_user_override_bucket():
     assert rollup_category_key("Restaurants", "GENERAL_MERCHANDISE", None) == "Restaurants"
 
 
-def test_cash_flow_bucket_splits_only_mixed_parents():
-    """Default Sankey splits three mixed parents and leaves the rest grouped."""
-    assert cash_flow_spending_bucket("Restaurants", "GENERAL_MERCHANDISE", None) == "Dining"
-    assert cash_flow_spending_bucket("Dining Out", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "Dining"
-    assert cash_flow_spending_bucket("Coffee", None, None) == "Dining"
-    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "Groceries"
-    assert cash_flow_spending_bucket("Gas", "GENERAL_MERCHANDISE", None) == "Gas"
-    assert cash_flow_spending_bucket("Rideshare & Taxis", None, None) == "Other Transportation"
-    assert cash_flow_spending_bucket(None, "TRANSPORTATION", "TRANSPORTATION_PARKING") == "Other Transportation"
-    assert cash_flow_spending_bucket(None, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT") == "Rent"
-    assert cash_flow_spending_bucket("Gas & Electric", None, None) == "Utilities"
-    assert cash_flow_spending_bucket("Internet & Cable", None, None) == "Utilities"
-    # Parent-only food stays one band — there is no detail to split on.
+def test_cash_flow_bucket_default_stays_on_the_primary():
+    """The standard Sankey is one band per primary. Breakouts wait for expanded view."""
+    assert cash_flow_spending_bucket("Restaurants", "GENERAL_MERCHANDISE", None) == "FOOD_AND_DRINK"
+    assert cash_flow_spending_bucket("Dining Out", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "FOOD_AND_DRINK"
+    assert cash_flow_spending_bucket("Coffee", None, None) == "FOOD_AND_DRINK"
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES") == "FOOD_AND_DRINK"
+    assert cash_flow_spending_bucket("Gas", "GENERAL_MERCHANDISE", None) == "TRANSPORTATION"
+    assert cash_flow_spending_bucket("Rideshare & Taxis", None, None) == "TRANSPORTATION"
+    assert cash_flow_spending_bucket(None, "TRANSPORTATION", "TRANSPORTATION_PARKING") == "TRANSPORTATION"
+    assert cash_flow_spending_bucket(None, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT") == "RENT_AND_UTILITIES"
+    assert cash_flow_spending_bucket("Gas & Electric", None, None) == "RENT_AND_UTILITIES"
+    assert cash_flow_spending_bucket("Internet & Cable", None, None) == "RENT_AND_UTILITIES"
     assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", None) == "FOOD_AND_DRINK"
     assert cash_flow_spending_bucket("Flights", None, None) == "TRAVEL"
     assert cash_flow_spending_bucket("Paycheck", None, None) == "Paycheck"
 
 
 def test_cash_flow_bucket_accepts_dotted_plaid_keys_and_keeps_parent_overrides():
-    """Dotted PFC keys still split. A user label of the parent itself does not."""
-    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK.GROCERIES") == "Groceries"
-    assert cash_flow_spending_bucket(None, "TRANSPORTATION", "TRANSPORTATION.GAS") == "Gas"
-    assert cash_flow_spending_bucket(None, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES.GAS_AND_ELECTRICITY") == "Utilities"
+    """Dotted PFC keys stay on the primary until expanded. A parent label does not split."""
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK.GROCERIES") == "FOOD_AND_DRINK"
+    assert cash_flow_spending_bucket(None, "TRANSPORTATION", "TRANSPORTATION.GAS") == "TRANSPORTATION"
+    assert cash_flow_spending_bucket(None, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES.GAS_AND_ELECTRICITY") == "RENT_AND_UTILITIES"
+    assert cash_flow_spending_bucket(None, "FOOD_AND_DRINK", "FOOD_AND_DRINK.GROCERIES", expanded=True) == "Groceries"
     assert cash_flow_spending_bucket(None, "SHOPPING", "SHOPPING.ELECTRONICS", expanded=True) == "Electronics"
     # The user chose the parent, so Plaid's gas detail must not leak into expanded view.
     assert cash_flow_spending_bucket(
