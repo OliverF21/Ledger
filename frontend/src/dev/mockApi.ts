@@ -347,19 +347,7 @@ function routes(url: URL): unknown | undefined {
             { name: 'PERSONAL_CARE', value: 268.3, color: '#74d8a8' },
             { name: 'LOAN_PAYMENTS', value: 189.97, color: '#d9a85b' },
           ]
-        : [
-            { name: 'Rent', value: 1708, color: '#82a9f2', ...housing },
-            { name: 'Utilities', value: 142, color: '#95c8ff', ...housing },
-            { name: 'Groceries', value: 480, color: '#63cfcc', ...food },
-            { name: 'Dining', value: 262.18, color: '#4fc4c4', ...food },
-            { name: 'GENERAL_MERCHANDISE', value: 562.4, color: '#e6bd79' },
-            { name: 'ENTERTAINMENT', value: 512.6, color: '#f4907f' },
-            { name: 'Gas', value: 250, color: '#a196fa', ...transit },
-            { name: 'Other Transportation', value: 138.45, color: '#8a7df0', ...transit },
-            { name: 'MEDICAL', value: 299.1, color: '#adb8cb' },
-            { name: 'PERSONAL_CARE', value: 268.3, color: '#74d8a8' },
-            { name: 'LOAN_PAYMENTS', value: 189.97, color: '#d9a85b' },
-          ]
+        : CATEGORIES.map(c => ({ ...c }))
       return {
         month: url.searchParams.get('month') ?? monthValue(0),
         total_income: 7240,

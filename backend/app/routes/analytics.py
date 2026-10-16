@@ -248,7 +248,7 @@ async def get_cash_flow(
     month: Optional[str] = Query(None, description="YYYY-MM, defaults to current month"),
     expanded: bool = Query(
         False,
-        description="Split spending into detailed activities (coffee, rideshare, each utility).",
+        description="Break activities out of their parent category. Default is one band per primary.",
     ),
     db: Session = Depends(get_db),
     bdb: Session = Depends(get_budgets_db),
