@@ -22,6 +22,7 @@ import { VALID_SCREENS, type ScreenType } from './utils/screens'
 import {
   getMonthOptions, resolveSelectedMonth, storeMonth, setMonthInUrl,
 } from './utils/months'
+import { clearTransactionDrillParams } from './utils/cashFlowDrill'
 
 type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
 
@@ -140,13 +141,17 @@ function App() {
     if (window.location.hash.replace('#', '') === 'subscriptions') {
       window.history.replaceState(null, '', '#budgets')
     }
+    if (getScreenFromHash() !== 'transactions') clearTransactionDrillParams()
     const onHashChange = () => {
       if (window.location.hash.replace('#', '') === 'subscriptions') {
         window.history.replaceState(null, '', '#budgets')
         setActiveScreen('budgets')
+        clearTransactionDrillParams()
         return
       }
-      setActiveScreen(getScreenFromHash())
+      const screen = getScreenFromHash()
+      if (screen !== 'transactions') clearTransactionDrillParams()
+      setActiveScreen(screen)
     }
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
