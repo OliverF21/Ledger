@@ -17,7 +17,8 @@ budget proposals.
 │ Frontend (React + TypeScript + Vite)                             │
 │ - Hash-based SPA (#overview, #transactions, …)                   │
 │ - Plaid Link (react-plaid-link)                                  │
-│ - Session token in localStorage → Authorization: Bearer          │
+│ - Session token in localStorage, or sessionStorage when          │
+│   "Remember this account" is off → Authorization: Bearer         │
 └────────────────────────────┬─────────────────────────────────────┘
                              │ HTTP/REST (JSON)  /api/*
                              ↓

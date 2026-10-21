@@ -271,13 +271,13 @@ function routes(url: URL): unknown | undefined {
 
   switch (path) {
     case '/api/auth/me':
-      return { name: 'Oliver', email: 'demo@ledger.local' }
+      return { username: 'oliver', name: 'Oliver', email: 'demo@ledger.local' }
 
     case '/api/settings/plaid-config':
       return { client_id: 'demo', env: 'sandbox', redirect_uri: null, has_secret: true, configured: true, wizard_done: true }
 
     case '/api/setup/status':
-      return { done: true }
+      return { account_exists: true, plaid_env: 'sandbox', plaid_ok: true, missing_plaid_vars: [], done: true }
 
     case '/api/plaid/accounts':
       return { accounts: ACCOUNTS }
@@ -588,12 +588,25 @@ export function installMockApi(): void {
     if (!raw.includes('/api/')) return realFetch(input as RequestInfo, init)
 
     const url = new URL(raw, window.location.origin)
+    const method = (init?.method ?? 'GET').toUpperCase()
+
+    if ((url.pathname === '/api/auth/login' || url.pathname === '/api/auth/register') && method !== 'GET') {
+      let username = 'oliver'
+      try {
+        const parsed = init?.body ? JSON.parse(String(init.body)) : {}
+        if (typeof parsed.username === 'string' && parsed.username.trim()) username = parsed.username.trim()
+      } catch {
+        /* keep the demo username */
+      }
+      await new Promise(resolve => setTimeout(resolve, 90))
+      return jsonResponse({ token: 'demo-session-token', username }, 200)
+    }
+
     const body = routes(url)
 
     if (body === undefined) {
       // Unmapped write endpoints (POST/PUT/DELETE) resolve as a no-op success
       // so demo clicks don't throw; unmapped reads 404 loudly enough to notice.
-      const method = (init?.method ?? 'GET').toUpperCase()
       if (method !== 'GET') return jsonResponse({ success: true }, 200)
       console.warn(`[mock-api] no fixture for ${url.pathname}`)
       return jsonResponse({ detail: 'Not mocked' }, 404)
@@ -601,7 +614,6 @@ export function installMockApi(): void {
 
     // A touch of latency so loading states are visible while designing.
     // Sync is slower so the header button and completion toast can be seen.
-    const method = (init?.method ?? 'GET').toUpperCase()
     const delay = url.pathname === '/api/plaid/sync' && method === 'POST' ? 700 : 90
     await new Promise(resolve => setTimeout(resolve, delay))
     return jsonResponse(body, 200)

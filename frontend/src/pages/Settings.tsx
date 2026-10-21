@@ -4,7 +4,7 @@ import {
   X, Pencil, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Heart, ExternalLink,
   KeyRound, Copy, Landmark, Coins, Bell, Tags, type LucideIcon,
 } from 'lucide-react'
-import { apiFetch } from '../api/client'
+import { apiFetch, isAccountRemembered, rememberedUsername, setAccountRemembered } from '../api/client'
 import {
   getPlaidConfig, putPlaidConfig, testPlaidConfig, getSyncConfig, putSyncConfig,
   getWeeklyEmailPrefs, putWeeklyEmailPrefs,
@@ -86,7 +86,7 @@ const SETTINGS_CATEGORIES: {
 }[] = [
   { id: 'bank-linking', title: 'Bank linking', description: 'Linked accounts, Plaid credentials, and sync', icon: Landmark },
   { id: 'crypto', title: 'Crypto', description: 'Wallets and Alchemy', icon: Coins },
-  { id: 'account', title: 'Account', description: 'Recovery code and email', icon: KeyRound },
+  { id: 'account', title: 'Account', description: 'Sign-in, recovery code, and email', icon: KeyRound },
   { id: 'notifications', title: 'Notifications', description: 'Alerts and weekly summary email', icon: Bell },
   { id: 'categorization', title: 'Categorization', description: 'Rules that assign merchants to categories', icon: Tags },
 ]
@@ -189,6 +189,8 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const [savingRecoveryEmail, setSavingRecoveryEmail] = useState(false)
   const [recoveryEmailError, setRecoveryEmailError] = useState<string | null>(null)
   const [recoveryEmailSaved, setRecoveryEmailSaved] = useState(false)
+  const [rememberAccount, setRememberAccount] = useState(() => isAccountRemembered())
+  const [savedUsername, setSavedUsername] = useState(() => rememberedUsername())
   const [category, setCategory] = useState<SettingsCategoryId | null>(() => parseSettingsCategory())
 
   useEffect(() => {
@@ -268,6 +270,25 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
     } finally {
       setSavingRecoveryEmail(false)
     }
+  }
+
+  const handleToggleRememberAccount = async () => {
+    const next = !rememberAccount
+    let username = savedUsername
+    if (next && !username) {
+      try {
+        const res = await apiFetch('/api/auth/me')
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}))
+          if (typeof data.username === 'string') username = data.username
+        }
+      } catch {
+        /* The session still moves even if the username lookup fails. */
+      }
+    }
+    setAccountRemembered(next, next ? username : null)
+    setRememberAccount(isAccountRemembered())
+    setSavedUsername(rememberedUsername())
   }
 
   const fetchSyncConfig = async () => {
@@ -1391,6 +1412,33 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       )}
 
       {category === 'account' && (
+        <div className="flex flex-col gap-[16px]">
+          <div className="glass-card p-[22px]">
+            <div className="flex items-center justify-between gap-[16px]">
+              <div className="min-w-0">
+                <h3 className="text-[14px] font-semibold">Remember this account</h3>
+                <p className="text-[12px] text-ledger-text-faint leading-[1.5] mt-[6px]">
+                  Stay signed in on this device and fill in your username the next time you
+                  sign in. Turn this off to sign out when you quit Ledger.
+                </p>
+                {rememberAccount && savedUsername && (
+                  <p className="text-[12px] text-ledger-text-secondary mt-[8px]">
+                    Saved username: {savedUsername}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleRememberAccount}
+                aria-pressed={rememberAccount}
+                aria-label="Remember this account"
+                className={`shrink-0 w-[40px] h-[23px] rounded-full relative cursor-pointer transition-colors ${rememberAccount ? 'bg-white' : 'bg-[rgba(255,255,255,0.14)]'}`}
+              >
+                <div className={`w-[17px] h-[17px] rounded-full absolute top-[3px] transition-all ${rememberAccount ? 'bg-ledger-accent-on right-[3px]' : 'bg-ledger-text-faint left-[3px]'}`} />
+              </button>
+            </div>
+          </div>
+
         <div className="grid gap-[16px] xl:grid-cols-2 items-start">
             {/* Account security: recovery code (the only "forgot password" path) */}
             <div className="glass-card p-[22px]">
@@ -1490,6 +1538,7 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
                 </button>
               </div>
             </div>
+        </div>
         </div>
       )}
 
