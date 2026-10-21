@@ -65,7 +65,7 @@ This document describes the threat model, security practices, and hardening guid
 - `ENCRYPTION_KEY` — Fernet key for token encryption (also derives the session-token signing key unless `AUTH_TOKEN_KEY` is set)
 - `DATABASE_URL` — Database connection string (includes password)
 
-**Authentication**: a username/password account is created on first run (single-user, stored as a scrypt hash on the id=1 row). Login issues a Fernet-signed session token sent as `Authorization: Bearer` and held in `localStorage`; tokens expire after `SESSION_TTL_DAYS` (default 30). No credential is baked into the frontend bundle.
+**Authentication**: a username/password account is created on first run (single-user, stored as a scrypt hash on the id=1 row). Login issues a Fernet-signed session token sent as `Authorization: Bearer`. "Remember this account" (on by default) stores that token in `localStorage` so it survives quitting the app, and saves the username for the next sign-in. Turning it off stores the token in `sessionStorage` instead, which is dropped when the app closes. Tokens expire after `SESSION_TTL_DAYS` (default 30). No credential is baked into the frontend bundle.
 
 **Optional secrets**:
 - `API_KEY` — legacy/automation credential accepted via the `X-API-Key` header. Leave unset to disable that path.
@@ -111,8 +111,11 @@ This document describes the threat model, security practices, and hardening guid
 ### 5. Frontend & Session Security
 
 **Bearer tokens (not cookies)**:
-- Login/register returns a Fernet-signed token stored in `localStorage`
-  (`ledger_token`); `apiFetch()` sends it as `Authorization: Bearer`
+- Login/register returns a Fernet-signed token. With "Remember this account"
+  on (the default) it is stored in `localStorage` (`ledger_token`) and the
+  username is saved for the next sign-in. With it off, the token is stored in
+  `sessionStorage` and discarded when the app closes. `apiFetch()` sends it
+  as `Authorization: Bearer`
 - Tokens expire after `SESSION_TTL_DAYS` (default 30); expired tokens return
   401 and the UI redirects to login
 - No credential is baked into the frontend bundle (unlike legacy `API_KEY` flows)

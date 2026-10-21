@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiFetch, apiFetchTimeout, setToken } from '../api/client'
+import { apiFetch, apiFetchTimeout, isAccountRemembered, rememberedUsername, setToken } from '../api/client'
 import { LedgerLoader } from '../components/ui/LedgerLoader'
 import { getResetOptions, requestResetCode, resetPasswordWithEmailCode, type ResetOptions } from '../api/plaidConfig'
 import { alphaColor } from '../utils/color'
@@ -19,7 +19,8 @@ type Phase = 'checking' | 'blocked' | 'setup' | 'login' | 'reset-choice' | 'rese
 export default function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [phase, setPhase] = useState<Phase>('checking')
   const [name, setName] = useState('')
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState(() => rememberedUsername())
+  const [rememberAccount, setRememberAccount] = useState(() => isAccountRemembered())
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -90,7 +91,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
         setSubmitting(false)
         return
       }
-      setToken(data.token)
+      setToken(data.token, rememberAccount, username)
       onAuthenticated()
     } catch {
       setError('Could not reach the backend. Is it running?')
@@ -137,7 +138,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
   }
 
   const continueFromReveal = () => {
-    if (pendingToken) setToken(pendingToken)
+    if (pendingToken) setToken(pendingToken, rememberAccount, username)
     onAuthenticated()
   }
 
@@ -248,6 +249,24 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                     className="glass-chip px-[14px] py-[11px] text-[14px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
                   />
                 )}
+
+                <label className="flex items-start gap-[8px] text-[12.5px] text-ledger-text-secondary select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberAccount}
+                    onChange={e => setRememberAccount(e.target.checked)}
+                    className="mt-[2px] accent-white"
+                  />
+                  <span>
+                    Remember this account
+                    <span className="block text-[11.5px] text-ledger-text-faintest leading-[1.45] mt-[2px]">
+                      Stay signed in on this device.
+                    </span>
+                    <span className="block text-[11.5px] text-ledger-text-faintest leading-[1.45]">
+                      Off signs you out when you quit.
+                    </span>
+                  </span>
+                </label>
 
                 {error && <div className="text-[12.5px] text-ledger-negative">{error}</div>}
 
