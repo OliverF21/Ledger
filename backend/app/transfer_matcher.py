@@ -1,12 +1,14 @@
 """
 Cross-account transfer matching.
 
-Pairs same-amount, opposite-sign transactions across different accounts —
-either two bank Transaction rows (e.g. a checking outflow and a matching
-credit-card payment posting) or a bank outflow and an InvestmentTransaction
-cash-deposit row (e.g. a checking outflow funding a Roth contribution) — and
-persists the match. app.txn_classifier reads the persisted match as a
-stronger-than-text-heuristic signal for the cash-flow role classifier.
+Pairs opposite-sign transactions across different accounts — either two
+bank Transaction rows (e.g. a checking outflow and a matching credit-card
+payment posting) or a bank outflow and an InvestmentTransaction cash-deposit
+row (e.g. a checking outflow funding a Roth contribution) — and persists the
+match. Bank-to-bank pairs must be within $0.25. Investment funding keeps a
+wider margin, max($5, 1% of the larger leg). app.txn_classifier reads the
+persisted match as a stronger-than-text-heuristic signal for the cash-flow
+role classifier.
 
 Investment matching is funding-direction only (bank outflow → deposit),
 and only when the bank leg already looks like a transfer or names a
@@ -35,7 +37,11 @@ from app.services.returns_service import EXTERNAL_CASH_FLOW_SUBTYPES, EXTERNAL_C
 from app.txn_classifier import memo_has_investment_cue, memo_is_card_billpay
 
 _DATE_WINDOW_DAYS = 3
-_TOLERANCE_FLOOR = 5.0
+# Bank Transaction <-> Transaction only. A quarter is enough for a fee or
+# a rounding difference; a few dollars apart is a different payment.
+_BANK_TOLERANCE_CENTS = 25
+# Bank outflow <-> InvestmentTransaction deposit. Not used for bank pairs.
+_INVESTMENT_TOLERANCE_FLOOR = 5.0
 _TOLERANCE_PCT = 0.01
 
 # Plaid PFC prefixes that mark a bank row as plausibly one leg of a transfer.
@@ -45,9 +51,9 @@ _TRANSFERISH_CATEGORY_PREFIXES = ("TRANSFER_", "LOAN_PAYMENTS")
 def _looks_transferish(txn: Transaction) -> bool:
     """Does this bank row already carry a Plaid transfer/loan-payment signal?
 
-    Without this precondition, the $5 tolerance floor lets any two small,
-    unrelated opposite-sign rows on different accounts (e.g. an $8.25 coffee
-    and a $4.10 refund) pair up and get permanently reclassified out of
+    Without this precondition, two small unrelated opposite-sign rows on
+    different accounts that happen to be within $0.25 (e.g. an $8.25 coffee
+    and an $8.00 refund) pair up and get permanently reclassified out of
     spending/income — the matcher never re-evaluates a pair once made.
     """
     for cat in (txn.category_plaid, txn.category_plaid_detailed):
@@ -56,9 +62,21 @@ def _looks_transferish(txn: Transaction) -> bool:
     return (txn.transaction_code or "").strip().lower() == "transfer"
 
 
-def _within_tolerance(amount_a: float, amount_b: float) -> bool:
+def _amount_cents(amount: float) -> int:
+    return int(round(abs(float(amount)) * 100))
+
+
+def _within_bank_tolerance(amount_a: float, amount_b: float) -> bool:
+    """True when the two absolute amounts differ by at most $0.25."""
+    return abs(_amount_cents(amount_a) - _amount_cents(amount_b)) <= _BANK_TOLERANCE_CENTS
+
+
+def _within_investment_tolerance(amount_a: float, amount_b: float) -> bool:
     diff = abs(abs(amount_a) - abs(amount_b))
-    tolerance = max(_TOLERANCE_FLOOR, max(abs(amount_a), abs(amount_b)) * _TOLERANCE_PCT)
+    tolerance = max(
+        _INVESTMENT_TOLERANCE_FLOOR,
+        max(abs(amount_a), abs(amount_b)) * _TOLERANCE_PCT,
+    )
     return diff <= tolerance
 
 
@@ -86,7 +104,11 @@ def _plausible_investment_bank_leg(txn: Transaction) -> bool:
 
 
 def _best_match(
-    txn: Transaction, pool: dict[int, object], *, require_transferish: bool = False
+    txn: Transaction,
+    pool: dict[int, object],
+    *,
+    require_transferish: bool = False,
+    bank_pair: bool = False,
 ) -> object | None:
     """Closest-amount-then-closest-date match for `txn` among `pool`'s
     values. `pool` holds either Transaction or InvestmentTransaction rows;
@@ -95,7 +117,11 @@ def _best_match(
     `require_transferish` is used for the bank<->bank pool only: at least one
     of the two legs must already look like a transfer. Investment deposits
     are guarded separately by `_plausible_investment_bank_leg`.
+
+    `bank_pair` selects the $0.25 absolute margin. Investment deposits keep
+    max($5, 1% of the larger leg).
     """
+    within_tolerance = _within_bank_tolerance if bank_pair else _within_investment_tolerance
     txn_is_transferish = _looks_transferish(txn) if require_transferish else False
     best = None
     best_key = None
@@ -106,7 +132,7 @@ def _best_match(
         txn_amount = float(txn.amount)
         if not _opposite_sign(txn_amount, other_amount):
             continue
-        if not _within_tolerance(txn_amount, other_amount):
+        if not within_tolerance(txn_amount, other_amount):
             continue
         if not _within_date_window(txn.date, other.date):
             continue
@@ -185,7 +211,9 @@ def match_transfers(
         same_account_excluded = {
             tid: t for tid, t in unclaimed_bank.items() if tid != txn.id and t.account_id != txn.account_id
         }
-        bank_match = _best_match(txn, same_account_excluded, require_transferish=True)
+        bank_match = _best_match(
+            txn, same_account_excluded, require_transferish=True, bank_pair=True
+        )
         if bank_match is not None:
             txn.transfer_match_transaction_id = bank_match.id
             bank_match.transfer_match_transaction_id = txn.id
