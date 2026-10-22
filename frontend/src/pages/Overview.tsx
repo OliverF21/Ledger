@@ -390,6 +390,12 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
   const spendingChange = data && data.prev_month_spending > 0
     ? ((data.total_spending - data.prev_month_spending) / data.prev_month_spending) * 100
     : null
+  // Net savings is income − spending − allocations. Allocations are not in the
+  // two headline figures, so show them when they are what makes the row differ.
+  const allocated = data
+    ? data.total_income - data.total_spending - data.net_savings
+    : 0
+  const showAllocated = allocated > 0.009
 
   const assetAccounts = nwData?.accounts.filter(a => !a.is_liability) ?? []
   const liabilityAccounts = nwData?.accounts.filter(a => a.is_liability) ?? []
@@ -522,6 +528,12 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
               <span className="text-white/80 font-medium">${fmt(data?.total_income ?? 0)}</span>
               <span className="text-ledger-text-faint">Spend</span>
               <span className="text-white/80 font-medium">${fmt(data?.total_spending ?? 0)}</span>
+              {showAllocated && (
+                <>
+                  <span className="text-ledger-text-faint">Allocated</span>
+                  <span className="text-white/80 font-medium">${fmt(allocated)}</span>
+                </>
+              )}
               <span className="text-ledger-text-faint">Net savings</span>
               <span
                 className={`font-medium ${
