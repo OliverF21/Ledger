@@ -3,8 +3,17 @@ import { useState, useEffect, useMemo, Fragment, useCallback } from 'react'
 import { apiFetch } from '../api/client'
 import { formatCategory, formatTransactionCategory, displayCategory, categoryPickerDraft, transactionDisplayIcon, isPfcKey } from '../utils/categories'
 import { isPlaidCategoryLabel, primaryForCategoryLabel } from '../utils/plaidCategories'
+import {
+  flowDrillLabel,
+  readTransactionQuery,
+  transactionMatchesFlow,
+  writeTransactionQuery,
+  type FlowDrill,
+} from '../utils/cashFlowDrill'
 import CategoryPicker from '../components/CategoryPicker'
 import { useOnSyncComplete } from '../hooks/useSync'
+
+const FLOW_CATEGORY = '__flow__'
 
 type SortField = 'date' | 'merchant' | 'amount' | 'category' | 'account'
 type SortDir = 'asc' | 'desc'
@@ -39,10 +48,13 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true)
   const [goals, setGoals] = useState<GoalOption[]>([])
 
-  // Filters
+  // Filters. A cash-flow double-click seeds the month and a category band.
+  // Every control below stays editable after that.
   const [search, setSearch] = useState('')
-  const [selectedMonth, setSelectedMonth] = useState<string>('all')
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => readTransactionQuery(window.location.search).month)
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => readTransactionQuery(window.location.search).category)
+  const [flowDrill, setFlowDrill] = useState<FlowDrill | null>(() => readTransactionQuery(window.location.search).drill)
+  const [flowLabel, setFlowLabel] = useState(() => readTransactionQuery(window.location.search).label)
   const [selectedAccount, setSelectedAccount] = useState<string>('all')
   const [minAmount, setMinAmount] = useState('')
   const [maxAmount, setMaxAmount] = useState('')
@@ -84,8 +96,34 @@ export default function Transactions() {
       .catch(error => console.error('Failed to refresh transactions after sync:', error))
   }, []))
 
+  useEffect(() => {
+    const onDrill = () => {
+      const query = readTransactionQuery(window.location.search)
+      setSelectedMonth(query.month)
+      setSelectedCategory(query.category)
+      setFlowDrill(query.drill)
+      setFlowLabel(query.label)
+      setSortField('date')
+      setSortDir('desc')
+    }
+    window.addEventListener('ledger:transactions-drill', onDrill)
+    return () => window.removeEventListener('ledger:transactions-drill', onDrill)
+  }, [])
+
+  // Keep the address bar in step with the controls so a refresh keeps the
+  // month and category the user last chose.
+  useEffect(() => {
+    if (window.location.hash.replace('#', '').split('/')[0] !== 'transactions') return
+    writeTransactionQuery({
+      month: selectedMonth,
+      category: selectedCategory,
+      drill: flowDrill,
+      label: flowLabel,
+    })
+  }, [selectedMonth, selectedCategory, flowDrill, flowLabel])
+
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1) }, [search, selectedMonth, selectedCategory, selectedAccount, minAmount, maxAmount, sortField, sortDir])
+  useEffect(() => { setPage(1) }, [search, selectedMonth, selectedCategory, selectedAccount, minAmount, maxAmount, sortField, sortDir, flowDrill])
 
   // Derive available months, categories, accounts
   const months = useMemo(() => {
@@ -139,7 +177,9 @@ export default function Transactions() {
       list = list.filter(t => t.date?.startsWith(selectedMonth))
     }
 
-    if (selectedCategory !== 'all') {
+    if (flowDrill) {
+      list = list.filter(t => transactionMatchesFlow(t, flowDrill))
+    } else if (selectedCategory !== 'all') {
       list = list.filter(t =>
         displayCategory(t) === selectedCategory
       )
@@ -174,7 +214,7 @@ export default function Transactions() {
     })
 
     return list
-  }, [transactions, search, selectedMonth, selectedCategory, selectedAccount, minAmount, maxAmount, sortField, sortDir])
+  }, [transactions, search, selectedMonth, selectedCategory, selectedAccount, minAmount, maxAmount, sortField, sortDir, flowDrill])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -352,6 +392,9 @@ export default function Transactions() {
           className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none focus:border-white/60"
         >
           <option value="all">All months</option>
+          {selectedMonth !== 'all' && !months.includes(selectedMonth) && (
+            <option value={selectedMonth}>{formatMonth(selectedMonth)}</option>
+          )}
           {months.map(m => (
             <option key={m} value={m}>{formatMonth(m)}</option>
           ))}
@@ -369,11 +412,20 @@ export default function Transactions() {
         </select>
 
         <select
-          value={selectedCategory}
-          onChange={e => setSelectedCategory(e.target.value)}
+          value={flowDrill ? FLOW_CATEGORY : selectedCategory}
+          onChange={e => {
+            const value = e.target.value
+            if (value === FLOW_CATEGORY) return
+            setFlowDrill(null)
+            setFlowLabel('')
+            setSelectedCategory(value)
+          }}
           className="glass-chip px-[10px] py-[8px] text-ledger-text-primary text-[13px] cursor-pointer focus:outline-none focus:border-white/60"
         >
           <option value="all">All categories</option>
+          {flowDrill && (
+            <option value={FLOW_CATEGORY}>{flowDrillLabel(flowDrill, flowLabel)}</option>
+          )}
           {categories.map(c => (
             <option key={c} value={c}>{formatCategory(c)}</option>
           ))}
@@ -698,7 +750,7 @@ export default function Transactions() {
           <div className="px-[20px] py-[11px] border-t border-ledger-border-subtle text-[12px] text-ledger-text-faint flex items-center justify-between">
             <span>
               {filtered.length} transaction{filtered.length !== 1 ? 's' : ''}
-              {(search || selectedMonth !== 'all' || selectedCategory !== 'all' || selectedAccount !== 'all' || minAmount || maxAmount) && ` (filtered from ${transactions.length})`}
+              {(search || selectedMonth !== 'all' || selectedCategory !== 'all' || flowDrill || selectedAccount !== 'all' || minAmount || maxAmount) && ` (filtered from ${transactions.length})`}
             </span>
 
             {totalPages > 1 && (

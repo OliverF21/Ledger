@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { apiFetch } from '../api/client'
 import { formatCategory } from '../utils/categories'
+import { drillFromCashFlowNode, openTransactionsForCategory } from '../utils/cashFlowDrill'
 import { useOnSyncComplete } from '../hooks/useSync'
 import { getMonthOptions } from '../utils/months'
 
@@ -406,7 +407,7 @@ function FlowTooltip({ node }: { node: LNode }) {
   )
 }
 
-function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amountClass, onHover }: {
+function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amountClass, onHover, onOpen }: {
   n: LNode
   chartW: number
   tunnelX: number
@@ -415,6 +416,7 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
   amountPrefix: string
   amountClass: string
   onHover: (id: string | null) => void
+  onOpen?: (n: LNode) => void
 }) {
   const labelX = n.side === 'left' ? n.x - LABEL_GAP : n.x + NODE_W + LABEL_GAP
   const textAnchor = n.side === 'left' ? 'end' : 'start'
@@ -426,7 +428,13 @@ function NodeGroup({ n, chartW, tunnelX, nodeVis, formatLabel, amountPrefix, amo
       : { x: n.x - 6, y: n.slotTop - 2, width: chartW - (n.x - 6), height: n.slotH + 4 }
 
   return (
-    <g onMouseEnter={() => onHover(n.id)} onMouseLeave={() => onHover(null)} style={{ cursor: 'default' }}>
+    <g
+      onMouseEnter={() => onHover(n.id)}
+      onMouseLeave={() => onHover(null)}
+      onDoubleClick={onOpen ? () => onOpen(n) : undefined}
+      style={{ cursor: onOpen ? 'pointer' : 'default' }}
+    >
+      {onOpen && <title>Double-click to view these transactions</title>}
       <rect x={n.x} y={n.y} width={NODE_W} height={n.h} fill={n.color} rx={3}
         opacity={nodeVis(n.id) ? 1 : 0.08} style={{ transition: 'opacity 0.15s', pointerEvents: 'none' }} />
       {n.slotH >= 22 ? (
@@ -510,6 +518,18 @@ export default function Spending() {
   }, [onResize])
 
   const layout = data && svgW > 0 ? buildLayout(data, svgW, SVG_H) : null
+  const spendingIds = new Set((data?.spending_categories ?? []).map(node => node.id))
+
+  const openCategory = useCallback((node: LNode) => {
+    const label = node.id.startsWith('other:')
+      ? `Other · ${node.parent_label ? spendingBandLabel(node.parent_label) : formatCategory(node.id.slice('other:'.length))}`
+      : node.side === 'left'
+        ? formatCategory(node.label)
+        : node.side === 'mid'
+          ? spendingBandLabel(node.label)
+          : allocationLabel(node)
+    openTransactionsForCategory(selectedMonth, drillFromCashFlowNode(node), label)
+  }, [selectedMonth])
 
   // Highlighting: hover an income source → dim other income things; hover expense → dim other expenses.
   // Hovering a left node keeps right ribbons visible (income flows to all expenses via tunnel).
@@ -667,7 +687,14 @@ export default function Spending() {
 
               {/* Left income-source nodes */}
               {layout.parentNodes.map(n => (
-                <g key={n.id} onMouseEnter={() => setHovered(n.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: 'default' }}>
+                <g
+                  key={n.id}
+                  onMouseEnter={() => setHovered(n.id)}
+                  onMouseLeave={() => setHovered(null)}
+                  onDoubleClick={() => openCategory(n)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <title>Double-click to view these transactions</title>
                   <rect x={n.x} y={n.y} width={NODE_W} height={n.h} fill={n.color} rx={3}
                     opacity={nodeVis(n.id) ? 1 : 0.08} style={{ transition: 'opacity 0.15s', pointerEvents: 'none' }} />
                   <text x={n.x - LABEL_GAP} y={n.labelCy - (n.h >= 28 ? 6 : 4)}
@@ -705,6 +732,7 @@ export default function Spending() {
                   amountPrefix="+"
                   amountClass="#74d8a8"
                   onHover={setHovered}
+                  onOpen={openCategory}
                 />
               ))}
 
@@ -720,6 +748,7 @@ export default function Spending() {
                   amountPrefix=""
                   amountClass={isAllocationNode(n.id) ? (n.id === SAVINGS_NODE_ID || n.id === UNALLOCATED_NODE_ID ? SAVINGS_COLOR : n.color) : '#9aa2b2'}
                   onHover={setHovered}
+                  onOpen={spendingIds.has(n.id) ? openCategory : undefined}
                 />
               ))}
             </svg>

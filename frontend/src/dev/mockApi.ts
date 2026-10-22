@@ -59,25 +59,25 @@ const CATEGORIES = [
 const TOTAL_SPEND = CATEGORIES.reduce((sum, c) => sum + c.value, 0)
 
 const TRANSACTIONS = [
-  { merchant: 'Whole Foods Market', account_name: 'Chase Sapphire', amount: 86.42, category_plaid: 'FOOD_AND_DRINK', day: 0 },
+  { merchant: 'Whole Foods Market', account_name: 'Chase Sapphire', amount: 86.42, category_plaid: 'FOOD_AND_DRINK', category_plaid_detailed: 'FOOD_AND_DRINK_GROCERIES', day: 0 },
   { merchant: 'Spotify', account_name: 'Amex Platinum', amount: 11.99, category_plaid: 'ENTERTAINMENT', day: 2 },
-  { merchant: 'Uber', account_name: 'Chase Sapphire', amount: 24.8, category_plaid: 'TRANSPORTATION', day: 2 },
-  { merchant: 'Payroll — Northwind Labs', account_name: 'Schwab Checking', amount: -3620, category_plaid: 'INCOME', day: 3 },
-  { merchant: 'Blue Bottle Coffee', account_name: 'Amex Platinum', amount: 7.25, category_plaid: 'FOOD_AND_DRINK', day: 3 },
-  { merchant: 'Con Edison', account_name: 'Schwab Checking', amount: 142.06, category_plaid: 'RENT_AND_UTILITIES', day: 4 },
+  { merchant: 'Uber', account_name: 'Chase Sapphire', amount: 24.8, category_plaid: 'TRANSPORTATION', category_plaid_detailed: 'TRANSPORTATION_TAXIS_AND_RIDE_SHARES', day: 2 },
+  { merchant: 'Payroll — Northwind Labs', account_name: 'Schwab Checking', amount: -3620, category_plaid: 'INCOME', category_user: 'Payroll', day: 3 },
+  { merchant: 'Blue Bottle Coffee', account_name: 'Amex Platinum', amount: 7.25, category_plaid: 'FOOD_AND_DRINK', category_plaid_detailed: 'FOOD_AND_DRINK_COFFEE', day: 3 },
+  { merchant: 'Con Edison', account_name: 'Schwab Checking', amount: 142.06, category_plaid: 'RENT_AND_UTILITIES', category_plaid_detailed: 'RENT_AND_UTILITIES_GAS_AND_ELECTRICITY', day: 4 },
   { merchant: 'Apple', account_name: 'Amex Platinum', amount: 249, category_plaid: 'GENERAL_MERCHANDISE', day: 5 },
   { merchant: 'CVS Pharmacy', account_name: 'Chase Sapphire', amount: 38.4, category_plaid: 'MEDICAL', day: 6 },
-  { merchant: 'Trader Joe’s', account_name: 'Chase Sapphire', amount: 94.12, category_plaid: 'FOOD_AND_DRINK', day: 7 },
+  { merchant: 'Trader Joe’s', account_name: 'Chase Sapphire', amount: 94.12, category_plaid: 'FOOD_AND_DRINK', category_plaid_detailed: 'FOOD_AND_DRINK_GROCERIES', day: 7 },
   { merchant: 'Equinox', account_name: 'Amex Platinum', amount: 215, category_plaid: 'PERSONAL_CARE', day: 8 },
   { merchant: 'Delta Air Lines', account_name: 'Chase Sapphire', amount: 412.6, category_plaid: 'TRAVEL', day: 11 },
-  { merchant: 'Rent — 214 Bergen', account_name: 'Schwab Checking', amount: 1850, category_plaid: 'RENT_AND_UTILITIES', day: 14 },
+  { merchant: 'Rent — 214 Bergen', account_name: 'Schwab Checking', amount: 1850, category_plaid: 'RENT_AND_UTILITIES', category_plaid_detailed: 'RENT_AND_UTILITIES_RENT', day: 14 },
 ].map((t, i) => ({
   id: i + 1,
   ...t,
   date: isoDaysAgo(t.day),
   merchant_logo_url: null,
-  category_user: null,
-  category_plaid_detailed: null,
+  category_user: 'category_user' in t ? t.category_user : null,
+  category_plaid_detailed: 'category_plaid_detailed' in t ? t.category_plaid_detailed : null,
 }))
 
 const ACCOUNTS = [
@@ -354,7 +354,7 @@ function routes(url: URL): unknown | undefined {
         total_spending: TOTAL_SPEND,
         savings: 7240 - TOTAL_SPEND,
         income_sources: [
-          { id: 'payroll', label: 'Payroll', amount: 6480, color: '#74d8a8', top_transactions: [{ merchant: 'Northwind Labs', amount: -3620, date: isoDaysAgo(3) }] },
+          { id: 'Payroll', label: 'Payroll', amount: 6480, color: '#74d8a8', top_transactions: [{ merchant: 'Northwind Labs', amount: -3620, date: isoDaysAgo(3) }] },
           { id: 'dividends', label: 'Dividends', amount: 520, color: '#63cfcc', top_transactions: [] },
           { id: 'refunds', label: 'Refunds', amount: 240, color: '#95c8ff', top_transactions: [] },
         ],
