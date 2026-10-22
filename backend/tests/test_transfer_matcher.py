@@ -95,10 +95,10 @@ def test_matches_transaction_to_investment_cash_deposit(db):
     assert deposit.matched_transaction_id == checking_out.id
 
 
-def test_amount_within_tolerance_still_matches(db):
-    # $500 outflow vs $497 inflow: $3 diff, under the $5 floor tolerance.
-    checking_out = _txn(account_id=1, amount=500.0, date=date(2026, 8, 14))
-    card_in = _txn(account_id=2, amount=-497.0, date=date(2026, 8, 14))
+def test_bank_amounts_a_quarter_apart_still_match(db):
+    # $0.25 is the bank-to-bank absolute margin, inclusive.
+    checking_out = _txn(account_id=1, amount=13.30, date=date(2026, 8, 14))
+    card_in = _txn(account_id=2, amount=-13.55, date=date(2026, 8, 14))
     db.add_all([checking_out, card_in])
     db.commit()
 
@@ -108,10 +108,9 @@ def test_amount_within_tolerance_still_matches(db):
     assert checking_out.transfer_match_transaction_id == card_in.id
 
 
-def test_amount_outside_tolerance_does_not_match(db):
-    # $500 vs $480: $20 diff exceeds both the $5 floor and 1% of $500 ($5).
-    checking_out = _txn(account_id=1, amount=500.0, date=date(2026, 8, 14))
-    unrelated = _txn(account_id=2, amount=-480.0, date=date(2026, 8, 14))
+def test_bank_amounts_twenty_six_cents_apart_do_not_match(db):
+    checking_out = _txn(account_id=1, amount=13.30, date=date(2026, 8, 14))
+    unrelated = _txn(account_id=2, amount=-13.56, date=date(2026, 8, 14))
     db.add_all([checking_out, unrelated])
     db.commit()
 
@@ -119,6 +118,32 @@ def test_amount_outside_tolerance_does_not_match(db):
 
     db.refresh(checking_out)
     assert checking_out.transfer_match_transaction_id is None
+
+
+def test_dollar_tree_does_not_match_venmo_credit_four_dollars_apart(db):
+    # A $13.30 card purchase and a $17.50 Venmo credit differ by $4.20.
+    # That used to fall inside the $5 floor and was stored as a transfer.
+    purchase = _txn(
+        account_id=1,
+        amount=13.30,
+        date=date(2026, 8, 14),
+        merchant="Dollar Tree",
+    )
+    venmo = _txn(
+        account_id=2,
+        amount=-17.50,
+        date=date(2026, 8, 14),
+        merchant="Venmo",
+    )
+    db.add_all([purchase, venmo])
+    db.commit()
+
+    match_transfers(db, today=TODAY)
+
+    db.refresh(purchase)
+    db.refresh(venmo)
+    assert purchase.transfer_match_transaction_id is None
+    assert venmo.transfer_match_transaction_id is None
 
 
 def test_date_outside_window_does_not_match(db):
@@ -206,10 +231,10 @@ def test_dividend_cash_row_excluded_from_investment_candidates(db):
 
 def test_tie_break_prefers_closer_amount_over_closer_date(db):
     checking_out = _txn(account_id=1, amount=500.0, date=date(2026, 8, 14))
-    # $2 off, 2 days off — smaller amount diff than closer_date below.
-    closer_amount = _txn(account_id=2, amount=-498.0, date=date(2026, 8, 16))
-    # exact date, but $5 off — larger amount diff, so it should lose.
-    closer_date = _txn(account_id=2, amount=-495.0, date=date(2026, 8, 14))
+    # $0.10 off, 2 days off — smaller amount diff, still inside $0.25.
+    closer_amount = _txn(account_id=2, amount=-499.90, date=date(2026, 8, 16))
+    # exact date, but $0.25 off — larger amount diff, so it should lose.
+    closer_date = _txn(account_id=2, amount=-499.75, date=date(2026, 8, 14))
     db.add_all([checking_out, closer_amount, closer_date])
     db.commit()
 
@@ -219,22 +244,10 @@ def test_tie_break_prefers_closer_amount_over_closer_date(db):
     assert checking_out.transfer_match_transaction_id == closer_amount.id
 
 
-def test_tolerance_uses_larger_leg_not_scanned_leg(db):
-    # Regression test for the tolerance-base bug: _within_tolerance used to
-    # compute `max($5, 1% of amount_a)` where amount_a is whichever bank
-    # Transaction the outer loop in match_transfers happens to be scanning
-    # (here, checking_out — inserted first, so it gets the lower id and is
-    # visited first per the `.order_by(date.asc(), id.asc())` ordering).
-    # That under-tolerates whenever the scanned leg is the SMALLER of the two
-    # amounts, contradicting the spec: "max($5, 1% of the larger leg's
-    # amount)".
-    #
-    # Let S = 10000 (scanned/smaller leg), L = 10101 (counterparty/larger
-    # leg). diff = |S - L| = 101.
-    #   Old (buggy) tolerance = max(5, 0.01 * S) = max(5, 100) = 100
-    #     -> diff (101) > 100 -> OLD CODE REJECTS THE MATCH.
-    #   New (fixed) tolerance = max(5, 0.01 * max(S, L)) = max(5, 101.01) = 101.01
-    #     -> diff (101) <= 101.01 -> NEW CODE ACCEPTS THE MATCH.
+def test_bank_pair_rejects_gap_inside_the_investment_percentage_band(db):
+    # $101 apart is inside max($5, 1% of the larger leg), which investment
+    # funding still uses. Bank-to-bank is a flat $0.25, so this pair does not
+    # match.
     checking_out = _txn(account_id=1, amount=10000.0, date=date(2026, 8, 14))
     counterparty = _txn(account_id=2, amount=-10101.0, date=date(2026, 8, 14))
     db.add_all([checking_out, counterparty])
@@ -243,7 +256,35 @@ def test_tolerance_uses_larger_leg_not_scanned_leg(db):
     match_transfers(db, today=TODAY)
 
     db.refresh(checking_out)
-    assert checking_out.transfer_match_transaction_id == counterparty.id
+    assert checking_out.transfer_match_transaction_id is None
+
+
+def test_investment_tolerance_uses_larger_leg_not_scanned_leg(db):
+    # Investment funding still uses max($5, 1% of the larger leg). The scanned
+    # bank leg is the smaller amount, so basing the percentage on it would
+    # reject a pair the larger leg allows.
+    #
+    # S = 10000 (scanned/smaller leg), L = 10101 (deposit/larger leg).
+    # diff = 101.
+    #   Scanned-leg tolerance = max(5, 0.01 * S) = 100 -> would reject.
+    #   Larger-leg tolerance = max(5, 0.01 * L) = 101.01 -> accepts.
+    checking_out = _txn(account_id=1, amount=10000.0, date=date(2026, 8, 14))
+    deposit = _investment_txn(
+        account_id=3,
+        amount=-10101.0,
+        date=date(2026, 8, 14),
+        plaid_investment_transaction_id="itx_large",
+    )
+    db.add_all([checking_out, deposit])
+    db.commit()
+
+    match_transfers(db, today=TODAY)
+
+    db.refresh(checking_out)
+    db.refresh(deposit)
+    assert checking_out.transfer_match_transaction_id is None
+    assert checking_out.transfer_match_investment_txn_id == deposit.id
+    assert deposit.matched_transaction_id == checking_out.id
 
 
 def test_investment_subtype_matched_despite_case_and_whitespace(db):
@@ -291,10 +332,10 @@ def test_tie_break_prefers_closer_date_when_amounts_tie(db):
 
 def test_non_transferish_small_amounts_do_not_match(db):
     # Regression test for the missing plausibility guard: an $8.25 coffee on
-    # one account and an unrelated $4.10 refund on another, 3 days apart, have
-    # a $4.15 diff — inside the flat $5 tolerance floor. Without the
-    # transfer-plausibility precondition they were paired and BOTH permanently
-    # reclassified out of spending/income (the matcher never revisits a pair).
+    # one account and an unrelated $8.00 refund on another are $0.25 apart,
+    # inside the bank margin. Without the transfer-plausibility precondition
+    # they were paired and BOTH permanently reclassified out of spending/income
+    # (the matcher never revisits a pair).
     coffee = _txn(
         account_id=1,
         amount=8.25,
@@ -306,7 +347,7 @@ def test_non_transferish_small_amounts_do_not_match(db):
     )
     refund = _txn(
         account_id=2,
-        amount=-4.10,
+        amount=-8.00,
         date=date(2026, 8, 17),
         merchant="Target",
         category_plaid="GENERAL_MERCHANDISE",

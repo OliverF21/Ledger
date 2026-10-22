@@ -304,7 +304,8 @@ def test_investment_funding_pair_classifies_bank_leg_as_investments(db, accounts
 
 def test_unmatched_coffee_purchase_stays_spending(db, accounts):
     """End-to-end counterpart to the transferish-precondition unit test: the
-    coffee and the unrelated refund must both keep their real roles."""
+    coffee and the unrelated refund are $0.25 apart, so only the plausibility
+    guard keeps them unmatched. Both must keep their real roles."""
     coffee = _txn(
         accounts["checking"],
         amount=8.25,
@@ -316,7 +317,7 @@ def test_unmatched_coffee_purchase_stays_spending(db, accounts):
     )
     refund = _txn(
         accounts["savings"],
-        amount=-4.10,
+        amount=-8.00,
         date=date(2026, 8, 17),
         merchant="Target",
         category_plaid="GENERAL_MERCHANDISE",
