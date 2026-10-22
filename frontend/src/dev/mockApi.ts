@@ -304,6 +304,7 @@ function routes(url: URL): unknown | undefined {
         total_spending: TOTAL_SPEND,
         total_income: 7240,
         savings_rate: Math.round(((7240 - TOTAL_SPEND) / 7240) * 100),
+        net_savings: Math.round((7240 - TOTAL_SPEND) * 100) / 100,
         spending_by_category: CATEGORIES,
         recent_transactions: [],
         prev_month_spending: TOTAL_SPEND * 0.9,
@@ -367,6 +368,15 @@ function routes(url: URL): unknown | undefined {
           parent_label: 'parent_label' in c ? c.parent_label : null,
           top_transactions: TRANSACTIONS.filter(t => t.category_plaid === c.name).slice(0, 3),
         })),
+        allocation_nodes: [
+          {
+            id: '__unallocated__',
+            label: 'Net savings',
+            amount: Math.round((7240 - TOTAL_SPEND) * 100) / 100,
+            color: '#4ec38a',
+            top_transactions: [],
+          },
+        ],
       }
     }
 

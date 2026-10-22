@@ -124,7 +124,7 @@ mcp = FastMCP(
         "Pass expanded=true for the parental breakout (Food & Drink → Groceries, "
         "Restaurants, Coffee, and the same shape for every other category). "
         "Labeled transfers appear as named sinks (e.g. Vacation); unlabeled HYSA/investments "
-        "stay generic; leftover is Savings — never a goal.\n\n"
+        "stay generic; leftover is Net savings — never a goal. Net savings can be negative.\n\n"
         "Advisor / write-intent tools (you CANNOT change the user's data):\n"
         "- propose_budget — stage a spend-budget suggestion (never a Savings spend budget)\n"
         "- propose_goal — stage a financial goal (emergency fund, sinking fund, invest, …)\n"
@@ -353,6 +353,7 @@ def get_monthly_spending(
         total_spending=summary.total_spending,
         total_income=summary.total_income,
         savings_rate=summary.savings_rate,
+        net_savings=summary.net_savings,
         prev_month_spending=summary.prev_month_spending,
         spending_by_category=[
             CategorySpendResult(
@@ -430,7 +431,7 @@ def get_cash_flow(
         Field(description="When true, activities branch out of their parent. Default is one band per primary."),
     ] = False,
 ) -> CashFlowResult:
-    """Return income sources, spending, named allocation sinks, and leftover Savings (JSON). For Sankey diagrams use cash_flow_sankey_data instead."""
+    """Return income sources, spending, named allocation sinks, and net savings (JSON). Net savings can be negative. For Sankey diagrams use cash_flow_sankey_data instead."""
     result = _load_cash_flow(month, expanded=expanded)
 
     return CashFlowResult(

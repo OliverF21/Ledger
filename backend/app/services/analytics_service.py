@@ -65,6 +65,8 @@ class MonthlySummaryData:
     total_spending: float
     total_income: float
     savings_rate: float
+    # Income − spending − allocations. Same figure as cash flow, and it can be negative.
+    net_savings: float
     spending_by_category: list[CategorySpendItem]
     recent_transactions: list[RecentTransactionItem]
     prev_month_spending: float
@@ -133,7 +135,9 @@ class CashFlowData:
     month: str
     total_income: float
     total_spending: float
-    savings: float  # residual leftover (labeled Savings; not HYSA transfers)
+    # Income − spending − allocations. Not clamped; a deficit is negative.
+    # The Sankey only draws this when it is positive (a negative band has no width).
+    savings: float
     income_sources: list[CashFlowNodeItem]
     spending_categories: list[CashFlowNodeItem]
     allocation_nodes: list[CashFlowNodeItem] = field(default_factory=list)
@@ -339,17 +343,25 @@ def resolve_month_window(month: str | None) -> tuple[int, int, date, date, str]:
 
 
 def build_monthly_summary(db: Session, month: str | None = None) -> MonthlySummaryData:
-    """Return the monthly spending summary used by both the API and MCP."""
+    """Return the monthly spending summary used by both the API and MCP.
+
+    Income, spending, and net savings use the cash-flow classification so the
+    overview matches that page: transfers and card payments stay out, brokerage
+    dividends and cash-back count as income, and savings or investment
+    allocations are not spending.
+    """
     year, mon, start, end, month_key = resolve_month_window(month)
     prev_year, prev_mon = (year - 1, 12) if mon == 1 else (year, mon - 1)
-    prev_start, prev_end = month_bounds(prev_year, prev_mon)
+    prev_key = f"{prev_year:04d}-{prev_mon:02d}"
+
+    flow = build_cash_flow(db, month=month_key)
+    prev_flow = build_cash_flow(db, month=prev_key)
 
     current_rows = _fetch_transaction_rows(db, start=start, end=end)
-    previous_rows = _fetch_transaction_rows(db, start=prev_start, end=prev_end)
-
-    spending_by_category, total_spending, _ = _aggregate_spending(current_rows)
-    prev_month_spending = _aggregate_spending(previous_rows)[1]
-    total_income = _aggregate_income(current_rows)
+    spending_by_category, _, _ = _aggregate_spending(current_rows, cash_flow_rules=True)
+    total_income = flow.total_income
+    total_spending = flow.total_spending
+    net_savings = flow.savings
     savings_rate = ((total_income - total_spending) / total_income * 100) if total_income > 0 else 0.0
 
     recent_transactions = [
@@ -370,9 +382,10 @@ def build_monthly_summary(db: Session, month: str | None = None) -> MonthlySumma
         total_spending=round(total_spending, 2),
         total_income=round(total_income, 2),
         savings_rate=round(savings_rate, 1),
+        net_savings=round(net_savings, 2),
         spending_by_category=spending_by_category,
         recent_transactions=recent_transactions,
-        prev_month_spending=round(prev_month_spending, 2),
+        prev_month_spending=round(prev_flow.total_spending, 2),
     )
 
 
@@ -654,13 +667,15 @@ def build_cash_flow(
     total_income = round(sum(item.amount for item in income_sources), 2)
     total_spending = round(sum(item.amount for item in spending_categories), 2)
     allocated = round(sum(item.amount for item in allocation_nodes), 2)
-    unallocated = max(round(total_income - total_spending - allocated, 2), 0.0)
-    if unallocated > 0.01:
+    # Net savings can be negative when spending and allocations exceed income.
+    # A negative amount is reported on the totals, not drawn as a Sankey band.
+    net_savings = round(total_income - total_spending - allocated, 2)
+    if net_savings > 0.01:
         allocation_nodes.append(
             CashFlowNodeItem(
                 id="__unallocated__",
-                label="Savings",
-                amount=unallocated,
+                label=NET_SAVINGS_LABEL,
+                amount=net_savings,
                 color=SAVINGS_COLOR,
                 top_transactions=[],
             )
@@ -670,7 +685,7 @@ def build_cash_flow(
         month=month_key,
         total_income=total_income,
         total_spending=total_spending,
-        savings=unallocated,
+        savings=net_savings,
         income_sources=income_sources,
         spending_categories=spending_categories,
         allocation_nodes=allocation_nodes,
@@ -678,6 +693,7 @@ def build_cash_flow(
 
 
 SAVINGS_NODE_ID = "__savings__"
+NET_SAVINGS_LABEL = "Net savings"
 INVESTMENTS_NODE_ID = "Investments"
 REINVESTMENT_NODE_ID = "Reinvestment"
 UNALLOCATED_NODE_ID = "__unallocated__"
@@ -1179,13 +1195,18 @@ def _fetch_transaction_rows(
     )
 
 
-def _is_consumptive_spend(txn: Transaction) -> bool:
-    """True for outflows that belong on the Overview pie and spending KPIs.
+def _is_consumptive_spend(txn: Transaction, *, cash_flow_rules: bool = False) -> bool:
+    """True for outflows that belong on spending KPIs.
 
     Investment / retirement funding is a cash-flow allocation, not spend —
     `is_excluded_from_spending` deliberately lets those through so Cash Flow
     can show them as an Investments sink.
+
+    Overview passes cash_flow_rules so the pie uses the same role as the
+    cash-flow chart: card payments, transfers, and savings funding drop out.
     """
+    if cash_flow_rules:
+        return classify_orm_transaction(txn) == "spending"
     if float(txn.amount) <= 0:
         return False
     if is_excluded_from_spending(_spending_category_key(txn)):
@@ -1196,12 +1217,14 @@ def _is_consumptive_spend(txn: Transaction) -> bool:
 def _aggregate_spending(
     rows: list[tuple[Transaction, str | None, str | None, str | None]],
     top_n: int | None = None,
+    *,
+    cash_flow_rules: bool = False,
 ) -> tuple[list[CategorySpendItem], float, int]:
     buckets: dict[str, dict[str, float | int]] = {}
     transaction_count = 0
 
     for txn, _, _, _ in rows:
-        if not _is_consumptive_spend(txn):
+        if not _is_consumptive_spend(txn, cash_flow_rules=cash_flow_rules):
             continue
         # Overview stays on PFC primaries so it doesn't grow a row per activity.
         # Cash Flow uses cash_flow_spending_bucket, which splits a few mixed parents.

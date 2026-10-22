@@ -23,6 +23,8 @@ export interface MonthlySummary {
   total_spending: number
   total_income: number
   savings_rate: number
+  /** Income minus spending minus allocations. Negative when the month ran a deficit. */
+  net_savings: number
   spending_by_category: CategorySpend[]
   recent_transactions: RecentTransaction[]
   prev_month_spending: number

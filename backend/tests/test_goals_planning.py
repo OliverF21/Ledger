@@ -110,6 +110,38 @@ def test_capacity_uses_min_of_current_and_lookback(db_session: Session):
     assert any("lower current" in note.lower() for note in capacity.notes)
 
 
+def test_overspent_lookback_month_counts_as_zero_surplus(db_session: Session):
+    """A deficit is negative net savings on cash flow, but not negative capacity.
+
+    March would be 3000 − 7000 = −4000. Capacity still treats that month as $0
+    surplus, so June's recommendation stays min(500, average of 0, 600, 800).
+    """
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    db_session.add(
+        Transaction(
+            account=checking,
+            merchant="Extra Rent",
+            amount=Decimal("5000.00"),
+            date=date(2026, 3, 20),
+            category_plaid="RENT_AND_UTILITIES",
+            pending=False,
+            removed=False,
+            hidden=False,
+        )
+    )
+    db_session.commit()
+
+    capacity = build_planning_capacity(
+        db_session,
+        lookback_months=3,
+        month="2026-06",
+        today=TODAY,
+    )
+    assert capacity.residual_this_month == 500.0
+    assert capacity.residual_lookback_avg == round((0 + 600 + 800) / 3, 2)
+    assert capacity.recommended_available == capacity.residual_lookback_avg
+
+
 def test_capacity_skips_min_for_partial_current_month(db_session: Session):
     capacity = build_planning_capacity(
         db_session,
