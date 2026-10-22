@@ -180,8 +180,12 @@ def build_planning_capacity(
                 "using the lower lookback figure."
             )
 
-    if current.residual <= 0 and not partial:
-        notes.append("Current-month residual is $0 — spending met or exceeded income.")
+    if not partial and current.residual < -0.005:
+        notes.append(
+            "Current-month net savings is negative — spending and allocations exceeded income."
+        )
+    elif not partial and current.residual <= 0:
+        notes.append("Current-month residual is $0 — spending met income.")
 
     series = [*prior, current]
     return PlanningCapacity(

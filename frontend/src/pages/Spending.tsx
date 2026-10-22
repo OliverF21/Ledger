@@ -183,7 +183,7 @@ function spendingBandLabel(raw: string): string {
 
 function allocationLabel(n: FlowNode): string {
   if (n.id === SAVINGS_NODE_ID) return 'HYSA'
-  if (n.id === UNALLOCATED_NODE_ID) return 'Savings'
+  if (n.id === UNALLOCATED_NODE_ID) return 'Net savings'
   if (n.id.startsWith('goal:')) return n.label
   return spendingBandLabel(n.label)
 }
@@ -544,11 +544,8 @@ export default function Spending() {
   const allocated = allocationNodes
     .filter(n => n.id !== UNALLOCATED_NODE_ID)
     .reduce((sum, n) => sum + n.amount, 0)
-  const unallocated = data
-    ? (allocationNodes.find(n => n.id === UNALLOCATED_NODE_ID)?.amount ?? data.savings)
-    : 0
+  const netSavings = data?.savings ?? 0
   const consumptiveSpending = data?.total_spending ?? 0
-  const deficit = data ? Math.max(0, data.total_spending - data.total_income) : 0
 
   const hoveredNode: LNode | null = hovered && layout && hovered !== '__tunnel__'
     ? (layout.leftNodes.find(n => n.id === hovered)
@@ -593,10 +590,12 @@ export default function Spending() {
                 Allocated <span className="text-white font-semibold">${fmt(allocated)}</span>
               </span>
             )}
-            {deficit > 0
-              ? <span className="text-ledger-negative font-semibold">−${fmt(deficit)} over</span>
-              : <span className="text-ledger-text-faint">Savings <span className="text-ledger-positive font-semibold">${fmt(unallocated)}</span></span>
-            }
+            <span className="text-ledger-text-faint">
+              Net savings{' '}
+              <span className={`font-semibold ${netSavings < 0 ? 'text-ledger-negative' : 'text-ledger-positive'}`}>
+                {netSavings < 0 ? '−' : ''}${fmt(Math.abs(netSavings))}
+              </span>
+            </span>
           </div>
         )}
       </div>

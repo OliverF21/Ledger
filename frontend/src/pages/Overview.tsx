@@ -23,6 +23,12 @@ function fmtWhole(n: number) {
   return `$${Math.round(n).toLocaleString('en-US')}`
 }
 
+/** Signed dollars. A deficit keeps the minus; zero and surplus stay unsigned. */
+function formatNetSavings(n: number) {
+  const sign = n < 0 ? '−' : ''
+  return `${sign}$${fmt(Math.abs(n))}`
+}
+
 /** Splits a dollar amount so the cents can be set smaller and dimmer than the
  *  dollars, which is what stops the 68px hero figure reading as a wall. */
 function splitAmount(value: number): { dollars: string; cents: string } {
@@ -511,21 +517,19 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
               <span className="text-ledger-positive-soft">+${fmt(data?.total_income ?? 0)}</span>
               <span className="text-ledger-negative-soft">−${fmt(data?.total_spending ?? 0)}</span>
             </div>
-            <div className="mt-2 flex flex-col gap-[3px]">
-              <div className="flex gap-2.5 text-[11px]">
-                <span className="text-ledger-text-faint w-[60px]">Income</span>
-                <span className="text-white/80 font-medium">${fmt(data?.total_income ?? 0)}</span>
-              </div>
-              <div className="flex gap-2.5 text-[11px]">
-                <span className="text-ledger-text-faint w-[60px]">Spend</span>
-                <span className="text-white/80 font-medium">${fmt(data?.total_spending ?? 0)}</span>
-              </div>
-              <div className="flex gap-2.5 text-[11px]">
-                <span className="text-ledger-text-faint w-[60px]">Saved</span>
-                <span className="text-white/80 font-medium">
-                  {data ? `${data.savings_rate.toFixed(0)}%` : '—'}
-                </span>
-              </div>
+            <div className="mt-2 grid grid-cols-[max-content_auto] gap-x-2.5 gap-y-[3px] text-[11px]">
+              <span className="text-ledger-text-faint">Income</span>
+              <span className="text-white/80 font-medium">${fmt(data?.total_income ?? 0)}</span>
+              <span className="text-ledger-text-faint">Spend</span>
+              <span className="text-white/80 font-medium">${fmt(data?.total_spending ?? 0)}</span>
+              <span className="text-ledger-text-faint">Net savings</span>
+              <span
+                className={`font-medium ${
+                  data && data.net_savings < 0 ? 'text-ledger-negative-soft' : 'text-white/80'
+                }`}
+              >
+                {data ? formatNetSavings(data.net_savings) : '—'}
+              </span>
             </div>
           </div>
         </div>

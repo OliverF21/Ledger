@@ -30,7 +30,7 @@ def cash_flow_chart_result(flow: CashFlowData, svg: str) -> ToolResult:
         f"Cash flow · {flow.month}\n"
         f"Income: ${flow.total_income:,.2f}\n"
         f"Spending: ${flow.total_spending:,.2f} ({spending_pct}%)\n"
-        f"Savings: ${flow.savings:,.2f}"
+        f"Net savings: ${flow.savings:,.2f}"
     )
     return ToolResult(
         content=[

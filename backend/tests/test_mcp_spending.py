@@ -295,6 +295,7 @@ def test_monthly_summary_counts_pending_filters_hidden_removed(db_session: Sessi
         "total_spending": summary.total_spending,
         "total_income": summary.total_income,
         "savings_rate": summary.savings_rate,
+        "net_savings": summary.net_savings,
         "spending_by_category": [
             {"name": item.name, "value": item.value, "color": item.color}
             for item in summary.spending_by_category
@@ -547,9 +548,48 @@ def test_build_cash_flow_shows_hysa_for_unlabeled_savings(db_session: Session):
     alloc = {node.id: node for node in result.allocation_nodes}
     assert alloc["__savings__"].label == "HYSA"
     assert alloc["__savings__"].amount == 400.0
-    assert alloc["__unallocated__"].label == "Savings"
+    assert alloc["__unallocated__"].label == "Net savings"
     assert alloc["__unallocated__"].amount == 3000.0 - 1219.0 - 400.0
     assert result.savings == alloc["__unallocated__"].amount
+
+
+def test_net_savings_can_be_negative_and_overview_matches_cash_flow(db_session: Session):
+    """Allocating more than the surplus is a negative net savings, not zero.
+
+    Overview income, spending, and net savings use the cash-flow rules, so a
+    HYSA transfer is an allocation rather than spending and the deficit is kept.
+    """
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    db_session.add(
+        Transaction(
+            account=checking,
+            merchant="Ally Transfer",
+            amount=Decimal("2000.00"),
+            date=date(2026, 6, 18),
+            category_plaid="TRANSFER_OUT",
+            category_plaid_detailed="TRANSFER_OUT_SAVINGS",
+            pending=False,
+            removed=False,
+            hidden=False,
+        )
+    )
+    db_session.commit()
+
+    flow = build_cash_flow(db_session, month="2026-06")
+    summary = build_monthly_summary(db_session, month="2026-06")
+
+    assert flow.total_income == 3000.0
+    assert flow.total_spending == 1219.0
+    assert flow.savings == 3000.0 - 1219.0 - 2000.0
+    assert flow.savings < 0
+    assert all(node.id != "__unallocated__" for node in flow.allocation_nodes)
+    assert summary.total_income == flow.total_income
+    assert summary.total_spending == flow.total_spending
+    assert summary.net_savings == flow.savings
+    assert round(sum(item.value for item in summary.spending_by_category), 2) == summary.total_spending
+    names = [item.name for item in summary.spending_by_category]
+    assert "TRANSFER_OUT" not in names
+    assert "HYSA" not in names
 
 
 def test_build_cash_flow_classifies_brokerage_ach_memo_as_investments(db_session: Session):
@@ -699,9 +739,11 @@ def test_build_cash_flow_shows_dividend_and_reinvestment(db_session: Session):
     # Dividend in and reinvestment out cancel, so leftover savings is unchanged.
     assert result.savings == 1781.0
     assert result.total_spending == 1219.0
-    # Investments tab totals and the monthly summary stay on bank transactions only.
+    # Overview income follows cash flow, including the brokerage dividend.
     summary = build_monthly_summary(db_session, month="2026-06")
-    assert summary.total_income == 3000.0
+    assert summary.total_income == result.total_income
+    assert summary.total_spending == result.total_spending
+    assert summary.net_savings == result.savings
 
 
 def test_build_cash_flow_does_not_double_count_bank_dividend(db_session: Session):
@@ -775,7 +817,8 @@ def test_build_cash_flow_shows_brokerage_cashback_as_income_and_investments(db_s
     assert result.savings == 1781.0
     assert result.total_spending == 1219.0
     summary = build_monthly_summary(db_session, month="2026-06")
-    assert summary.total_income == 3000.0
+    assert summary.total_income == result.total_income
+    assert summary.net_savings == result.savings
 
 
 def test_build_cash_flow_does_not_double_count_bank_cashback(db_session: Session):
@@ -858,6 +901,9 @@ def test_build_cash_flow_shows_interest_as_income(db_session: Session):
     assert by_label["INCOME_INTEREST_EARNED"] == 16.84
     assert "INCOME" not in by_label
     assert result.total_income == 3016.84
+    summary = build_monthly_summary(db_session, month="2026-06")
+    assert summary.total_income == result.total_income
+    assert summary.net_savings == result.savings
 
 
 def test_cash_flow_sankey_data_returns_mermaid_links(
@@ -884,7 +930,7 @@ def test_cash_flow_sankey_data_returns_mermaid_links(
     assert "Food & Drink,Groceries," not in result.mermaid
     assert "Food & Drink,Dining," not in result.mermaid
     assert any(link.source == "Income pool" and link.target == "Food & Drink" and link.value == 220.0 for link in result.sankey_links)
-    assert any(link.target == "Savings" for link in result.sankey_links)
+    assert any(link.target == "Net savings" for link in result.sankey_links)
     assert "<svg" in result.svg
     assert "INCOME" in result.svg
 
@@ -945,7 +991,7 @@ def test_build_cash_flow_sankey_svg_renders_income_tunnel_and_savings(db_session
 
     assert "<svg" in svg
     assert "Paycheck" in svg
-    assert "Savings" in svg
+    assert "Net savings" in svg
     assert 'fill="url(#tg)"' in svg
     assert "Flow width represents relative amount" not in svg
     assert 'width="100%"' in svg
