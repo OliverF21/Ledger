@@ -328,9 +328,12 @@ export default function Investments() {
   }
 
   const hasHistory = Boolean(history && history.snapshots.length >= 2)
-  const growthUp = (history?.change_amount ?? 0) >= 0
-  const chartColor = growthUp ? '#74d8a8' : '#f4907f'
-  const changeToneColor = growthUp ? '#b6ebcd' : '#f5b3a4'
+  // Return is time-weighted performance. The dollar next to it is the capital
+  // gain, so a deposit does not paint the chart green or count as profit.
+  const returnUp = (history?.change_pct ?? 0) >= 0
+  const gainUp = (history?.change_amount ?? 0) >= 0
+  const chartColor = returnUp ? '#74d8a8' : '#f4907f'
+  const changeToneColor = gainUp ? '#b6ebcd' : '#f5b3a4'
   const hoverSnap = hoverPoint && history ? history.snapshots[hoverPoint.index] ?? null : null
   const currentValue = history?.snapshots[history.snapshots.length - 1]?.total ?? summary?.total_value ?? 0
   const displayValue = hoverSnap?.total ?? currentValue
@@ -384,13 +387,13 @@ export default function Investments() {
 
           <div className="relative mt-[13px] h-[22px] w-max">
             <div className={`flex items-center gap-2.5 whitespace-nowrap ${hoverSnap ? 'invisible' : ''}`}>
-              {hasHistory && history!.change_amount !== 0 && (
+              {hasHistory && (history!.change_amount !== 0 || history!.change_pct !== 0) && (
                 <>
-                  <ChangeBadge positive={growthUp}>
+                  <ChangeBadge positive={returnUp}>
                     {Math.abs(history!.change_pct).toFixed(1)}%
                   </ChangeBadge>
-                  <span className="text-[12.5px] font-semibold" style={{ color: chartColor }}>
-                    {growthUp ? '+' : '−'}${fmt(Math.abs(history!.change_amount))}
+                  <span className="text-[12.5px] font-semibold" style={{ color: gainUp ? '#74d8a8' : '#f4907f' }}>
+                    {gainUp ? '+' : '−'}${fmt(Math.abs(history!.change_amount))}
                   </span>
                 </>
               )}
@@ -425,15 +428,19 @@ export default function Investments() {
           />
           <Divider />
           <BreakdownColumn
-            label="Period change"
+            label="Gain"
             total={
               <span style={{ color: changeToneColor }}>
-                {history ? `${growthUp ? '+' : '−'}$${fmt(Math.abs(history.change_amount))}` : '—'}
+                {history ? `${gainUp ? '+' : '−'}$${fmt(Math.abs(history.change_amount))}` : '—'}
               </span>
             }
             labelWidth={72}
             rows={history ? [
-              { key: 'pct', name: 'Return', value: `${Math.abs(history.change_pct).toFixed(1)}%` },
+              {
+                key: 'pct',
+                name: 'Return',
+                value: `${history.change_pct < 0 ? '−' : '+'}${Math.abs(history.change_pct).toFixed(1)}%`,
+              },
               { key: 'range', name: 'Range', value: historyRange === '6M' ? '6 months' : '12 months' },
             ] : []}
           />
