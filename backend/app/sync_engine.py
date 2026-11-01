@@ -110,6 +110,8 @@ def _sync_item_inner(db: Session, item: Item) -> dict:
             else:
                 existing.pending = txn_data.get("pending", False)
                 existing.amount = txn_data.get("amount")
+                # Do not refresh date. The row keeps the date it was inserted
+                # with, including a date the user corrected later.
                 apply_enrichment_fields(existing, txn_data)
                 apply_rules_to_transaction(existing, rules)
 
