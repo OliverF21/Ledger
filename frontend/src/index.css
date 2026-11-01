@@ -415,6 +415,10 @@ select.glass-control {
   cursor: pointer;
 }
 
+input[type="date"].glass-chip {
+  color-scheme: dark;
+}
+
 /* Native dropdown popups are drawn by the OS and don't inherit the glass
    fill, so give the options an explicit dark ground. */
 select option {

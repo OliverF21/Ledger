@@ -1,4 +1,4 @@
-import { Download, ChevronUp, ChevronDown, ChevronsUpDown, Eye, EyeOff, Scissors, X } from 'lucide-react'
+import { Download, ChevronUp, ChevronDown, ChevronsUpDown, Eye, EyeOff, Scissors, X, Calendar } from 'lucide-react'
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react'
 import { apiFetch } from '../api/client'
 import { formatCategory, formatTransactionCategory, displayCategory, categoryPickerDraft, transactionDisplayIcon, isPfcKey } from '../utils/categories'
@@ -20,11 +20,20 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function formatTxnDate(
+  iso: string | null | undefined,
+  options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' },
+): string {
+  if (!iso) return '—'
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', options)
+}
+
 type ActionState =
   | { type: 'recategorize'; id: number; draft: string }
   | { type: 'split'; id: number; draft: string; originalAbs: number }
   | { type: 'similar-prompt'; id: number; merchant: string; category: string; similarIds: number[]; makeRule: boolean }
   | { type: 'goal-label'; id: number }
+  | { type: 'change-date'; id: number; draft: string; error?: string }
   | null
 
 interface GoalOption {
@@ -209,6 +218,44 @@ export default function Transactions() {
   }
 
   // ── Action handlers ────────────────────────────────────────────────────────
+
+  const handleChangeDate = async (id: number, dateStr: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      setAction(prev => (
+        prev?.type === 'change-date' && prev.id === id
+          ? { ...prev, error: 'Pick a valid date' }
+          : prev
+      ))
+      return
+    }
+    const current = transactions.find(t => t.id === id)
+    if (current?.date === dateStr) {
+      setAction(null)
+      return
+    }
+    try {
+      const res = await apiFetch(`/api/transactions/${id}/date`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: dateStr }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const detail = json.detail
+        throw new Error(typeof detail === 'string' ? detail : 'Could not update the date')
+      }
+      const nextDate = typeof json.date === 'string' ? json.date : dateStr
+      setTransactions(ts => ts.map(t => t.id === id ? { ...t, date: nextDate } : t))
+      setAction(null)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not update the date'
+      setAction(prev => (
+        prev?.type === 'change-date' && prev.id === id
+          ? { ...prev, error: message }
+          : prev
+      ))
+    }
+  }
 
   const handleHide = async (id: number) => {
     try {
@@ -459,6 +506,7 @@ export default function Transactions() {
                   const isSplit = action?.type === 'split' && action.id === txn.id
                   const isSimilarPrompt = action?.type === 'similar-prompt' && action.id === txn.id
                   const isGoalLabel = action?.type === 'goal-label' && action.id === txn.id
+                  const isDateEdit = action?.type === 'change-date' && action.id === txn.id
                   const recatDraft = isRecat ? action.draft : categoryPickerDraft(txn)
                   const recatExpandedPrimary = isRecat
                     ? primaryForCategoryLabel(recatDraft) ?? primaryForCategoryLabel(formatCategory(recatDraft))
@@ -516,8 +564,25 @@ export default function Transactions() {
                             <ChevronDown className={`w-[11px] h-[11px] flex-shrink-0 ${isGoalLabel ? 'rotate-180 text-white' : 'text-ledger-text-faint'}`} strokeWidth={2.2} />
                           </button>
                         </td>
-                        <td className="px-[20px] py-[11px] text-[13px] text-ledger-text-faintest tabular-nums">
-                          {new Date(txn.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        <td className="px-[20px] py-[11px]">
+                          <button
+                            type="button"
+                            title="Change date"
+                            onClick={() => setAction(isDateEdit ? null : { type: 'change-date', id: txn.id, draft: txn.date ?? '' })}
+                            className={`inline-flex items-center gap-[6px] text-[13px] tabular-nums transition-colors ${
+                              isDateEdit
+                                ? 'text-ledger-text-primary'
+                                : 'text-ledger-text-faintest hover:text-ledger-text-primary'
+                            }`}
+                          >
+                            {formatTxnDate(txn.date)}
+                            <Calendar
+                              className={`w-[12px] h-[12px] shrink-0 transition-opacity ${
+                                isDateEdit ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'
+                              }`}
+                              strokeWidth={2}
+                            />
+                          </button>
                         </td>
                         <td className="px-[20px] py-[11px] text-right text-[14px] font-semibold tabular-nums"
                           style={{ color: txn.amount < 0 ? '#4ec38a' : undefined }}>
@@ -598,6 +663,45 @@ export default function Transactions() {
                                   onSelect={category => handleRecategorize(txn.id, category)}
                                 />
                               </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+
+                      {isDateEdit && action?.type === 'change-date' && (
+                        <tr className="bg-ledger-inset border-b border-ledger-border-subtle">
+                          <td colSpan={7} className="px-[20px] py-[10px]">
+                            <div className="flex items-center gap-[8px] flex-wrap">
+                              <span className="text-[12px] text-ledger-text-faint">New date</span>
+                              <input
+                                autoFocus
+                                type="date"
+                                value={action.draft}
+                                onChange={e => setAction({ type: 'change-date', id: txn.id, draft: e.target.value })}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleChangeDate(txn.id, action.draft)
+                                  if (e.key === 'Escape') setAction(null)
+                                }}
+                                className="glass-chip px-[10px] py-[6px] text-[13px] text-ledger-text-primary focus:outline-none focus:border-white/50"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleChangeDate(txn.id, action.draft)}
+                                disabled={!action.draft}
+                                className="px-[10px] py-[6px] rounded-[8px] bg-ledger-accent text-ledger-accent-on text-[12px] font-semibold hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setAction(null)}
+                                className="p-[6px] rounded-[7px] text-ledger-text-faint hover:bg-white/10 transition-colors"
+                              >
+                                <X className="w-[14px] h-[14px]" strokeWidth={2} />
+                              </button>
+                              {action.error && (
+                                <span className="text-[12px] text-ledger-negative">{action.error}</span>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -757,7 +861,7 @@ export default function Transactions() {
             <div className="rounded-[12px] px-[14px] py-[12px] mb-[22px] border border-white/12 bg-white/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
               <div className="text-[13px] font-medium text-ledger-text-primary">{splitTxn.merchant}</div>
               <div className="text-[12px] text-ledger-text-faint mt-[2px]">
-                {splitTxn.account_name} · {new Date(splitTxn.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {splitTxn.account_name} · {formatTxnDate(splitTxn.date, { month: 'short', day: 'numeric' })}
               </div>
               <div className="text-[22px] font-bold tabular-nums mt-[6px]">
                 ${splitAction.originalAbs.toFixed(2)}

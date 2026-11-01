@@ -3,6 +3,7 @@ Transaction management endpoints.
 - GET /transactions: List transactions with filtering
 - POST /transactions/import: Import transactions from CSV
 - PUT /transactions/{id}/category: Update transaction category
+- PUT /transactions/{id}/date: Update the date used for filters and totals
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
@@ -132,6 +133,10 @@ class UpdateCategoryRequest(BaseModel):
     category: str
 
 
+class UpdateDateRequest(BaseModel):
+    date: date
+
+
 class SplitRequest(BaseModel):
     pct: float  # 0.0–1.0, e.g. 0.5 for splitting 50/50
 
@@ -243,6 +248,38 @@ async def update_transaction_category(
             "category": transaction.display_category,
             "manual_override": transaction.manual_override
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        log_and_raise(e, status_code=400)
+
+
+@router.put("/{transaction_id}/date")
+async def update_transaction_date(
+    transaction_id: int,
+    request: UpdateDateRequest,
+    db: Session = Depends(get_db),
+):
+    """Set the date lists, month filters, and monthly totals use for this transaction.
+
+    Later Plaid syncs of the same row do not write `date` again, so this
+    correction stays in place.
+    """
+    try:
+        transaction = db.query(Transaction).filter(
+            Transaction.id == transaction_id,
+            Transaction.removed.is_(False),
+        ).first()
+
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        transaction.date = request.date
+        transaction.updated_at = datetime.utcnow()
+        db.commit()
+
+        return {"success": True, "date": transaction.date.isoformat()}
     except HTTPException:
         raise
     except Exception as e:
