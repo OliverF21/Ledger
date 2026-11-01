@@ -1695,7 +1695,7 @@ dependencies = [
 
 [[package]]
 name = "ledger-desktop"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "open",
  "serde",
