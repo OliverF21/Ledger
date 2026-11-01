@@ -127,6 +127,53 @@ def build_twr_series(db: Session, account_ids: list[int], start: date, end: date
     return series
 
 
+def linked_period_return(
+    points: list[tuple[date, float]],
+    flows: list[CashFlow] | None = None,
+) -> tuple[float, float]:
+    """Dollar capital gain and time-weighted period return, as a percentage.
+
+    `points` are (date, portfolio value), oldest first. `flows` use the
+    portfolio-perspective sign from external_cash_flows: positive is money
+    deposited, negative is money withdrawn. A flow on the first point is
+    already inside that balance and is ignored. Later flows, including ones
+    that fall between points, are taken out of the gain and out of that
+    interval's return. Dividends are not flows; they stay in the gain.
+
+    Dollar gain is ending value minus starting value minus net deposits.
+    The percentage is the compounded time-weighted return over the points
+    (not annualized), so adding cash is not a return.
+    """
+    if len(points) < 2:
+        return 0.0, 0.0
+
+    start, start_value = points[0]
+    end, end_value = points[-1]
+    net_flow = 0.0
+    flows_by_date: dict[date, float] = {}
+    for flow in flows or []:
+        if start < flow.date <= end:
+            flows_by_date[flow.date] = flows_by_date.get(flow.date, 0.0) + flow.amount
+            net_flow += flow.amount
+
+    gain = end_value - start_value - net_flow
+    ordered_flows = sorted(flows_by_date.items())
+    flow_index = 0
+    growth = 1.0
+    prev_date, prev_value = points[0]
+    for current_date, value in points[1:]:
+        interval_flow = 0.0
+        while flow_index < len(ordered_flows) and ordered_flows[flow_index][0] <= current_date:
+            if ordered_flows[flow_index][0] > prev_date:
+                interval_flow += ordered_flows[flow_index][1]
+            flow_index += 1
+        if prev_value > 0:
+            growth *= 1 + (value - interval_flow - prev_value) / prev_value
+        prev_date, prev_value = current_date, value
+
+    return round(gain, 2), round((growth - 1) * 100, 2)
+
+
 def build_cagr(series: list[TWRPoint]) -> float | None:
     """Annualized return of a TWR growth-index series, as a percentage."""
     if len(series) < 2:
