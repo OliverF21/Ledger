@@ -3,9 +3,11 @@
 // "RENT_AND_UTILITIES.GAS_AND_ELECTRICITY", etc.
 
 import {
+  CATEGORY_GROUPS,
   PLAID_CATEGORIES,
   hierarchicalLabelForCategoryLabel,
   hierarchicalLabelForDetailedKey,
+  primaryForCategoryLabel,
 } from './plaidCategories'
 
 const DETAILED_LABEL_BY_KEY = Object.fromEntries(
@@ -98,6 +100,102 @@ export function displayCategory(t: {
   category_plaid?: string | null
 }): string {
   return t.category_user || t.category_plaid_detailed || t.category_plaid || ''
+}
+
+type CategoryFields = {
+  category_user?: string | null
+  category_plaid_detailed?: string | null
+  category_plaid?: string | null
+}
+
+function normalizeCategoryKey(raw: string): string {
+  return raw.trim().toUpperCase().replace(/\./g, '_')
+}
+
+/** Plaid primary this value belongs to, including its subcategories. */
+export function categoryPrimaryKey(raw: string | null | undefined): string | null {
+  if (!raw?.trim()) return null
+  const trimmed = raw.trim()
+  const normalized = normalizeCategoryKey(trimmed)
+
+  if (CATEGORY_GROUPS.some(g => g.primary === normalized)) return normalized
+  // Older imports used SHOPPING.* for what Plaid now calls general merchandise.
+  if (normalized === 'SHOPPING' || normalized.startsWith('SHOPPING_')) return 'GENERAL_MERCHANDISE'
+
+  const detailed = PLAID_CATEGORIES.find(c => c.detailed === normalized)
+  if (detailed) return detailed.primary
+
+  const primaries = [...CATEGORY_GROUPS].sort((a, b) => b.primary.length - a.primary.length)
+  for (const group of primaries) {
+    if (normalized.startsWith(`${group.primary}_`)) return group.primary
+  }
+
+  if (trimmed.includes(' · ')) {
+    const head = trimmed.split(' · ')[0].trim()
+    const group = CATEGORY_GROUPS.find(g => g.label.toLowerCase() === head.toLowerCase())
+    if (group) return group.primary
+  }
+
+  return primaryForCategoryLabel(trimmed)
+}
+
+/** True when this filter value is a parent category, not one subcategory. */
+export function isBroadCategorySelection(selected: string): boolean {
+  const trimmed = selected.trim()
+  if (!trimmed || trimmed.includes(' · ')) return false
+  const normalized = normalizeCategoryKey(trimmed)
+
+  if (CATEGORY_GROUPS.some(g => g.primary === normalized)) return true
+  if (normalized === 'SHOPPING') return true
+
+  const detailed = PLAID_CATEGORIES.find(c => c.detailed === normalized)
+  if (detailed) return detailed.label.toLowerCase() === detailed.primaryLabel.toLowerCase()
+  if (normalized.startsWith('SHOPPING_')) return false
+
+  const primaries = [...CATEGORY_GROUPS].sort((a, b) => b.primary.length - a.primary.length)
+  if (primaries.some(g => normalized.startsWith(`${g.primary}_`))) return false
+
+  const asPrimaryLabel = CATEGORY_GROUPS.find(g => g.label.toLowerCase() === trimmed.toLowerCase())
+  if (!asPrimaryLabel) return false
+  const moreSpecific = PLAID_CATEGORIES.some(
+    c => c.label.toLowerCase() === trimmed.toLowerCase()
+      && c.primaryLabel.toLowerCase() !== trimmed.toLowerCase(),
+  )
+  return !moreSpecific
+}
+
+/**
+ * Category filter match. A parent such as Shopping includes every subcategory.
+ * A specific subcategory still matches only itself.
+ */
+export function transactionMatchesCategoryFilter(txn: CategoryFields, selected: string): boolean {
+  const effective = displayCategory(txn)
+  if (effective === selected) return true
+  if (!isBroadCategorySelection(selected)) return false
+  const selectedPrimary = categoryPrimaryKey(selected)
+  const txnPrimary = categoryPrimaryKey(effective)
+  return Boolean(selectedPrimary && txnPrimary && selectedPrimary === txnPrimary)
+}
+
+/** Filter choices, with a parent option whenever any of its subcategories are present. */
+export function categoryFilterOptions(rawCategories: Iterable<string>): string[] {
+  const set = new Set<string>()
+  for (const cat of rawCategories) {
+    if (cat?.trim()) set.add(cat)
+  }
+  for (const cat of Array.from(set)) {
+    if (isBroadCategorySelection(cat)) continue
+    const primary = categoryPrimaryKey(cat)
+    if (!primary) continue
+    const hasParent = Array.from(set).some(
+      existing => isBroadCategorySelection(existing) && categoryPrimaryKey(existing) === primary,
+    )
+    if (!hasParent) set.add(primary)
+  }
+  return Array.from(set).sort((a, b) => {
+    const labelCmp = formatCategory(a).localeCompare(formatCategory(b))
+    return labelCmp !== 0 ? labelCmp : a.localeCompare(b)
+  })
 }
 
 /** True when a stored value looks like a Plaid PFC key (e.g. INCOME_SALARY). */

@@ -1,7 +1,7 @@
 import { Download, ChevronUp, ChevronDown, ChevronsUpDown, Eye, EyeOff, Scissors, X, Calendar } from 'lucide-react'
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react'
 import { apiFetch } from '../api/client'
-import { formatCategory, formatTransactionCategory, displayCategory, categoryPickerDraft, transactionDisplayIcon, isPfcKey } from '../utils/categories'
+import { formatCategory, formatTransactionCategory, displayCategory, categoryPickerDraft, transactionDisplayIcon, isPfcKey, categoryFilterOptions, transactionMatchesCategoryFilter } from '../utils/categories'
 import { isPlaidCategoryLabel, primaryForCategoryLabel } from '../utils/plaidCategories'
 import CategoryPicker from '../components/CategoryPicker'
 import { useOnSyncComplete } from '../hooks/useSync'
@@ -104,15 +104,7 @@ export default function Transactions() {
   }, [transactions])
 
   const categories = useMemo(() => {
-    const set = new Set<string>()
-    transactions.forEach(t => {
-      const cat = displayCategory(t)
-      if (cat) set.add(cat)
-    })
-    return Array.from(set).sort((a, b) => {
-      const labelCmp = formatCategory(a).localeCompare(formatCategory(b))
-      return labelCmp !== 0 ? labelCmp : a.localeCompare(b)
-    })
+    return categoryFilterOptions(transactions.map(t => displayCategory(t)))
   }, [transactions])
 
   const customCategories = useMemo(() => {
@@ -149,9 +141,7 @@ export default function Transactions() {
     }
 
     if (selectedCategory !== 'all') {
-      list = list.filter(t =>
-        displayCategory(t) === selectedCategory
-      )
+      list = list.filter(t => transactionMatchesCategoryFilter(t, selectedCategory))
     }
 
     if (selectedAccount !== 'all') {
