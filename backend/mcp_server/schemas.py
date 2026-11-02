@@ -33,6 +33,9 @@ class MonthlySpendingResult(BaseModel):
     total_spending: float
     total_income: float
     savings_rate: float
+    net_savings: float = Field(
+        description="Income minus spending minus allocations. Negative when the month ran a deficit."
+    )
     prev_month_spending: float
     spending_by_category: list[CategorySpendResult]
     recent_transactions: list[RecentTransactionResult]

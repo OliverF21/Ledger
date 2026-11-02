@@ -36,9 +36,10 @@ class RecentTransaction(BaseModel):
 
 class MonthlySummaryResponse(BaseModel):
     month: str                          # "YYYY-MM"
-    total_spending: float               # sum of expenses (positive number)
-    total_income: float                 # sum of income
+    total_spending: float               # consumptive spending, same rules as cash flow
+    total_income: float                 # income, same rules as cash flow
     savings_rate: float                 # (income - spending) / income * 100, or 0
+    net_savings: float                  # income - spending - allocations; may be negative
     spending_by_category: list[CategorySpend]
     recent_transactions: list[RecentTransaction]
     prev_month_spending: float          # for % change calc on frontend
@@ -60,6 +61,7 @@ async def get_monthly_summary(
             total_spending=summary.total_spending,
             total_income=summary.total_income,
             savings_rate=summary.savings_rate,
+            net_savings=summary.net_savings,
             spending_by_category=[
                 CategorySpend(name=item.name, value=item.value, color=item.color)
                 for item in summary.spending_by_category

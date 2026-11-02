@@ -11,7 +11,7 @@ import base64
 import html
 from dataclasses import dataclass
 
-from app.services.analytics_service import CashFlowData, CashFlowNodeItem
+from app.services.analytics_service import NET_SAVINGS_LABEL, CashFlowData, CashFlowNodeItem
 from mcp_server.category_labels import format_category
 
 NODE_W = 20
@@ -39,7 +39,7 @@ DEFICIT_NODE = "Deficit"
 
 
 def _right_items(flow: CashFlowData) -> list[CashFlowNodeItem]:
-    """Consumptive spend first, then named sinks / HYSA transfers / residual Savings."""
+    """Consumptive spend first, then named sinks / HYSA transfers / positive net savings."""
     return list(flow.spending_categories) + list(flow.allocation_nodes or [])
 
 
@@ -389,7 +389,7 @@ def _display_label(node_id: str, raw_label: str) -> str:
     if node_id == SAVINGS_ID:
         return "HYSA"
     if node_id == UNALLOCATED_ID:
-        return "Savings"
+        return NET_SAVINGS_LABEL
     if node_id.startswith("goal:"):
         return raw_label
     return format_category(raw_label)

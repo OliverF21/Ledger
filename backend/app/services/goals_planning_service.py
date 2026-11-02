@@ -119,9 +119,12 @@ def _is_partial_month(year: int, month: int, today: date) -> bool:
 
 def _residual_for_month(db: Session, month: str) -> ResidualMonth:
     flow = build_cash_flow(db, month=month)
+    # Capacity is surplus you can assign. Cash flow now keeps a negative net
+    # savings when the month ran a deficit; that hole must not flow into the
+    # lookback average, or one overspent month zeroes out later plans.
     return ResidualMonth(
         month=flow.month,
-        residual=money(flow.savings),
+        residual=money(max(flow.savings, 0.0)),
         income=money(flow.total_income),
         spending=money(flow.total_spending),
         is_partial=False,
