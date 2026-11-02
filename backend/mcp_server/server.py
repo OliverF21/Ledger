@@ -672,7 +672,11 @@ def get_investment_performance(
         Field(description="Maximum number of largest positions to return.", ge=1, le=25),
     ] = 10,
 ) -> InvestmentPerformanceResult:
-    """Return portfolio performance, allocation, history, and largest positions."""
+    """Return portfolio performance, allocation, history, and largest positions.
+
+    change_amount is the dollar capital gain over the window and change_pct
+    is the time-weighted return. Deposits and withdrawals are not gains.
+    """
     with ledger_session() as db:
         result = build_investment_performance(db, months=months, top_positions=top_positions)
 

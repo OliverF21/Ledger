@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.analytics_shared import CATEGORY_COLORS
 from app.models import Account, BalanceSnapshot, Holding, Item, MarketPrice
+from app.services.returns_service import external_cash_flows, linked_period_return
 
 
 def investment_net_equity_total(accounts: list[Account]) -> float:
@@ -171,8 +172,15 @@ def build_investment_performance(
             )
         )
 
-    history = _build_investment_history(db, account_ids=account_ids, months=months, live_total=total_value)
-    change_amount, change_pct = _history_change(history)
+    history, from_balance_snapshots = _build_investment_history(
+        db, account_ids=account_ids, months=months, live_total=total_value
+    )
+    change_amount, change_pct = _portfolio_period_change(
+        db,
+        account_ids,
+        history,
+        from_balance_snapshots=from_balance_snapshots,
+    )
     last_synced = max((account.item.last_synced_at for account in accounts if account.item.last_synced_at), default=None)
 
     return InvestmentPerformanceData(
@@ -359,7 +367,13 @@ def _build_investment_history(
     account_ids: list[int],
     months: int,
     live_total: float,
-) -> list[InvestmentHistoryPointData]:
+) -> tuple[list[InvestmentHistoryPointData], bool]:
+    """Portfolio-value series and whether it is real account balances.
+
+    The boolean is False when the series is a mark-to-market of today's
+    holdings. That path has no deposit jumps, so external cash flows must
+    not be subtracted a second time.
+    """
     cutoff = _history_cutoff(months)
     history = _snapshot_history(db, account_ids=account_ids, cutoff=cutoff)
     first = date.fromisoformat(history[0].date) if history else None
@@ -370,16 +384,37 @@ def _build_investment_history(
             db, account_ids=account_ids, cutoff=cutoff, live_total=live_total
         )
         if len(marked) >= 2:
-            history = marked
-    return _finalize_history(history, live_total)
+            return _finalize_history(marked, live_total), False
+    return _finalize_history(history, live_total), True
+
+
+def _portfolio_period_change(
+    db: Session,
+    account_ids: list[int],
+    history: list[InvestmentHistoryPointData],
+    *,
+    from_balance_snapshots: bool,
+) -> tuple[float, float]:
+    """Capital gain in dollars and the time-weighted return over `history`.
+
+    Balance-snapshot history includes deposits, so those (and withdrawals)
+    are removed. Mark-to-market history is already the price return of the
+    current book.
+    """
+    if len(history) < 2:
+        return 0.0, 0.0
+    flows = []
+    if from_balance_snapshots and account_ids:
+        start = date.fromisoformat(history[0].date)
+        end = date.fromisoformat(history[-1].date)
+        flows = external_cash_flows(db, account_ids, start, end)
+    points = [(date.fromisoformat(point.date), point.total) for point in history]
+    return linked_period_return(points, flows)
 
 
 def _history_change(history: list[InvestmentHistoryPointData]) -> tuple[float, float]:
+    """Value change of a series that does not contain external cash flows."""
     if len(history) < 2:
         return 0.0, 0.0
-
-    oldest = history[0].total
-    newest = history[-1].total
-    change_amount = round(newest - oldest, 2)
-    change_pct = round((change_amount / oldest * 100) if oldest > 0 else 0.0, 2)
-    return change_amount, change_pct
+    points = [(date.fromisoformat(point.date), point.total) for point in history]
+    return linked_period_return(points, None)

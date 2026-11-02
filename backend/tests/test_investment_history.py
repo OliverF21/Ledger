@@ -17,6 +17,7 @@ from app.models import (  # noqa: E402
     BalanceSnapshot,
     Base,
     Holding,
+    InvestmentTransaction,
     Item,
     MarketPrice,
     Security,
@@ -25,6 +26,7 @@ from app.models import (  # noqa: E402
 from app.services.investment_service import (  # noqa: E402
     _build_investment_history,
     _history_change,
+    _portfolio_period_change,
     investment_net_equity_total,
 )
 
@@ -100,8 +102,8 @@ def test_short_snapshots_period_change_differs_for_6m_vs_1y(db_session):
     db_session.commit()
 
     live = investment_net_equity_total([account])
-    six = _build_investment_history(db_session, account_ids=[account.id], months=6, live_total=live)
-    twelve = _build_investment_history(db_session, account_ids=[account.id], months=12, live_total=live)
+    six, _ = _build_investment_history(db_session, account_ids=[account.id], months=6, live_total=live)
+    twelve, _ = _build_investment_history(db_session, account_ids=[account.id], months=12, live_total=live)
 
     six_change, _ = _history_change(six)
     twelve_change, _ = _history_change(twelve)
@@ -125,9 +127,10 @@ def test_full_snapshot_coverage_keeps_using_balances(db_session):
         )
     db_session.commit()
 
-    history = _build_investment_history(
+    history, from_snapshots = _build_investment_history(
         db_session, account_ids=[account.id], months=6, live_total=120.0
     )
+    assert from_snapshots is True
     # First point is the snapshot on the 6-month cutoff (1st of that month),
     # not a reconstructed price series.
     cutoff_year = today.year - (6 // 12)
@@ -138,3 +141,147 @@ def test_full_snapshot_coverage_keeps_using_balances(db_session):
     cutoff = date(cutoff_year, cutoff_month, 1)
     assert history[0].date == str(cutoff)
     assert history[0].total == pytest.approx(100 + (cutoff - (today - timedelta(days=400))).days)
+
+
+def test_snapshot_return_excludes_deposits(db_session):
+    """A deposit raises portfolio value. It is not a capital gain."""
+    account = _brokerage(db_session, balance="2100")
+    today = date.today()
+    mid = today - timedelta(days=40)
+    for days_ago in range(400, -1, -1):
+        day = today - timedelta(days=days_ago)
+        db_session.add(
+            BalanceSnapshot(
+                account_id=account.id,
+                balance=Decimal("1000" if day < mid else "2100"),
+                snapshot_date=day,
+            )
+        )
+    db_session.add(
+        InvestmentTransaction(
+            account_id=account.id,
+            plaid_investment_transaction_id="dep-1",
+            name="deposit",
+            type="cash",
+            subtype="deposit",
+            amount=Decimal("-1000"),
+            date=mid,
+        )
+    )
+    db_session.commit()
+
+    history, from_snapshots = _build_investment_history(
+        db_session, account_ids=[account.id], months=6, live_total=2100.0
+    )
+    assert from_snapshots is True
+    amount, pct = _portfolio_period_change(
+        db_session,
+        [account.id],
+        history,
+        from_balance_snapshots=True,
+    )
+    assert amount == pytest.approx(100.0, abs=0.05)
+    assert pct == pytest.approx(10.0, abs=0.05)
+    # The raw balance change still includes the deposit. The displayed return must not.
+    assert history[-1].total - history[0].total == pytest.approx(1100.0, abs=0.05)
+
+
+def test_snapshot_return_keeps_dividends(db_session):
+    account = _brokerage(db_session, balance="1100")
+    today = date.today()
+    payday = today - timedelta(days=20)
+    for days_ago in range(400, -1, -1):
+        day = today - timedelta(days=days_ago)
+        db_session.add(
+            BalanceSnapshot(
+                account_id=account.id,
+                balance=Decimal("1000" if day < payday else "1100"),
+                snapshot_date=day,
+            )
+        )
+    db_session.add(
+        InvestmentTransaction(
+            account_id=account.id,
+            plaid_investment_transaction_id="div-1",
+            name="dividend",
+            type="cash",
+            subtype="dividend",
+            amount=Decimal("-100"),
+            date=payday,
+        )
+    )
+    db_session.commit()
+
+    history, from_snapshots = _build_investment_history(
+        db_session, account_ids=[account.id], months=6, live_total=1100.0
+    )
+    assert from_snapshots is True
+    amount, pct = _portfolio_period_change(
+        db_session,
+        [account.id],
+        history,
+        from_balance_snapshots=True,
+    )
+    assert amount == pytest.approx(100.0, abs=0.05)
+    assert pct == pytest.approx(10.0, abs=0.05)
+
+
+def test_mark_to_market_return_does_not_subtract_deposits(db_session):
+    """Mark-to-market history never includes the deposit, so subtracting it
+    would turn a price gain into a fake loss."""
+    account = _brokerage(db_session, balance="2000")
+    sec = Security(plaid_security_id="sec-B", ticker_symbol="TICKB", type="equity")
+    db_session.add(sec)
+    db_session.flush()
+    db_session.add(
+        Holding(
+            account_id=account.id,
+            security_id=sec.id,
+            quantity=Decimal("10"),
+            institution_price=Decimal("200"),
+            institution_value=Decimal("2000"),
+        )
+    )
+    today = date.today()
+    for days_ago in range(400, -1, -1):
+        day = today - timedelta(days=days_ago)
+        db_session.add(
+            MarketPrice(
+                ticker="TICKB",
+                price_date=day,
+                close_price=Decimal(str(100 + (400 - days_ago) * 0.25)),
+            )
+        )
+    for days_ago in range(20, -1, -1):
+        db_session.add(
+            BalanceSnapshot(
+                account_id=account.id,
+                balance=Decimal("2000"),
+                snapshot_date=today - timedelta(days=days_ago),
+            )
+        )
+    db_session.add(
+        InvestmentTransaction(
+            account_id=account.id,
+            plaid_investment_transaction_id="dep-mtm",
+            name="deposit",
+            type="cash",
+            subtype="deposit",
+            amount=Decimal("-50000"),
+            date=today - timedelta(days=10),
+        )
+    )
+    db_session.commit()
+
+    history, from_snapshots = _build_investment_history(
+        db_session, account_ids=[account.id], months=6, live_total=2000.0
+    )
+    assert from_snapshots is False
+    amount, _pct = _portfolio_period_change(
+        db_session,
+        [account.id],
+        history,
+        from_balance_snapshots=False,
+    )
+    assert amount == pytest.approx(history[-1].total - history[0].total, abs=0.02)
+    assert abs(amount) < 10000
