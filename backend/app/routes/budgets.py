@@ -10,6 +10,10 @@ Budgets are stored in budgets.db (separate from ledger.db) so Defender/AV
 scanning the main transaction DB never blocks budget writes.
 GET reads spending sums from ledger.db (read-only) and combines with limits
 from budgets.db in Python.
+
+Unspent and overspent amounts roll forward month by month. The stored limit
+stays the planned monthly amount; `rollover` is the signed leftover from prior
+months, and the spendable cap for a month is limit + rollover.
 """
 
 from datetime import date
@@ -55,6 +59,9 @@ class BudgetItem(BaseModel):
     limit: float
     spent: float
     color: str
+    # Signed leftover from earlier months. Positive adds room; negative
+    # reduces it. Not written back onto Budget.limit.
+    rollover: float = 0.0
     virtual: bool = False
 
 
@@ -74,6 +81,10 @@ def carry_forward_budgets(bdb: Session, month_key: str) -> list[Budget]:
     Budgets are stored per YYYY-MM so spending stays month-scoped, but limits
     should persist across month boundaries — otherwise a new month opens empty
     even though the user already set Food/Transport/etc. last month.
+
+    Only the planned limit is copied. Leftover dollars are applied at read
+    time as `rollover`, so editing a limit never bakes last month's surplus
+    into the stored plan.
     """
     existing = (
         bdb.query(Budget)
@@ -116,90 +127,214 @@ def carry_forward_budgets(bdb: Session, month_key: str) -> list[Budget]:
     return copied
 
 
-def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetItem]:
-    """
-    Per-category budget items (limit + pre-computed spent) for a given month.
-    Limits come from budgets.db; spending sums come from ledger.db (read-only).
-    Shared by GET /budgets and the alert-computation endpoint.
+# (amount, plaid parent key, display category) for one expense.
+SpendPart = tuple[float, str | None, str]
 
-    Spend that does not match any tracked budget lands in a virtual Misc. bucket
-    so overall budget progress reflects all consumptive spending.
+
+def _split_month(month_key: str) -> tuple[int, int]:
+    return int(month_key[:4]), int(month_key[5:7])
+
+
+def _next_month(month_key: str) -> str:
+    year, month = _split_month(month_key)
+    if month == 12:
+        return f"{year + 1:04d}-01"
+    return f"{year:04d}-{month + 1:02d}"
+
+
+def _budget_identity(category_key: str | None, category_name: str | None) -> str:
+    if category_key:
+        return "k:" + normalize_category_key(category_key)
+    return "n:" + (category_name or "").strip().lower()
+
+
+def spendable_amount(limit: float, rollover: float, *, virtual: bool = False) -> float:
+    """Cap for this month. Prior leftover is included; the Misc. bucket is not."""
+    if virtual:
+        return round(float(limit), 2)
+    return round(float(limit) + float(rollover), 2)
+
+
+def _match_target(
+    category_key: str | None, category_name: str | None
+) -> tuple[str | None, str | None]:
     """
-    budgets = carry_forward_budgets(bdb, month_key)
-    if not budgets:
+    How a budget collects spend: a Plaid parent key, or a display name.
+
+    Name-only budgets whose label is a PFC primary (e.g. "Travel") match every
+    leaf under that primary, same as a keyed budget.
+    """
+    if category_key:
+        return normalize_category_key(category_key), None
+    resolved = normalize_category_key(resolve_category_to_pfc_key(category_name or ""))
+    primary_label = CATEGORY_KEY_LABELS.get(resolved, "")
+    name = (category_name or "").strip()
+    if (
+        resolved
+        and (resolved in PLAID_PFC_PRIMARIES or resolved in KNOWN_CATEGORY_KEYS)
+        and primary_label
+        and primary_label.lower() == name.lower()
+    ):
+        return resolved, None
+    return None, category_name or ""
+
+
+def _eligible_parts(txns: list[Transaction]) -> list[tuple[date, float, str | None, str]]:
+    parts: list[tuple[date, float, str | None, str]] = []
+    for t in txns:
+        rules_key = category_key_for_spending_rules(
+            t.category_user, t.category_plaid, t.category_plaid_detailed
+        )
+        if is_excluded_from_budget_spending(rules_key):
+            continue
+        eff = float(t.amount) * float(t.user_split_pct or 1)
+        display = t.display_category or "Uncategorized"
+        parent = budget_parent_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
+        parts.append((t.date, eff, parent, display))
+    return parts
+
+
+def _spent_by_identity(budgets: list[Budget], parts: list[SpendPart]) -> dict[str, float]:
+    spent_by_parent: dict[str, float] = {}
+    spent_by_display: dict[str, float] = {}
+    for eff, parent, display in parts:
+        spent_by_display[display] = spent_by_display.get(display, 0.0) + eff
+        if parent:
+            spent_by_parent[parent] = spent_by_parent.get(parent, 0.0) + eff
+
+    spent: dict[str, float] = {}
+    for b in budgets:
+        ident = _budget_identity(b.category_key, b.category_name)
+        key, name = _match_target(b.category_key, b.category_name)
+        if key:
+            spent[ident] = spent_by_parent.get(key, 0.0)
+        else:
+            spent[ident] = spent_by_display.get(name or "", 0.0)
+    return spent
+
+
+def _plan_for_month(rows_by_month: dict[str, list[Budget]], month: str) -> list[Budget]:
+    """Rows saved for `month`, or the latest earlier plan when the month was never opened."""
+    own = rows_by_month.get(month)
+    if own:
+        return own
+    prior = [m for m in rows_by_month if m < month]
+    if not prior:
         return []
+    return rows_by_month[max(prior)]
 
-    year, mon = int(month_key[:4]), int(month_key[5:7])
-    start, end = month_bounds(year, mon)
 
-    # Load all expense transactions for the month from ledger.db (read-only).
+def _rollover_by_identity(
+    rows_by_month: dict[str, list[Budget]],
+    parts_by_month: dict[str, list[SpendPart]],
+    month_key: str,
+) -> dict[str, float]:
+    """
+    Signed leftover arriving in `month_key`, per category.
+
+    A month's envelope is its limit plus whatever rolled in, minus what was
+    spent. Months with no saved rows keep the previous plan, so a month the
+    user never opened still consumes the budget. A saved month that omits a
+    category ends that category's envelope.
+    """
+    if not rows_by_month:
+        return {}
+    first = min(rows_by_month)
+    if first >= month_key:
+        return {}
+
+    running: dict[str, float] = {}
+    cur = first
+    while cur < month_key:
+        plan = _plan_for_month(rows_by_month, cur)
+        present = {
+            _budget_identity(b.category_key, b.category_name): float(b.limit) for b in plan
+        }
+        for ident in list(running):
+            if ident not in present:
+                del running[ident]
+        spent = _spent_by_identity(plan, parts_by_month.get(cur, []))
+        for ident, limit in present.items():
+            running[ident] = round(limit + running.get(ident, 0.0) - spent.get(ident, 0.0), 2)
+        cur = _next_month(cur)
+    return running
+
+
+def _load_spend_parts(
+    ldb: Session, start: date, end: date
+) -> dict[str, list[SpendPart]]:
     # Positive amounts = debits/expenses in Plaid convention.
+    # Pending counted so purchases hit budgets immediately (see analytics_service).
     txns = (
         ldb.query(Transaction)
         .filter(
-            Transaction.removed == False,
-            # Pending counted so purchases hit budgets immediately (see analytics_service).
-            Transaction.hidden == False,
+            Transaction.removed == False,  # noqa: E712
+            Transaction.hidden == False,  # noqa: E712
             Transaction.amount > 0,
             Transaction.date >= start,
             Transaction.date < end,
         )
         .all()
     )
+    grouped: dict[str, list[SpendPart]] = {}
+    for day, eff, parent, display in _eligible_parts(txns):
+        key = f"{day.year:04d}-{day.month:02d}"
+        grouped.setdefault(key, []).append((eff, parent, display))
+    return grouped
 
-    # Two spending maps — use effective amount (respects user split)
-    spent_by_plaid_parent: dict[str, float] = {}
-    spent_by_display: dict[str, float] = {}
-    eligible: list[tuple[float, str | None, str]] = []
 
-    for t in txns:
-        if is_excluded_from_budget_spending(
-            category_key_for_spending_rules(t.category_user, t.category_plaid, t.category_plaid_detailed)
-        ):
-            continue
-        eff = float(t.amount) * float(t.user_split_pct or 1)
-        display = t.display_category or "Uncategorized"
-        spent_by_display[display] = spent_by_display.get(display, 0.0) + eff
-        parent = budget_parent_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
-        if parent:
-            spent_by_plaid_parent[parent] = spent_by_plaid_parent.get(parent, 0.0) + eff
-        eligible.append((eff, parent, display))
+def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetItem]:
+    """
+    Per-category budget items (limit, rollover, spent) for a given month.
+    Limits come from budgets.db; spending sums come from ledger.db (read-only).
+    Shared by GET /budgets and the alert-computation endpoint.
+
+    Spend that does not match any tracked budget lands in a virtual Misc. bucket
+    so overall budget progress reflects all consumptive spending. Misc. does not
+    roll into later months.
+    """
+    budgets = carry_forward_budgets(bdb, month_key)
+    if not budgets:
+        return []
+
+    history = (
+        bdb.query(Budget)
+        .filter(Budget.user_id == 1, Budget.month <= month_key)
+        .all()
+    )
+    rows_by_month: dict[str, list[Budget]] = {}
+    for row in history:
+        rows_by_month.setdefault(row.month, []).append(row)
+
+    earliest = min(rows_by_month)
+    start, _ = month_bounds(*_split_month(earliest))
+    _, end = month_bounds(*_split_month(month_key))
+    parts_by_month = _load_spend_parts(ldb, start, end)
+    rollovers = _rollover_by_identity(rows_by_month, parts_by_month, month_key)
+    current_parts = parts_by_month.get(month_key, [])
+    spent_now = _spent_by_identity(budgets, current_parts)
 
     budget_items: list[BudgetItem] = []
     tracked_keys: set[str] = set()
     tracked_names: set[str] = set()
     for b in budgets:
-        if b.category_key:
-            key = normalize_category_key(b.category_key)
+        ident = _budget_identity(b.category_key, b.category_name)
+        key, name = _match_target(b.category_key, b.category_name)
+        if key:
             tracked_keys.add(key)
-            spent = spent_by_plaid_parent.get(key, 0.0)
-        else:
-            # Name-only budgets whose label is a PFC primary (e.g. "Travel")
-            # should match all leaf spend under that primary — not only rows
-            # whose display_category string equals the label exactly.
-            resolved = normalize_category_key(resolve_category_to_pfc_key(b.category_name))
-            primary_label = CATEGORY_KEY_LABELS.get(resolved, "")
-            if (
-                resolved
-                and (resolved in PLAID_PFC_PRIMARIES or resolved in KNOWN_CATEGORY_KEYS)
-                and primary_label
-                and primary_label.lower() == (b.category_name or "").strip().lower()
-            ):
-                tracked_keys.add(resolved)
-                spent = spent_by_plaid_parent.get(resolved, 0.0)
-            else:
-                tracked_names.add(b.category_name)
-                spent = spent_by_display.get(b.category_name, 0.0)
+        elif name:
+            tracked_names.add(name)
         budget_items.append(BudgetItem(
             id=b.id,
             category=b.category_name,
             limit=round(float(b.limit), 2),
-            spent=round(spent, 2),
+            rollover=round(rollovers.get(ident, 0.0), 2),
+            spent=round(spent_now.get(ident, 0.0), 2),
             color=b.color or CATEGORY_COLORS[0],
         ))
 
     misc_spent = 0.0
-    for eff, parent, display in eligible:
+    for eff, parent, display in current_parts:
         if parent and parent in tracked_keys:
             continue
         if display in tracked_names:
@@ -238,8 +373,15 @@ async def get_budgets(
 
         budget_items = get_budget_items(bdb, ldb, month_key)
 
-        # Virtual Misc. has no limit; don't inflate total_limit with a $0 row.
-        total_limit = round(sum(bi.limit for bi in budget_items if not bi.virtual), 2)
+        # Spendable cap includes rolled leftover. Virtual Misc. has no limit.
+        total_limit = round(
+            sum(
+                spendable_amount(bi.limit, bi.rollover, virtual=bi.virtual)
+                for bi in budget_items
+                if not bi.virtual
+            ),
+            2,
+        )
         total_spent = round(sum(bi.spent for bi in budget_items), 2)
 
         return BudgetsResponse(

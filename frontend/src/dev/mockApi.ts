@@ -133,12 +133,12 @@ const INVESTMENT_ACTIVITY = [
 ].map((t, i) => ({ id: i + 1, account_name: 'Schwab Brokerage', ...t, date: isoDaysAgo(t.day) }))
 
 const BUDGETS = [
-  { id: 1, category: 'FOOD_AND_DRINK', limit: 800, spent: 742.18, color: '#63cfcc' },
-  { id: 2, category: 'ENTERTAINMENT', limit: 450, spent: 512.6, color: '#f4907f' },
-  { id: 3, category: 'GENERAL_MERCHANDISE', limit: 600, spent: 562.4, color: '#e6bd79' },
-  { id: 4, category: 'TRANSPORTATION', limit: 450, spent: 388.45, color: '#a196fa' },
-  { id: 5, category: 'RENT_AND_UTILITIES', limit: 2100, spent: 1850, color: '#82a9f2' },
-  { id: 6, category: 'PERSONAL_CARE', limit: 300, spent: 268.3, color: '#74d8a8' },
+  { id: 1, category: 'FOOD_AND_DRINK', limit: 800, rollover: 120, spent: 742.18, color: '#63cfcc' },
+  { id: 2, category: 'ENTERTAINMENT', limit: 450, rollover: 0, spent: 512.6, color: '#f4907f' },
+  { id: 3, category: 'GENERAL_MERCHANDISE', limit: 600, rollover: 0, spent: 562.4, color: '#e6bd79' },
+  { id: 4, category: 'TRANSPORTATION', limit: 450, rollover: -40, spent: 388.45, color: '#a196fa' },
+  { id: 5, category: 'RENT_AND_UTILITIES', limit: 2100, rollover: 0, spent: 1850, color: '#82a9f2' },
+  { id: 6, category: 'PERSONAL_CARE', limit: 300, rollover: 0, spent: 268.3, color: '#74d8a8' },
 ]
 
 const TOTAL_ASSETS = 250330.87
@@ -426,7 +426,7 @@ function routes(url: URL): unknown | undefined {
       return {
         month: url.searchParams.get('month') ?? monthValue(0),
         budgets: BUDGETS,
-        total_limit: BUDGETS.reduce((s, b) => s + b.limit, 0),
+        total_limit: BUDGETS.reduce((s, b) => s + b.limit + (b.rollover || 0), 0),
         total_spent: BUDGETS.reduce((s, b) => s + b.spent, 0),
       }
 

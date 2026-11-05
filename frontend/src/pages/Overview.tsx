@@ -10,6 +10,7 @@ import {
 } from '../components/ui/primitives'
 import { AreaLineChart, Donut, DonutLegend, type AreaLineHover, type DonutSlice } from '../components/ui/charts'
 import { formatCategory, formatTransactionCategory, transactionDisplayIcon } from '../utils/categories'
+import { budgetAvailable } from '../utils/budgets'
 import { formatMonthLabel } from '../utils/months'
 import { groupAssetAccounts } from '../utils/accountGroups'
 
@@ -89,6 +90,7 @@ interface BudgetItem {
   limit: number
   spent: number
   color: string
+  rollover?: number
   virtual?: boolean
 }
 
@@ -396,8 +398,10 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
   const budgetOver = budgetData ? budgetData.total_spent > budgetData.total_limit : false
   const sortedBudgetItems = budgetData
     ? [...budgetData.budgets].sort((a, b) => {
-        const aPct = a.limit > 0 ? (a.spent / a.limit) * 100 : 0
-        const bPct = b.limit > 0 ? (b.spent / b.limit) * 100 : 0
+        const aCap = budgetAvailable(a)
+        const bCap = budgetAvailable(b)
+        const aPct = aCap > 0 ? (a.spent / aCap) * 100 : 0
+        const bPct = bCap > 0 ? (b.spent / bCap) * 100 : 0
         if (bPct !== aPct) return bPct - aPct
         if (b.spent !== a.spent) return b.spent - a.spent
         return a.category.localeCompare(b.category)
@@ -715,8 +719,9 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
               <div className="flex flex-col gap-2.5 mt-[13px] flex-1 justify-between">
                 {sortedBudgetItems.slice(0, 6).map(budget => {
                   const isVirtual = Boolean(budget.virtual)
-                  const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (isVirtual ? 100 : 0)
-                  const over = !isVirtual && budget.spent > budget.limit
+                  const cap = budgetAvailable(budget)
+                  const pct = cap > 0 ? (budget.spent / cap) * 100 : (isVirtual ? 100 : 0)
+                  const over = !isVirtual && budget.spent > cap
                   return (
                     <div key={budget.id}>
                       <div className="flex justify-between text-[11.5px] mb-[5px] gap-2">
@@ -728,7 +733,11 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
                         >
                           {isVirtual
                             ? `$${fmt(budget.spent)}`
-                            : `$${fmt(budget.spent)} / $${Math.round(budget.limit).toLocaleString('en-US')}`}
+                            : `$${fmt(budget.spent)} / ${
+                                cap < 0
+                                  ? `−$${Math.abs(Math.round(cap)).toLocaleString('en-US')}`
+                                  : `$${Math.round(cap).toLocaleString('en-US')}`
+                              }`}
                         </span>
                       </div>
                       <ProgressBar pct={pct} color={over ? '#f4907f' : budget.color} glow={over} />

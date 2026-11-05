@@ -166,6 +166,7 @@ class BudgetVsActualItem:
     percent_used: float
     over_budget: bool
     color: str
+    rollover: float = 0.0
     virtual: bool = False
 
 
@@ -1029,24 +1030,38 @@ def build_budget_vs_actual(ldb: Session, bdb: Session, month: str | None = None)
     """Return budget limits and actual spending for the requested month."""
     _, _, _, _, month_key = resolve_month_window(month)
 
-    from app.routes.budgets import get_budget_items
+    from app.routes.budgets import get_budget_items, spendable_amount
 
     items = get_budget_items(bdb, ldb, month_key)
-    budgets = [
-        BudgetVsActualItem(
+    budgets: list[BudgetVsActualItem] = []
+    for item in items:
+        cap = spendable_amount(item.limit, item.rollover, virtual=item.virtual)
+        if cap > 0:
+            percent_used = item.spent / cap * 100
+        elif item.spent > cap:
+            percent_used = 100.0
+        else:
+            percent_used = 0.0
+        budgets.append(BudgetVsActualItem(
             id=item.id,
             category=item.category,
             limit=round(item.limit, 2),
+            rollover=round(item.rollover, 2),
             spent=round(item.spent, 2),
-            remaining=round(item.limit - item.spent, 2),
-            percent_used=round((item.spent / item.limit * 100) if item.limit > 0 else 0.0, 1),
-            over_budget=(not item.virtual) and item.spent > item.limit,
+            remaining=round(cap - item.spent, 2),
+            percent_used=round(percent_used, 1),
+            over_budget=(not item.virtual) and item.spent > cap,
             color=item.color,
             virtual=item.virtual,
-        )
-        for item in items
-    ]
-    total_limit = round(sum(item.limit for item in budgets if not item.virtual), 2)
+        ))
+    total_limit = round(
+        sum(
+            spendable_amount(item.limit, item.rollover, virtual=item.virtual)
+            for item in budgets
+            if not item.virtual
+        ),
+        2,
+    )
     total_spent = round(sum(item.spent for item in budgets), 2)
     return BudgetVsActualData(
         month=month_key,
