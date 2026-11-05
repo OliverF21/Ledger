@@ -147,6 +147,7 @@ class BudgetVsActualItemResult(BaseModel):
     percent_used: float
     over_budget: bool
     color: str
+    rollover: float = 0.0
     virtual: bool = False
 
 

@@ -481,7 +481,11 @@ def get_budget_vs_actual(
         Field(description="Calendar month in YYYY-MM format. Defaults to the current month."),
     ] = None,
 ) -> BudgetVsActualResult:
-    """Return monthly budget limits versus actual spending."""
+    """Return monthly budget limits versus actual spending.
+
+    Unspent and overspent amounts roll into later months. `rollover` is that
+    signed leftover; `remaining` is limit + rollover - spent.
+    """
     with ledger_session() as ledger_db, budgets_session() as budget_db:
         result = build_budget_vs_actual(ledger_db, budget_db, month=month)
 
@@ -495,11 +499,13 @@ def get_budget_vs_actual(
                 id=item.id,
                 category=item.category,
                 limit=item.limit,
+                rollover=item.rollover,
                 spent=item.spent,
                 remaining=item.remaining,
                 percent_used=item.percent_used,
                 over_budget=item.over_budget,
                 color=item.color,
+                virtual=item.virtual,
             )
             for item in result.budgets
         ],

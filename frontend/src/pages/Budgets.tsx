@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { apiFetch } from '../api/client'
 import { formatCategory } from '../utils/categories'
+import { budgetAvailable, budgetRollover } from '../utils/budgets'
 import { getMonthOptions, currentMonthValue } from '../utils/months'
 import { alphaColor } from '../utils/color'
 import { useSubscriptions, type SubscriptionItem } from '../hooks/useSubscriptions'
@@ -19,6 +20,7 @@ interface BudgetItem {
   limit: number
   spent: number
   color: string
+  rollover?: number
   virtual?: boolean
 }
 
@@ -187,6 +189,13 @@ function BudgetModal({ month, editing, onClose, onSaved }: ModalProps) {
                 className="w-full glass-chip pl-[24px] pr-[12px] py-[8px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faintest focus:outline-none focus:border-white/60"
               />
             </div>
+            {editing && budgetRollover(editing) !== 0 && (
+              <p className="text-[12px] text-ledger-text-faint mt-[6px] leading-snug">
+                {budgetRollover(editing) > 0
+                  ? `$${fmt(budgetRollover(editing))} rolled over from prior months is added on top of this limit.`
+                  : `$${fmt(Math.abs(budgetRollover(editing)))} overspent in prior months comes out of this limit.`}
+              </p>
+            )}
           </div>
 
           {!editing && (
@@ -318,7 +327,7 @@ export default function Budgets() {
         return {
           ...prev,
           budgets: remainingBudgets,
-          total_limit: remainingBudgets.reduce((sum, b) => sum + b.limit, 0),
+          total_limit: remainingBudgets.reduce((sum, b) => sum + (b.virtual ? 0 : budgetAvailable(b)), 0),
           total_spent: remainingBudgets.reduce((sum, b) => sum + b.spent, 0),
         }
       })
@@ -351,34 +360,36 @@ export default function Budgets() {
     const aVirtual = Boolean(a.virtual)
     const bVirtual = Boolean(b.virtual)
     if (aVirtual !== bVirtual) return aVirtual ? 1 : -1
-    const aOver = !aVirtual && a.spent > a.limit
-    const bOver = !bVirtual && b.spent > b.limit
+    const aCap = budgetAvailable(a)
+    const bCap = budgetAvailable(b)
+    const aOver = !aVirtual && a.spent > aCap
+    const bOver = !bVirtual && b.spent > bCap
     if (aOver !== bOver) return aOver ? -1 : 1
-    const aPct = a.limit > 0 ? a.spent / a.limit : 0
-    const bPct = b.limit > 0 ? b.spent / b.limit : 0
+    const aPct = aCap > 0 ? a.spent / aCap : 0
+    const bPct = bCap > 0 ? b.spent / bCap : 0
     if (bPct !== aPct) return bPct - aPct
     return a.category.localeCompare(b.category)
   })
 
-  const overBudgets = budgets.filter(b => !b.virtual && b.spent > b.limit)
+  const overBudgets = budgets.filter(b => !b.virtual && b.spent > budgetAvailable(b))
   const insights: Insight[] = overBudgets.map(b => ({
     id: `over-${b.id}`,
     kind: 'over' as const,
     title: `${formatCategory(b.category)} is over budget`,
-    detail: `You've spent $${fmt(b.spent - b.limit)} more than planned`,
+    detail: `You've spent $${fmt(b.spent - budgetAvailable(b))} more than this month's budget`,
     budgetId: b.id,
   }))
 
   if (overBudgets.length === 0) {
     const best = budgets
-      .filter(b => !b.virtual && b.limit > 0 && b.spent / b.limit <= 0.85)
-      .sort((a, b) => (a.spent / a.limit) - (b.spent / b.limit))[0]
+      .filter(b => !b.virtual && budgetAvailable(b) > 0 && b.spent / budgetAvailable(b) <= 0.85)
+      .sort((a, b) => (a.spent / budgetAvailable(a)) - (b.spent / budgetAvailable(b)))[0]
     if (best) {
       insights.push({
         id: `ok-${best.id}`,
         kind: 'ok',
         title: `${formatCategory(best.category)}: You're doing great`,
-        detail: `$${fmt(best.limit - best.spent)} remaining in this category`,
+        detail: `$${fmt(budgetAvailable(best) - best.spent)} remaining in this category`,
         budgetId: best.id,
       })
     }
@@ -595,8 +606,10 @@ export default function Budgets() {
             <div className="flex flex-col gap-[18px] flex-1 min-h-0">
               {sortedBudgets.map(budget => {
                 const isVirtual = Boolean(budget.virtual)
-                const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (isVirtual ? 100 : 0)
-                const isOver = !isVirtual && budget.spent > budget.limit
+                const cap = budgetAvailable(budget)
+                const rollover = budgetRollover(budget)
+                const pct = cap > 0 ? (budget.spent / cap) * 100 : (isVirtual || budget.spent > cap ? 100 : 0)
+                const isOver = !isVirtual && budget.spent > cap
                 const Icon = categoryIcon(budget.category)
                 const iconColor = isOver ? TRACK_OVER : (isVirtual ? '#8a909c' : budget.color || TRACK_OK)
                 return (
@@ -649,7 +662,9 @@ export default function Budgets() {
                             ) : (
                               <>
                                 ${fmt(budget.spent)}
-                                <span className="text-ledger-text-faint"> / ${fmt(budget.limit)}</span>
+                                <span className="text-ledger-text-faint">
+                                  {' / '}{cap < 0 ? `−$${fmt(Math.abs(cap))}` : `$${fmt(cap)}`}
+                                </span>
                               </>
                             )}
                           </span>
@@ -694,7 +709,14 @@ export default function Budgets() {
                     </div>
                     {isOver && (
                       <p className="text-[12px] text-ledger-negative mt-[6px] ml-[48px]">
-                        Over budget by ${fmt(budget.spent - budget.limit)}
+                        Over budget by ${fmt(budget.spent - cap)}
+                      </p>
+                    )}
+                    {!isVirtual && rollover !== 0 && (
+                      <p className={`text-[11.5px] mt-[6px] ml-[48px] ${rollover < 0 ? 'text-ledger-negative-soft' : 'text-ledger-text-faint'}`}>
+                        {rollover > 0
+                          ? `Includes $${fmt(rollover)} rolled over`
+                          : `$${fmt(Math.abs(rollover))} overspent in prior months`}
                       </p>
                     )}
                     {isVirtual && (

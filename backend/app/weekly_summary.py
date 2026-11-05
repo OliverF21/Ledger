@@ -30,7 +30,7 @@ from app.analytics_shared import (
 from app.txn_classifier import classify_orm_transaction
 from app.email_sender import get_resend_api_key, send_email
 from app.models import Transaction, User
-from app.routes.budgets import get_budget_items
+from app.routes.budgets import get_budget_items, spendable_amount
 
 logger = logging.getLogger("ledger")
 
@@ -179,12 +179,13 @@ def compute_weekly_summary(db: Session, bdb: Session, today: date | None = None)
         if b.virtual:
             misc_spent += b.spent
             continue
-        used_pct = (b.spent / b.limit * 100) if b.limit > 0 else 0.0
+        cap = spendable_amount(b.limit, b.rollover, virtual=b.virtual)
+        used_pct = (b.spent / cap * 100) if cap > 0 else (100.0 if b.spent > cap else 0.0)
         elapsed_frac = month_elapsed_pct / 100 or 1e-9
         budgets.append(BudgetPaceItem(
             category=b.category,
             spent=b.spent,
-            limit=b.limit,
+            limit=cap,
             color=b.color,
             used_pct=round(used_pct, 1),
             pace_delta=round(used_pct - month_elapsed_pct, 1),

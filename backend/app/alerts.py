@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.models import Transaction, User
-from app.routes.budgets import get_budget_items
+from app.routes.budgets import get_budget_items, spendable_amount
 
 # Documented defaults - _ensure_columns()'s ALTER TABLE ADD COLUMN carries no
 # DEFAULT clause, so these columns are NULL on rows that existed before the
@@ -83,11 +83,12 @@ def compute_active_alerts(
         today = date.today()
         month_key = f"{today.year:04d}-{today.month:02d}"
         budget_items = get_budget_items(bdb, db, month_key)
-        budget_exceeded = [
-            BudgetExceededItem(category=b.category, spent=b.spent, limit=b.limit)
-            for b in budget_items
-            if (not b.virtual) and b.spent > b.limit
-        ]
+        for b in budget_items:
+            cap = spendable_amount(b.limit, b.rollover, virtual=b.virtual)
+            if (not b.virtual) and b.spent > cap:
+                budget_exceeded.append(
+                    BudgetExceededItem(category=b.category, spent=b.spent, limit=cap)
+                )
 
     large_transactions: list[LargeTransactionItem] = []
     if prefs.large_txn_enabled:
