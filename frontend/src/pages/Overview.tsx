@@ -90,6 +90,7 @@ interface BudgetItem {
   spent: number
   color: string
   virtual?: boolean
+  recurring?: boolean
 }
 
 interface BudgetsData {
@@ -715,8 +716,10 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
               <div className="flex flex-col gap-2.5 mt-[13px] flex-1 justify-between">
                 {sortedBudgetItems.slice(0, 6).map(budget => {
                   const isVirtual = Boolean(budget.virtual)
-                  const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (isVirtual ? 100 : 0)
-                  const over = !isVirtual && budget.spent > budget.limit
+                  const isRecurring = Boolean(budget.recurring)
+                  const misc = isVirtual && !isRecurring
+                  const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (misc ? 100 : 0)
+                  const over = !misc && budget.spent > budget.limit
                   return (
                     <div key={budget.id}>
                       <div className="flex justify-between text-[11.5px] mb-[5px] gap-2">
@@ -726,7 +729,7 @@ export default function Overview({ onNavigate, month: selectedMonth }: OverviewP
                         <span
                           className={`whitespace-nowrap ${over ? 'text-ledger-negative-soft font-bold' : 'text-white/[0.56]'}`}
                         >
-                          {isVirtual
+                          {misc
                             ? `$${fmt(budget.spent)}`
                             : `$${fmt(budget.spent)} / $${Math.round(budget.limit).toLocaleString('en-US')}`}
                         </span>

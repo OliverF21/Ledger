@@ -18,6 +18,11 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.analytics_shared import (
+    budget_parent_key,
+    category_key_for_spending_rules,
+    is_excluded_from_budget_spending,
+)
 from app.models import Transaction
 
 TRAILING_MONTHS = 12
@@ -60,12 +65,30 @@ def normalize_merchant(merchant: str) -> str:
 @dataclass
 class RecurringSeries:
     merchant: str
+    merchant_key: str
     category: str
+    parent_key: str | None
     cadence: str
     average_amount: float
+    first_date: date
     last_date: date
     next_expected_date: date
+    expected_days: int
     occurrence_count: int
+    occurrence_dates: tuple[date, ...]
+    budget_eligible: bool
+
+
+@dataclass
+class RecurringBudgetLine:
+    """Expected recurring spend to reserve in one calendar month."""
+
+    merchant_key: str
+    merchant: str
+    category: str
+    parent_key: str | None
+    cadence: str
+    expected_amount: float
 
 
 def _classify_cadence(gaps: list[int]) -> tuple[str, int] | None:
@@ -90,9 +113,113 @@ def _most_common_category(txns: list[Transaction]) -> str:
     return max(counts.items(), key=lambda kv: kv[1])[0]
 
 
-def detect_recurring_series(db: Session, months: int = TRAILING_MONTHS) -> list[RecurringSeries]:
+def _most_common_parent(txns: list[Transaction]) -> str | None:
+    counts: dict[str, int] = defaultdict(int)
+    for t in txns:
+        parent = budget_parent_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
+        if parent:
+            counts[parent] += 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda kv: kv[1])[0]
+
+
+def _is_budget_eligible(txns: list[Transaction]) -> bool:
+    """True when the series is consumptive spend, not transfers or loan payments.
+
+    A single miscategorized charge should not hide a real subscription, and a
+    transfer that happens to repeat should not become a spending budget.
+    """
+    if not txns:
+        return False
+    eligible = 0
+    for t in txns:
+        key = category_key_for_spending_rules(
+            t.category_user, t.category_plaid, t.category_plaid_detailed
+        )
+        if not is_excluded_from_budget_spending(key):
+            eligible += 1
+    return eligible * 2 >= len(txns)
+
+
+def _cadence_tolerance(cadence: str) -> int:
+    for name, _expected_days, tolerance in _CADENCES:
+        if name == cadence:
+            return tolerance
+    return MONTHLY_TOLERANCE
+
+
+def _projected_dates(
+    anchor: date,
+    step: int,
+    start: date,
+    end: date,
+    earliest: date,
+    latest: date,
+) -> list[date]:
+    """Dates `anchor + k*step` inside [start, end), clamped to [earliest, latest)."""
+    if step <= 0 or end <= start:
+        return []
+    window_start = max(start, earliest)
+    window_end = min(end, latest)
+    if window_end <= window_start:
+        return []
+    delta = (window_start - anchor).days
+    if delta <= 0:
+        k = -((-delta) // step)
+    else:
+        k = (delta + step - 1) // step
+    dates: list[date] = []
+    for _ in range(48):
+        current = anchor + timedelta(days=k * step)
+        if current >= window_end:
+            break
+        if current >= window_start:
+            dates.append(current)
+        k += 1
+    return dates
+
+
+def _charges_budgeted_in_month(
+    series: RecurringSeries,
+    start: date,
+    end: date,
+    as_of: date,
+) -> int:
+    """How many charges to reserve in [start, end).
+
+    Monthly and annual series reserve one bill in a month where a charge is
+    expected or already posted, and more only when more than one actually
+    posted. Weekly series reserve each projected (or posted) occurrence.
+    A lapsed series is not projected past the missed cycle.
+    """
+    tolerance = _cadence_tolerance(series.cadence)
+    active = as_of <= series.next_expected_date + timedelta(days=tolerance)
+    latest = end if active else min(end, series.next_expected_date + timedelta(days=tolerance + 1))
+    projected = _projected_dates(
+        series.last_date,
+        series.expected_days,
+        start,
+        end,
+        series.first_date,
+        latest,
+    )
+    actual = [d for d in series.occurrence_dates if start <= d < end]
+    if series.cadence == "weekly":
+        return max(len(projected), len(actual))
+    if not projected and not actual:
+        return 0
+    return max(1, len(actual))
+
+
+def detect_recurring_series(
+    db: Session,
+    months: int = TRAILING_MONTHS,
+    as_of: date | None = None,
+) -> list[RecurringSeries]:
     """Detect recurring (subscription-like) charges over the trailing window."""
-    cutoff = date.today() - timedelta(days=months * 31)
+    today = as_of or date.today()
+    cutoff = today - timedelta(days=months * 31)
 
     txns = (
         db.query(Transaction)
@@ -101,6 +228,7 @@ def detect_recurring_series(db: Session, months: int = TRAILING_MONTHS) -> list[
             Transaction.hidden == False,
             Transaction.amount > 0,
             Transaction.date >= cutoff,
+            Transaction.date <= today,
         )
         .order_by(Transaction.date.asc())
         .all()
@@ -136,13 +264,46 @@ def detect_recurring_series(db: Session, months: int = TRAILING_MONTHS) -> list[
         last_txn = group_txns[-1]
         results.append(RecurringSeries(
             merchant=last_txn.merchant or "",
+            merchant_key=normalize_merchant(last_txn.merchant or ""),
             category=_most_common_category(group_txns),
+            parent_key=_most_common_parent(group_txns),
             cadence=cadence,
             average_amount=round(avg_amount, 2),
+            first_date=group_txns[0].date,
             last_date=last_txn.date,
             next_expected_date=last_txn.date + timedelta(days=expected_days),
+            expected_days=expected_days,
             occurrence_count=len(group_txns),
+            occurrence_dates=tuple(t.date for t in group_txns),
+            budget_eligible=_is_budget_eligible(group_txns),
         ))
 
     results.sort(key=lambda r: r.average_amount, reverse=True)
     return results
+
+
+def recurring_budget_lines(
+    db: Session,
+    month_start: date,
+    month_end: date,
+    as_of: date | None = None,
+) -> list[RecurringBudgetLine]:
+    """Recurring series that should reserve money in [month_start, month_end)."""
+    today = as_of or date.today()
+    lines: list[RecurringBudgetLine] = []
+    for series in detect_recurring_series(db, as_of=today):
+        if not series.budget_eligible or series.average_amount <= 0:
+            continue
+        count = _charges_budgeted_in_month(series, month_start, month_end, today)
+        if count <= 0:
+            continue
+        lines.append(RecurringBudgetLine(
+            merchant_key=series.merchant_key,
+            merchant=series.merchant,
+            category=series.category,
+            parent_key=series.parent_key,
+            cadence=series.cadence,
+            expected_amount=round(series.average_amount * count, 2),
+        ))
+    lines.sort(key=lambda line: line.merchant.lower())
+    return lines

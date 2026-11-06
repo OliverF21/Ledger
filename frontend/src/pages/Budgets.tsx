@@ -20,6 +20,7 @@ interface BudgetItem {
   spent: number
   color: string
   virtual?: boolean
+  recurring?: boolean
 }
 
 interface BudgetsData {
@@ -347,12 +348,15 @@ export default function Budgets() {
   const totalPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0
   const daysLeft = daysLeftInMonth(selectedMonth)
 
+  const isMisc = (b: BudgetItem) => Boolean(b.virtual) && !b.recurring
+  const isPlanned = (b: BudgetItem) => !b.virtual || Boolean(b.recurring)
+
   const sortedBudgets = [...budgets].sort((a, b) => {
-    const aVirtual = Boolean(a.virtual)
-    const bVirtual = Boolean(b.virtual)
-    if (aVirtual !== bVirtual) return aVirtual ? 1 : -1
-    const aOver = !aVirtual && a.spent > a.limit
-    const bOver = !bVirtual && b.spent > b.limit
+    const aMisc = isMisc(a)
+    const bMisc = isMisc(b)
+    if (aMisc !== bMisc) return aMisc ? 1 : -1
+    const aOver = !aMisc && a.spent > a.limit
+    const bOver = !bMisc && b.spent > b.limit
     if (aOver !== bOver) return aOver ? -1 : 1
     const aPct = a.limit > 0 ? a.spent / a.limit : 0
     const bPct = b.limit > 0 ? b.spent / b.limit : 0
@@ -360,7 +364,7 @@ export default function Budgets() {
     return a.category.localeCompare(b.category)
   })
 
-  const overBudgets = budgets.filter(b => !b.virtual && b.spent > b.limit)
+  const overBudgets = budgets.filter(b => isPlanned(b) && b.spent > b.limit)
   const insights: Insight[] = overBudgets.map(b => ({
     id: `over-${b.id}`,
     kind: 'over' as const,
@@ -371,7 +375,7 @@ export default function Budgets() {
 
   if (overBudgets.length === 0) {
     const best = budgets
-      .filter(b => !b.virtual && b.limit > 0 && b.spent / b.limit <= 0.85)
+      .filter(b => isPlanned(b) && b.limit > 0 && b.spent / b.limit <= 0.85)
       .sort((a, b) => (a.spent / a.limit) - (b.spent / b.limit))[0]
     if (best) {
       insights.push({
@@ -595,10 +599,12 @@ export default function Budgets() {
             <div className="flex flex-col gap-[18px] flex-1 min-h-0">
               {sortedBudgets.map(budget => {
                 const isVirtual = Boolean(budget.virtual)
-                const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (isVirtual ? 100 : 0)
-                const isOver = !isVirtual && budget.spent > budget.limit
-                const Icon = categoryIcon(budget.category)
-                const iconColor = isOver ? TRACK_OVER : (isVirtual ? '#8a909c' : budget.color || TRACK_OK)
+                const isRecurring = Boolean(budget.recurring)
+                const misc = isVirtual && !isRecurring
+                const pct = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : (misc ? 100 : 0)
+                const isOver = !misc && budget.spent > budget.limit
+                const Icon = isRecurring ? Repeat : categoryIcon(budget.category)
+                const iconColor = isOver ? TRACK_OVER : (misc ? '#8a909c' : budget.color || TRACK_OK)
                 return (
                   <div
                     key={budget.id}
@@ -618,7 +624,7 @@ export default function Budgets() {
                         <div className="flex items-baseline justify-between gap-[10px]">
                           <span className="flex items-center gap-[6px] min-w-0">
                             <span className="text-[13.5px] font-semibold truncate">{formatCategory(budget.category)}</span>
-                            {!isVirtual && (
+                            {!isVirtual && !isRecurring && (
                               <span className="flex items-center shrink-0">
                                 <button
                                   type="button"
@@ -644,7 +650,7 @@ export default function Budgets() {
                             )}
                           </span>
                           <span className={`text-[13px] tabular-nums shrink-0 ${isOver ? 'text-ledger-negative' : 'text-ledger-text-secondary'}`}>
-                            {isVirtual ? (
+                            {misc ? (
                               `$${fmt(budget.spent)}`
                             ) : (
                               <>
@@ -657,7 +663,7 @@ export default function Budgets() {
                       </div>
                     </div>
 
-                    {!isVirtual && confirmingDeleteId === budget.id && (
+                    {!misc && confirmingDeleteId === budget.id && (
                       <div className="flex items-center justify-between gap-[10px] mt-[10px] ml-[48px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
                         <span className="text-[12px] text-ledger-text-secondary">Remove this budget?</span>
                         <div className="flex items-center gap-[8px] shrink-0">
@@ -685,7 +691,7 @@ export default function Budgets() {
                         <ProgressBar
                           pct={pct}
                           height={8}
-                          color={isOver ? TRACK_OVER : isVirtual ? '#adb8cb' : TRACK_OK}
+                          color={isOver ? TRACK_OVER : misc ? '#adb8cb' : TRACK_OK}
                         />
                       </div>
                       <span className={`text-[12px] tabular-nums w-[40px] text-right shrink-0 ${isOver ? 'text-ledger-negative' : 'text-ledger-text-faint'}`}>
@@ -697,9 +703,14 @@ export default function Budgets() {
                         Over budget by ${fmt(budget.spent - budget.limit)}
                       </p>
                     )}
-                    {isVirtual && (
+                    {misc && (
                       <p className="text-[11.5px] text-ledger-text-faint mt-[6px] ml-[48px]">
                         Outside tracked categories
+                      </p>
+                    )}
+                    {isRecurring && (
+                      <p className="text-[11.5px] text-ledger-text-faint mt-[6px] ml-[48px]">
+                        Included automatically
                       </p>
                     )}
                   </div>

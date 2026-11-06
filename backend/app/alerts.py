@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.models import Transaction, User
-from app.routes.budgets import get_budget_items
+from app.routes.budgets import get_budget_items, is_planned_budget_line
 
 # Documented defaults - _ensure_columns()'s ALTER TABLE ADD COLUMN carries no
 # DEFAULT clause, so these columns are NULL on rows that existed before the
@@ -86,7 +86,7 @@ def compute_active_alerts(
         budget_exceeded = [
             BudgetExceededItem(category=b.category, spent=b.spent, limit=b.limit)
             for b in budget_items
-            if (not b.virtual) and b.spent > b.limit
+            if is_planned_budget_line(b.virtual, b.recurring) and b.spent > b.limit
         ]
 
     large_transactions: list[LargeTransactionItem] = []

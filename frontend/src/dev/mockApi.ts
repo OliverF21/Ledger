@@ -139,6 +139,8 @@ const BUDGETS = [
   { id: 4, category: 'TRANSPORTATION', limit: 450, spent: 388.45, color: '#a196fa' },
   { id: 5, category: 'RENT_AND_UTILITIES', limit: 2100, spent: 1850, color: '#82a9f2' },
   { id: 6, category: 'PERSONAL_CARE', limit: 300, spent: 268.3, color: '#74d8a8' },
+  // iCloud+ isn't inside a category budget, so the API reserves it automatically.
+  { id: -1204, category: 'iCloud+', limit: 9.99, spent: 9.99, color: '#a196fa', virtual: true, recurring: true },
 ]
 
 const TOTAL_ASSETS = 250330.87
