@@ -500,6 +500,8 @@ def get_budget_vs_actual(
                 percent_used=item.percent_used,
                 over_budget=item.over_budget,
                 color=item.color,
+                virtual=item.virtual,
+                recurring=item.recurring,
             )
             for item in result.budgets
         ],
