@@ -10,6 +10,7 @@ tolerances are approximate. May occasionally over-merge distinct merchants
 or miss genuinely recurring charges with irregular billing.
 """
 
+import calendar
 import re
 import statistics
 from collections import defaultdict
@@ -149,6 +150,29 @@ def _cadence_tolerance(cadence: str) -> int:
     return MONTHLY_TOLERANCE
 
 
+def _shift_month(anchor: date, months: int) -> date:
+    """Same day of month, `months` later. Day 31 lands on the last day of a short month."""
+    month_index = anchor.month - 1 + months
+    year = anchor.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(anchor.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _shift_year(anchor: date, years: int) -> date:
+    year = anchor.year + years
+    day = min(anchor.day, calendar.monthrange(year, anchor.month)[1])
+    return date(year, anchor.month, day)
+
+
+def _next_occurrence(last: date, cadence: str, expected_days: int) -> date:
+    if cadence == "monthly":
+        return _shift_month(last, 1)
+    if cadence == "annual":
+        return _shift_year(last, 1)
+    return last + timedelta(days=expected_days)
+
+
 def _projected_dates(
     anchor: date,
     step: int,
@@ -180,6 +204,39 @@ def _projected_dates(
     return dates
 
 
+def _projected_calendar_dates(
+    anchor: date,
+    start: date,
+    end: date,
+    earliest: date,
+    latest: date,
+    shift,
+) -> list[date]:
+    """Dates from stepping `shift(anchor, k)` inside the same window as `_projected_dates`.
+
+    A 30-day step from the 31st skips February. Calendar months keep the day
+    and clamp it, so January 31 reserves February 28.
+    """
+    window_start = max(start, earliest)
+    window_end = min(end, latest)
+    if window_end <= window_start:
+        return []
+    k = 0
+    for _ in range(48):
+        if shift(anchor, k) < window_start:
+            break
+        k -= 1
+    dates: list[date] = []
+    for _ in range(48):
+        k += 1
+        current = shift(anchor, k)
+        if current >= window_end:
+            break
+        if current >= window_start:
+            dates.append(current)
+    return dates
+
+
 def _charges_budgeted_in_month(
     series: RecurringSeries,
     start: date,
@@ -196,14 +253,23 @@ def _charges_budgeted_in_month(
     tolerance = _cadence_tolerance(series.cadence)
     active = as_of <= series.next_expected_date + timedelta(days=tolerance)
     latest = end if active else min(end, series.next_expected_date + timedelta(days=tolerance + 1))
-    projected = _projected_dates(
-        series.last_date,
-        series.expected_days,
-        start,
-        end,
-        series.first_date,
-        latest,
-    )
+    if series.cadence == "annual":
+        projected = _projected_calendar_dates(
+            series.last_date, start, end, series.first_date, latest, _shift_year
+        )
+    elif series.cadence == "monthly":
+        projected = _projected_calendar_dates(
+            series.last_date, start, end, series.first_date, latest, _shift_month
+        )
+    else:
+        projected = _projected_dates(
+            series.last_date,
+            series.expected_days,
+            start,
+            end,
+            series.first_date,
+            latest,
+        )
     actual = [d for d in series.occurrence_dates if start <= d < end]
     if series.cadence == "weekly":
         return max(len(projected), len(actual))
@@ -271,7 +337,7 @@ def detect_recurring_series(
             average_amount=round(avg_amount, 2),
             first_date=group_txns[0].date,
             last_date=last_txn.date,
-            next_expected_date=last_txn.date + timedelta(days=expected_days),
+            next_expected_date=_next_occurrence(last_txn.date, cadence, expected_days),
             expected_days=expected_days,
             occurrence_count=len(group_txns),
             occurrence_dates=tuple(t.date for t in group_txns),

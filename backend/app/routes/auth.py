@@ -32,6 +32,7 @@ from app.auth import (
     hash_password,
     is_loopback_host,
     is_valid_email,
+    request_client_host,
     mask_email,
     normalize_recovery_code,
     require_auth,
@@ -89,7 +90,8 @@ def _is_local_only(user: User | None) -> bool:
 
 
 def _require_loopback(request: Request) -> None:
-    host = request.client.host if request.client else None
+    peer = request.client.host if request.client else None
+    host = request_client_host(peer, request.headers.get("x-forwarded-for"))
     if not is_loopback_host(host):
         raise HTTPException(
             status_code=403,
