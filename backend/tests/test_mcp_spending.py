@@ -372,6 +372,213 @@ def test_monthly_summary_excludes_investment_funding_from_spending_pie(db_sessio
     assert result.transaction_count == 3
 
 
+def _link_transfer_pair(session: Session, outflow: Transaction, inflow: Transaction) -> None:
+    session.add_all([outflow, inflow])
+    session.flush()
+    outflow.transfer_match_transaction_id = inflow.id
+    inflow.transfer_match_transaction_id = outflow.id
+    session.commit()
+
+
+def test_monthly_summary_excludes_matched_investment_transfer(db_session: Session):
+    """A matched investment-category outflow is a transfer, not Overview spend.
+
+    TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS is allowlisted for unmatched
+    funding. Once transfer_match_transaction_id is set, the classifier returns
+    transfer and both Overview and Cash Flow must leave it out of spending and
+    income. The paired savings deposit must not count as income either.
+    """
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    savings = Account(
+        item=checking.item,
+        plaid_account_id="acct_savings_match",
+        name="Savings",
+        type="depository",
+        subtype="savings",
+        current_balance=Decimal("8000.00"),
+    )
+    db_session.add(savings)
+    db_session.flush()
+
+    _link_transfer_pair(
+        db_session,
+        Transaction(
+            account=checking,
+            merchant="Robinhood Money",
+            amount=Decimal("2941.00"),
+            date=date(2026, 6, 12),
+            category_plaid="TRANSFER_OUT",
+            category_plaid_detailed="TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
+            pending=False,
+            removed=False,
+            hidden=False,
+        ),
+        Transaction(
+            account=savings,
+            merchant="From Capital One",
+            amount=Decimal("-2941.00"),
+            date=date(2026, 6, 12),
+            category_plaid="TRANSFER_IN",
+            category_plaid_detailed="TRANSFER_IN_DEPOSIT",
+            pending=False,
+            removed=False,
+            hidden=False,
+        ),
+    )
+
+    summary = build_monthly_summary(db_session, month="2026-06")
+    flow = build_cash_flow(db_session, month="2026-06")
+
+    assert "Investments" not in [item.name for item in summary.spending_by_category]
+    assert summary.total_spending == flow.total_spending == 1219.0
+    assert summary.total_income == flow.total_income == 3000.0
+    assert "Investments" not in {node.id for node in flow.allocation_nodes}
+    assert "Investments" not in {node.label for node in flow.spending_categories}
+
+
+def test_monthly_summary_excludes_matched_transfer_with_spending_category(db_session: Session):
+    """A matched card payment stays a transfer even when Plaid left a purchase category."""
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    card = db_session.query(Account).filter_by(plaid_account_id="acct_card").one()
+
+    _link_transfer_pair(
+        db_session,
+        Transaction(
+            account=checking,
+            merchant="Robinhood Card",
+            amount=Decimal("42.00"),
+            date=date(2026, 6, 14),
+            category_plaid="FOOD_AND_DRINK",
+            category_plaid_detailed="FOOD_AND_DRINK_RESTAURANTS",
+            pending=False,
+            removed=False,
+            hidden=False,
+        ),
+        Transaction(
+            account=card,
+            merchant="Payment Thank You",
+            amount=Decimal("-42.00"),
+            date=date(2026, 6, 14),
+            category_plaid="LOAN_PAYMENTS",
+            category_plaid_detailed="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+            pending=False,
+            removed=False,
+            hidden=False,
+        ),
+    )
+
+    summary = build_monthly_summary(db_session, month="2026-06")
+    flow = build_cash_flow(db_session, month="2026-06")
+    food = next(item for item in summary.spending_by_category if item.name == "FOOD_AND_DRINK")
+
+    assert food.value == 220.0
+    assert summary.total_spending == flow.total_spending == 1219.0
+
+
+def test_overview_and_cash_flow_agree_on_spending_and_income(db_session: Session):
+    """One month of income, spend, unmatched funding, and a matched transfer."""
+    checking = db_session.query(Account).filter_by(plaid_account_id="acct_checking").one()
+    card = db_session.query(Account).filter_by(plaid_account_id="acct_card").one()
+    savings = Account(
+        item=checking.item,
+        plaid_account_id="acct_savings_july",
+        name="Savings",
+        type="depository",
+        subtype="savings",
+        current_balance=Decimal("4000.00"),
+    )
+    db_session.add(savings)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            Transaction(
+                account=checking,
+                merchant="Employer Inc",
+                amount=Decimal("-2400.00"),
+                date=date(2026, 7, 1),
+                category_user="Paycheck",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            Transaction(
+                account=card,
+                merchant="Corner Market",
+                amount=Decimal("80.00"),
+                date=date(2026, 7, 4),
+                category_plaid="FOOD_AND_DRINK",
+                category_plaid_detailed="FOOD_AND_DRINK_GROCERIES",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            Transaction(
+                account=card,
+                merchant="Cinema",
+                amount=Decimal("40.00"),
+                date=date(2026, 7, 6),
+                category_plaid="ENTERTAINMENT",
+                category_plaid_detailed="ENTERTAINMENT_TV_AND_MOVIES",
+                user_split_pct=Decimal("0.5000"),
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+            Transaction(
+                account=checking,
+                merchant="Vanguard Contribution",
+                amount=Decimal("500.00"),
+                date=date(2026, 7, 8),
+                category_plaid="TRANSFER_OUT",
+                category_plaid_detailed="TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
+                pending=False,
+                removed=False,
+                hidden=False,
+            ),
+        ]
+    )
+    _link_transfer_pair(
+        db_session,
+        Transaction(
+            account=checking,
+            merchant="Online Transfer",
+            amount=Decimal("200.00"),
+            date=date(2026, 7, 9),
+            category_plaid="TRANSFER_OUT",
+            category_plaid_detailed="TRANSFER_OUT_ACCOUNT_TRANSFER",
+            pending=False,
+            removed=False,
+            hidden=False,
+        ),
+        Transaction(
+            account=savings,
+            merchant="From Checking",
+            amount=Decimal("-200.00"),
+            date=date(2026, 7, 9),
+            category_plaid="TRANSFER_IN",
+            category_plaid_detailed="TRANSFER_IN_DEPOSIT",
+            pending=False,
+            removed=False,
+            hidden=False,
+        ),
+    )
+
+    summary = build_monthly_summary(db_session, month="2026-07")
+    flow = build_cash_flow(db_session, month="2026-07")
+
+    assert summary.total_spending == flow.total_spending == 100.0
+    assert summary.total_income == flow.total_income == 2400.0
+
+    summary_by_label = {item.name: item.value for item in summary.spending_by_category}
+    flow_by_label = {node.label: node.amount for node in flow.spending_categories}
+    assert summary_by_label == flow_by_label == {"FOOD_AND_DRINK": 80.0, "ENTERTAINMENT": 20.0}
+
+    alloc = {node.id: node.amount for node in flow.allocation_nodes}
+    assert alloc["Investments"] == 500.0
+    assert "Investments" not in summary_by_label
+
+
 def test_search_transactions_filters_by_category_and_effective_amount(db_session: Session):
     result = search_transactions(
         db_session,
