@@ -272,13 +272,20 @@ def test_loopback_host():
 
 
 def test_forwarded_for_is_the_client_only_when_the_peer_is_loopback():
+    # The dev proxy appends the address it saw. A caller can prepend a fake one.
     assert auth.request_client_host("127.0.0.1", "192.168.1.10") == "192.168.1.10"
-    assert auth.request_client_host("127.0.0.1", "192.168.1.10, 127.0.0.1") == "192.168.1.10"
+    assert auth.request_client_host("127.0.0.1", "127.0.0.1, 192.168.1.10") == "192.168.1.10"
+    assert auth.request_client_host("127.0.0.1", "192.168.1.10, 127.0.0.1") == "127.0.0.1"
     assert auth.request_client_host("::1", None) == "::1"
+    assert auth.request_client_host("127.0.0.1", " , ") == "127.0.0.1"
     # A remote caller cannot claim to be this computer by setting the header.
     assert auth.request_client_host("192.168.1.20", "127.0.0.1") == "192.168.1.20"
-    assert not auth.is_loopback_host(auth.request_client_host("127.0.0.1", "192.168.1.10"))
-    assert auth.is_loopback_host(auth.request_client_host("127.0.0.1", "127.0.0.1"))
+    assert not auth.is_loopback_host(
+        auth.request_client_host("127.0.0.1", "127.0.0.1, 192.168.1.10")
+    )
+    assert auth.is_loopback_host(
+        auth.request_client_host("127.0.0.1", "192.168.1.10, 127.0.0.1")
+    )
 
 
 def _allow_loopback(monkeypatch):
@@ -305,6 +312,12 @@ def test_proxied_no_account_uses_the_original_client(client):
             headers={"X-Forwarded-For": "192.168.1.10"},
         )
         assert proxied.status_code == 403
+        # A prepended 127.0.0.1 must not win. The proxy appends the real address.
+        prepended = local.post(
+            "/api/auth/continue-without-account",
+            headers={"X-Forwarded-For": "127.0.0.1, 192.168.1.10"},
+        )
+        assert prepended.status_code == 403
         direct = local.post(
             "/api/auth/continue-without-account",
             headers={"X-Forwarded-For": "127.0.0.1"},

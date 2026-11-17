@@ -235,15 +235,17 @@ def request_client_host(peer: str | None, forwarded_for: str | None) -> str | No
     """Host that decides no-account access.
 
     The TCP peer is trusted on its own. A loopback peer may be the dev server
-    proxying someone else, so the original client in X-Forwarded-For is used
-    then. A remote peer cannot present that header and have it believed.
+    proxying someone else. That proxy appends the address it actually saw, so
+    the last X-Forwarded-For entry is the client. The earlier entries are
+    whatever the caller sent, and a remote peer cannot supply the header and
+    have it believed.
     """
     if not is_loopback_host(peer):
         return peer
     if not forwarded_for:
         return peer
-    first = forwarded_for.split(",")[0].strip()
-    return first or peer
+    parts = [part.strip() for part in forwarded_for.split(",") if part.strip()]
+    return parts[-1] if parts else peer
 
 
 # ── Request dependency ──────────────────────────────────────────────────────
