@@ -12,6 +12,10 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_API_BASE_URL || 'http://localhost:8000',
         changeOrigin: true,
+        // The backend only treats a loopback peer as this computer. Without
+        // the original client address, every browser that hits this proxy
+        // looks like 127.0.0.1 and can open a no-account session.
+        xfwd: true,
       }
     }
   },

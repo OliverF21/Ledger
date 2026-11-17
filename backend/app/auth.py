@@ -231,6 +231,21 @@ def is_loopback_host(host: str | None) -> bool:
     return bool(addr.is_loopback)
 
 
+def request_client_host(peer: str | None, forwarded_for: str | None) -> str | None:
+    """Host that decides no-account access.
+
+    The TCP peer is trusted on its own. A loopback peer may be the dev server
+    proxying someone else, so the original client in X-Forwarded-For is used
+    then. A remote peer cannot present that header and have it believed.
+    """
+    if not is_loopback_host(peer):
+        return peer
+    if not forwarded_for:
+        return peer
+    first = forwarded_for.split(",")[0].strip()
+    return first or peer
+
+
 # ── Request dependency ──────────────────────────────────────────────────────
 
 def require_auth(

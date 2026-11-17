@@ -218,6 +218,27 @@ def test_recurring_budgets_appear_with_no_manual_budgets(sessions):
     assert MISC_BUDGET_CATEGORY not in {item.category for item in items}
 
 
+def test_month_end_bill_is_reserved_for_february(sessions):
+    """A charge on the 31st is still due in February, on the last day of the month."""
+    ldb, bdb, checking = sessions
+    ldb.add_all(
+        [
+            _netflix(checking, date(2025, 10, 31)),
+            _netflix(checking, date(2025, 11, 30)),
+            _netflix(checking, date(2025, 12, 31)),
+            _netflix(checking, date(2026, 1, 31)),
+        ]
+    )
+    ldb.commit()
+
+    items = get_budget_items(bdb, ldb, "2026-02", as_of=date(2026, 1, 31))
+    assert len(items) == 1
+    assert items[0].category == "Netflix"
+    assert items[0].recurring is True
+    assert items[0].limit == 15.0
+    assert items[0].spent == 0.0
+
+
 def test_upcoming_recurring_charge_is_reserved_before_it_posts(sessions):
     ldb, bdb, checking = sessions
     ldb.add_all(

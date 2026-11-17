@@ -271,6 +271,16 @@ def test_loopback_host():
     assert not auth.is_loopback_host("")
 
 
+def test_forwarded_for_is_the_client_only_when_the_peer_is_loopback():
+    assert auth.request_client_host("127.0.0.1", "192.168.1.10") == "192.168.1.10"
+    assert auth.request_client_host("127.0.0.1", "192.168.1.10, 127.0.0.1") == "192.168.1.10"
+    assert auth.request_client_host("::1", None) == "::1"
+    # A remote caller cannot claim to be this computer by setting the header.
+    assert auth.request_client_host("192.168.1.20", "127.0.0.1") == "192.168.1.20"
+    assert not auth.is_loopback_host(auth.request_client_host("127.0.0.1", "192.168.1.10"))
+    assert auth.is_loopback_host(auth.request_client_host("127.0.0.1", "127.0.0.1"))
+
+
 def _allow_loopback(monkeypatch):
     monkeypatch.setattr("app.routes.auth.is_loopback_host", lambda host: True)
 
@@ -282,6 +292,30 @@ def test_no_account_endpoints_reject_remote_peers(client):
     status = client.get("/api/setup/status").json()
     assert status["local_only"] is False
     assert status["account_exists"] is False
+
+
+def test_proxied_no_account_uses_the_original_client(client):
+    """The dev server connects from loopback and forwards the browser address."""
+    from fastapi.testclient import TestClient
+    import main
+
+    with TestClient(main.app, client=("127.0.0.1", 50000)) as local:
+        proxied = local.post(
+            "/api/auth/continue-without-account",
+            headers={"X-Forwarded-For": "192.168.1.10"},
+        )
+        assert proxied.status_code == 403
+        direct = local.post(
+            "/api/auth/continue-without-account",
+            headers={"X-Forwarded-For": "127.0.0.1"},
+        )
+        assert direct.status_code == 200
+    with TestClient(main.app, client=("192.168.1.20", 50000)) as remote:
+        spoofed = remote.post(
+            "/api/auth/continue-without-account",
+            headers={"X-Forwarded-For": "127.0.0.1"},
+        )
+        assert spoofed.status_code == 403
 
 
 def test_continue_without_account_then_resume_after_expiry(client, monkeypatch):
