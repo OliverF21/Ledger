@@ -17,9 +17,15 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     username = Column(String(255), unique=True, nullable=False, default="default_user")
-    # NULL password_hash = no account created yet (setup mode); set on registration.
-    # Additively patched onto existing DBs by database._ensure_columns(). See auth.py.
+    # NULL password_hash = no password yet. With local_only unset, that is
+    # first-run setup. With local_only set, the install has no account and this
+    # computer is signed back in without a password. Additively patched onto
+    # existing DBs by database._ensure_columns(). See routes/auth.py.
     password_hash = Column(Text, nullable=True)
+    # True when the user chose to use Ledger on this computer without an
+    # account. NULL on rows from before this column existed, and left unset on
+    # password accounts — both keep the login screen.
+    local_only = Column(Boolean, nullable=True, default=False)
     # Hashed recovery code (same scrypt hashing as password_hash), shown to the
     # user exactly once — at registration, and again each time it's regenerated
     # or consumed by a reset. NULL means no recovery code has been set (e.g. an

@@ -7,15 +7,20 @@ Unauthenticated auth + setup endpoints (mounted WITHOUT require_auth):
   - GET  /api/auth/reset-options         — whether email-based reset is available
   - POST /api/auth/forgot-password       — email a one-time reset code
   - POST /api/auth/reset-password-email  — reset via the emailed one-time code
+  - POST /api/auth/continue-without-account — this computer, no password (loopback)
+  - POST /api/auth/local-session         — reissue that session (loopback)
+  - POST /api/auth/enable-account        — add a password later (current session)
   - GET  /api/auth/me                    — validate the current session token
 
 Single-user model: registration and login both operate on the user id=1 row.
+No-account mode never stores a password. A missing or expired token is replaced
+by /api/auth/local-session, which only answers requests from this machine.
 """
 
 import os
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -25,6 +30,7 @@ from app.auth import (
     generate_recovery_code,
     generate_reset_code,
     hash_password,
+    is_loopback_host,
     is_valid_email,
     mask_email,
     normalize_recovery_code,
@@ -69,9 +75,26 @@ def _missing_plaid_vars() -> list[str]:
 
 class SetupStatus(BaseModel):
     account_exists: bool
+    # True when this install was opened with no password. The client renews
+    # that session from loopback and does not show a login screen.
+    local_only: bool = False
     plaid_env: str
     plaid_ok: bool
     missing_plaid_vars: list[str]
+
+
+def _is_local_only(user: User | None) -> bool:
+    """No password, and the user explicitly chose to skip creating an account."""
+    return bool(user and user.local_only and not user.password_hash)
+
+
+def _require_loopback(request: Request) -> None:
+    host = request.client.host if request.client else None
+    if not is_loopback_host(host):
+        raise HTTPException(
+            status_code=403,
+            detail="Continuing without an account is only available on this computer",
+        )
 
 
 @router.get("/setup/status", response_model=SetupStatus)
@@ -82,6 +105,7 @@ async def setup_status(db: Session = Depends(get_db)):
         missing = _missing_plaid_vars()
         return SetupStatus(
             account_exists=bool(user and user.password_hash),
+            local_only=_is_local_only(user),
             plaid_env=os.getenv("PLAID_ENV", "sandbox").lower(),
             plaid_ok=not missing,
             missing_plaid_vars=missing,
@@ -124,6 +148,11 @@ async def register(body: RegisterBody, db: Session = Depends(get_db)):
         user = _get_user(db)
         if user.password_hash:
             raise HTTPException(status_code=409, detail="An account already exists")
+        if user.local_only:
+            raise HTTPException(
+                status_code=409,
+                detail="This install is already open without an account",
+            )
         username = body.username.strip()
         if not username:
             raise HTTPException(status_code=400, detail="Username is required")
@@ -165,6 +194,112 @@ async def login(body: Credentials, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
+        log_and_raise(e)
+
+
+def _local_session_result(user: User) -> AuthResult:
+    return AuthResult(
+        token=create_session_token(user.id),
+        username=user.username,
+        recovery_code=None,
+    )
+
+
+@router.post("/auth/continue-without-account", response_model=AuthResult)
+async def continue_without_account(request: Request, db: Session = Depends(get_db)):
+    """Open Ledger on this computer with no password and no recovery code.
+
+    Idempotent once chosen: a second call just issues a fresh session. Rejected
+    once a password exists, and rejected from any peer that is not loopback —
+    the API would otherwise be open to the network.
+    """
+    try:
+        _require_loopback(request)
+        user = _get_user(db)
+        if user.password_hash:
+            raise HTTPException(status_code=409, detail="An account already exists")
+        user.local_only = True
+        if not user.username:
+            user.username = "default_user"
+        db.commit()
+        return _local_session_result(user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        log_and_raise(e)
+
+
+@router.post("/auth/local-session", response_model=AuthResult)
+async def local_session(request: Request, db: Session = Depends(get_db)):
+    """Reissue a session for an install that has no account.
+
+    Called when the saved token is missing or expired. Does not create the
+    no-account choice — that is continue-without-account, so a first launch
+    still asks. Loopback only. 404 when a password is set or the choice has
+    not been made, so the client falls through to the login screen.
+    """
+    try:
+        _require_loopback(request)
+        user = db.query(User).filter(User.id == 1).first()
+        if not _is_local_only(user):
+            raise HTTPException(status_code=404, detail="No-account access is not enabled")
+        return _local_session_result(user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_and_raise(e)
+
+
+class EnableAccountBody(BaseModel):
+    username: str
+    password: str
+    name: str | None = None
+    email: str | None = None
+
+
+@router.post("/auth/enable-account", response_model=AuthResult, dependencies=[Depends(require_auth)])
+async def enable_account(body: EnableAccountBody, db: Session = Depends(get_db)):
+    """Add a password to an install that was opened without an account.
+
+    Requires the current session, so a remote caller who never received a
+    token cannot lock the owner out. Returns a one-time recovery code, same
+    as registration.
+    """
+    try:
+        user = db.query(User).filter(User.id == 1).first()
+        if user and user.password_hash:
+            raise HTTPException(status_code=409, detail="An account already exists")
+        if not _is_local_only(user):
+            raise HTTPException(status_code=409, detail="No-account access is not enabled")
+        username = body.username.strip()
+        if not username:
+            raise HTTPException(status_code=400, detail="Username is required")
+        if len(body.password) < MIN_PASSWORD_LENGTH:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Password must be at least {MIN_PASSWORD_LENGTH} characters",
+            )
+        email = (body.email or "").strip()
+        if email and not is_valid_email(email):
+            raise HTTPException(status_code=400, detail="Invalid email address")
+        user.username = username
+        user.display_name = (body.name or "").strip() or None
+        user.email = email or None
+        user.password_hash = hash_password(body.password)
+        user.local_only = False
+        recovery_code = generate_recovery_code()
+        user.recovery_code_hash = hash_password(normalize_recovery_code(recovery_code))
+        db.commit()
+        return AuthResult(
+            token=create_session_token(user.id),
+            username=user.username,
+            recovery_code=recovery_code,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
         log_and_raise(e)
 
 
@@ -313,6 +448,7 @@ async def reset_password_email(body: ResetPasswordEmailBody, db: Session = Depen
 class MeResult(BaseModel):
     username: str
     name: str
+    local_only: bool = False
 
 
 @router.get("/auth/me", response_model=MeResult, dependencies=[Depends(require_auth)])
@@ -320,15 +456,20 @@ async def me(db: Session = Depends(get_db)):
     """Return the current user; 401 (via require_auth) if the token is invalid."""
     try:
         user = db.query(User).filter(User.id == 1).first()
-        # A session token must not outlive the account it names: if the account
-        # has been reset to setup mode (no password), reject the stale token so
-        # the client falls back to the login/setup screen.
-        if not user or not user.password_hash:
+        local_only = _is_local_only(user)
+        # A session token must not outlive the account it names: if the install
+        # is still on the first-run screen (no password and no no-account
+        # choice), reject the stale token so the client falls back to setup.
+        if not user or (not user.password_hash and not local_only):
             raise HTTPException(status_code=401, detail="Not authenticated")
-        username = user.username if user else "user"
-        # display_name falls back to username so the UI always has something.
-        name = (user.display_name if user and user.display_name else username)
-        return MeResult(username=username, name=name)
+        username = user.username or "user"
+        # No-account mode has nothing to greet with unless a display name was
+        # stored. Password accounts fall back to the username.
+        if local_only:
+            name = user.display_name or ""
+        else:
+            name = user.display_name or username
+        return MeResult(username=username, name=name, local_only=local_only)
     except HTTPException:
         raise
     except Exception as e:

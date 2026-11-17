@@ -62,7 +62,7 @@ This guide walks you through setting up a Plaid account and configuring Ledger t
    ```
 
    `API_KEY` is **optional** — only needed for curl/automation via `X-API-Key`.
-   Normal use relies on username/password login (no frontend `.env` required).
+   Normal use relies on username/password login, or no-account mode on this computer (no frontend `.env` required).
 
 5. Also set:
    ```

@@ -90,7 +90,37 @@ export function clearToken(): void {
   deleteKey('sessionStorage', TOKEN_KEY)
 }
 
-export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+let resumeInflight: Promise<boolean> | null = null
+
+/**
+ * Ask the local server for a fresh session. Succeeds only when this install
+ * was opened without an account and the request comes from this computer.
+ * Uses fetch directly so a 401 here cannot recurse through apiFetch.
+ */
+export function resumeLocalSession(): Promise<boolean> {
+  if (resumeInflight) return resumeInflight
+  resumeInflight = (async () => {
+    try {
+      const res = await fetch('/api/auth/local-session', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      })
+      if (!res.ok) return false
+      const data = await res.json().catch(() => ({}))
+      if (!data?.token || typeof data.token !== 'string') return false
+      setToken(data.token, true)
+      return true
+    } catch {
+      return false
+    }
+  })().finally(() => {
+    resumeInflight = null
+  })
+  return resumeInflight
+}
+
+export async function apiFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
   const headers = new Headers(init.headers)
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
@@ -103,10 +133,14 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 
   const res = await fetch(path, { ...init, headers, cache: 'no-store' })
 
-  // A 401 on a normal API call means the session is gone/expired. Drop the
-  // stale token and let the app shell send the user back to the login screen.
-  // Auth endpoints (login/register) handle their own 401s inline.
-  if (res.status === 401 && !path.startsWith('/api/auth/')) {
+  // A 401 on a normal API call means the session is gone or expired. An
+  // install with no account can mint a new one from this computer and retry
+  // once. Anything else drops the stale token and returns to the login screen.
+  // Auth endpoints handle their own 401s inline.
+  if (res.status === 401 && !retried && !path.startsWith('/api/auth/')) {
+    if (await resumeLocalSession()) {
+      return apiFetch(path, init, true)
+    }
     clearToken()
     window.dispatchEvent(new Event('ledger:unauthorized'))
   }

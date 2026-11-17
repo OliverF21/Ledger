@@ -255,3 +255,132 @@ def test_generate_reset_code_varies():
 def test_mask_email():
     assert auth.mask_email("alice@example.com") == "a***@example.com"
     assert auth.mask_email("b@x.co") == "b***@x.co"
+
+
+# ── No-account mode ─────────────────────────────────────────────────────────
+
+def test_loopback_host():
+    assert auth.is_loopback_host("127.0.0.1")
+    assert auth.is_loopback_host("::1")
+    assert auth.is_loopback_host("localhost")
+    assert auth.is_loopback_host("[::1]")
+    assert auth.is_loopback_host("::ffff:127.0.0.1")
+    assert not auth.is_loopback_host("192.168.1.10")
+    assert not auth.is_loopback_host("testclient")
+    assert not auth.is_loopback_host(None)
+    assert not auth.is_loopback_host("")
+
+
+def _allow_loopback(monkeypatch):
+    monkeypatch.setattr("app.routes.auth.is_loopback_host", lambda host: True)
+
+
+def test_no_account_endpoints_reject_remote_peers(client):
+    # Starlette's TestClient peer is "testclient", which is not loopback.
+    assert client.post("/api/auth/continue-without-account").status_code == 403
+    assert client.post("/api/auth/local-session").status_code == 403
+    status = client.get("/api/setup/status").json()
+    assert status["local_only"] is False
+    assert status["account_exists"] is False
+
+
+def test_continue_without_account_then_resume_after_expiry(client, monkeypatch):
+    _allow_loopback(monkeypatch)
+    first = client.post("/api/auth/continue-without-account")
+    assert first.status_code == 200
+    body = first.json()
+    assert body["token"]
+    assert body["recovery_code"] is None
+
+    # Choosing it again just mints another session. It does not start a password.
+    again = client.post("/api/auth/continue-without-account")
+    assert again.status_code == 200
+    assert again.json()["recovery_code"] is None
+
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {body['token']}"})
+    assert me.status_code == 200
+    assert me.json()["local_only"] is True
+    assert me.json()["name"] == ""
+
+    status = client.get("/api/setup/status").json()
+    assert status["account_exists"] is False
+    assert status["local_only"] is True
+
+    # Registration must not be able to seize an install that skipped the account.
+    taken = client.post("/api/auth/register", json={"username": "x", "password": "yyyyyyyy"})
+    assert taken.status_code == 409
+
+    # An expired token is not a lockout: this computer can mint a new one.
+    monkeypatch.setattr(auth, "_SESSION_TTL_SECONDS", 0)
+    import time
+    time.sleep(1)
+    expired = client.get("/api/auth/me", headers={"Authorization": f"Bearer {body['token']}"})
+    assert expired.status_code == 401
+    monkeypatch.setattr(auth, "_SESSION_TTL_SECONDS", 30 * 86400)
+    resumed = client.post("/api/auth/local-session")
+    assert resumed.status_code == 200
+    assert resumed.json()["token"]
+    ok = client.get("/api/auth/me", headers={"Authorization": f"Bearer {resumed.json()['token']}"})
+    assert ok.status_code == 200
+    assert ok.json()["local_only"] is True
+
+
+def test_local_session_absent_until_chosen_and_after_password(client, monkeypatch):
+    _allow_loopback(monkeypatch)
+    assert client.post("/api/auth/local-session").status_code == 404
+    client.post("/api/auth/register", json={"username": "olive", "password": "hunter2hunter2"})
+    assert client.post("/api/auth/local-session").status_code == 404
+    assert client.post("/api/auth/continue-without-account").status_code == 409
+
+
+def test_enable_account_adds_password_and_stops_open_resume(client, monkeypatch):
+    _allow_loopback(monkeypatch)
+    started = client.post("/api/auth/continue-without-account")
+    token = started.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.post(
+        "/api/auth/enable-account",
+        json={"username": "olive", "password": "hunter2hunter2"},
+    ).status_code == 401
+
+    short = client.post(
+        "/api/auth/enable-account",
+        headers=headers,
+        json={"username": "olive", "password": "short"},
+    )
+    assert short.status_code == 400
+
+    created = client.post(
+        "/api/auth/enable-account",
+        headers=headers,
+        json={
+            "username": "olive",
+            "password": "hunter2hunter2",
+            "name": "Olive",
+            "email": "olive@example.com",
+        },
+    )
+    assert created.status_code == 200
+    created_body = created.json()
+    assert created_body["recovery_code"]
+    assert created_body["username"] == "olive"
+
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {created_body['token']}"})
+    assert me.status_code == 200
+    assert me.json()["local_only"] is False
+    assert me.json()["name"] == "Olive"
+    assert me.json()["username"] == "olive"
+
+    assert client.post("/api/auth/local-session").status_code == 404
+    assert client.post("/api/auth/continue-without-account").status_code == 409
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "olive", "password": "hunter2hunter2"},
+    ).status_code == 200
+    # The recovery code from enabling the account actually resets the password.
+    reset = client.post(
+        "/api/auth/reset-password",
+        json={"recovery_code": created_body["recovery_code"], "new_password": "newpassword1"},
+    )
+    assert reset.status_code == 200

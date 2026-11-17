@@ -275,13 +275,13 @@ function routes(url: URL): unknown | undefined {
 
   switch (path) {
     case '/api/auth/me':
-      return { username: 'oliver', name: 'Oliver', email: 'demo@ledger.local' }
+      return { username: 'oliver', name: 'Oliver', email: 'demo@ledger.local', local_only: false }
 
     case '/api/settings/plaid-config':
       return { client_id: 'demo', env: 'sandbox', redirect_uri: null, has_secret: true, configured: true, wizard_done: true }
 
     case '/api/setup/status':
-      return { account_exists: true, plaid_env: 'sandbox', plaid_ok: true, missing_plaid_vars: [], done: true }
+      return { account_exists: true, local_only: false, plaid_env: 'sandbox', plaid_ok: true, missing_plaid_vars: [], done: true }
 
     case '/api/plaid/accounts':
       return { accounts: ACCOUNTS }

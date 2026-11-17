@@ -4,7 +4,7 @@ import {
   X, Pencil, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Heart, ExternalLink,
   KeyRound, Copy, Landmark, Coins, Bell, Tags, type LucideIcon,
 } from 'lucide-react'
-import { apiFetch, isAccountRemembered, rememberedUsername, setAccountRemembered } from '../api/client'
+import { apiFetch, isAccountRemembered, rememberedUsername, setAccountRemembered, setToken } from '../api/client'
 import {
   getPlaidConfig, putPlaidConfig, testPlaidConfig, getSyncConfig, putSyncConfig,
   getWeeklyEmailPrefs, putWeeklyEmailPrefs,
@@ -103,9 +103,19 @@ interface SettingsProps {
   accounts: AccountItem[]
   loadingAccounts: boolean
   onAccountsChange: () => Promise<void>
+  /** True when this install was opened with no password. */
+  localOnly?: boolean
+  /** Called after a password is added, once the recovery code has been saved. */
+  onAccountCreated?: (name: string) => void
 }
 
-export default function Settings({ accounts, loadingAccounts, onAccountsChange }: SettingsProps) {
+export default function Settings({
+  accounts,
+  loadingAccounts,
+  onAccountsChange,
+  localOnly = false,
+  onAccountCreated,
+}: SettingsProps) {
   const { syncing, sync } = useSync()
   const {
     data: cryptoData,
@@ -191,6 +201,15 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
   const [recoveryEmailSaved, setRecoveryEmailSaved] = useState(false)
   const [rememberAccount, setRememberAccount] = useState(() => isAccountRemembered())
   const [savedUsername, setSavedUsername] = useState(() => rememberedUsername())
+  const [accountName, setAccountName] = useState('')
+  const [accountUsername, setAccountUsername] = useState('')
+  const [accountEmail, setAccountEmail] = useState('')
+  const [accountPassword, setAccountPassword] = useState('')
+  const [accountConfirm, setAccountConfirm] = useState('')
+  const [accountError, setAccountError] = useState<string | null>(null)
+  const [creatingAccount, setCreatingAccount] = useState(false)
+  const [createdRecoveryCode, setCreatedRecoveryCode] = useState<string | null>(null)
+  const [createdCodeCopied, setCreatedCodeCopied] = useState(false)
   const [category, setCategory] = useState<SettingsCategoryId | null>(() => parseSettingsCategory())
 
   useEffect(() => {
@@ -269,6 +288,39 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
       setRecoveryEmailError(error instanceof Error ? error.message : 'Failed to save recovery email')
     } finally {
       setSavingRecoveryEmail(false)
+    }
+  }
+
+  const handleCreateAccount = async () => {
+    setAccountError(null)
+    if (!accountUsername.trim()) { setAccountError('Username is required.'); return }
+    if (accountPassword.length < 8) { setAccountError('Password must be at least 8 characters.'); return }
+    if (accountPassword !== accountConfirm) { setAccountError('Passwords do not match.'); return }
+    setCreatingAccount(true)
+    try {
+      const res = await apiFetch('/api/auth/enable-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: accountUsername.trim(),
+          password: accountPassword,
+          name: accountName.trim(),
+          email: accountEmail.trim(),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setAccountError(typeof data.detail === 'string' ? data.detail : 'Could not create the account.')
+        return
+      }
+      setToken(data.token, true, data.username)
+      setSavedUsername(data.username || accountUsername.trim())
+      setRememberAccount(true)
+      setCreatedRecoveryCode(data.recovery_code || '')
+    } catch {
+      setAccountError('Could not reach the backend. Is it running?')
+    } finally {
+      setCreatingAccount(false)
     }
   }
 
@@ -1411,7 +1463,121 @@ export default function Settings({ accounts, loadingAccounts, onAccountsChange }
         </>
       )}
 
-      {category === 'account' && (
+      {category === 'account' && localOnly && (
+        <div className="flex flex-col gap-[16px]">
+          <div className="glass-card p-[22px]">
+            {createdRecoveryCode === null ? (
+              <>
+                <div className="flex items-center gap-[8px] mb-[6px]">
+                  <KeyRound className="w-[15px] h-[15px] text-white" strokeWidth={2} />
+                  <h3 className="text-[14px] font-semibold">No account on this computer</h3>
+                </div>
+                <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[16px]">
+                  Ledger opens without a password. If the session expires, or this
+                  browser forgets it, you are signed back in on this computer. There
+                  is no login screen and no recovery code. Anyone who can open Ledger
+                  on this computer can see your finances.
+                </p>
+                <h3 className="text-[14px] font-semibold mb-[6px]">Create an account</h3>
+                <p className="text-[12px] text-ledger-text-faint leading-[1.5] mb-[14px]">
+                  Adds a password and a one-time recovery code. After this, an expired
+                  session returns to the login screen.
+                </p>
+                <form
+                  className="flex flex-col gap-[10px]"
+                  onSubmit={e => { e.preventDefault(); if (!creatingAccount) handleCreateAccount() }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Your name (optional)"
+                    autoComplete="name"
+                    value={accountName}
+                    onChange={e => setAccountName(e.target.value)}
+                    className="glass-chip px-[14px] py-[9px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Username"
+                    autoComplete="username"
+                    value={accountUsername}
+                    onChange={e => setAccountUsername(e.target.value)}
+                    className="glass-chip px-[14px] py-[9px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email (optional, for password reset)"
+                    autoComplete="email"
+                    value={accountEmail}
+                    onChange={e => setAccountEmail(e.target.value)}
+                    className="glass-chip px-[14px] py-[9px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    autoComplete="new-password"
+                    value={accountPassword}
+                    onChange={e => setAccountPassword(e.target.value)}
+                    className="glass-chip px-[14px] py-[9px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Confirm password"
+                    autoComplete="new-password"
+                    value={accountConfirm}
+                    onChange={e => setAccountConfirm(e.target.value)}
+                    className="glass-chip px-[14px] py-[9px] text-[13px] text-ledger-text-primary placeholder-ledger-text-faint focus:outline-none focus:border-white/60"
+                  />
+                  {accountError && <p className="text-[12px] text-ledger-negative">{accountError}</p>}
+                  <button
+                    type="submit"
+                    disabled={creatingAccount || !accountUsername || !accountPassword}
+                    className="mt-[4px] w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  >
+                    {creatingAccount ? 'Creating…' : 'Create account'}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="flex flex-col gap-[12px]">
+                <h3 className="text-[14px] font-semibold">Save your recovery code</h3>
+                <p className="text-[12.5px] text-ledger-text-secondary leading-[1.5]">
+                  This is the only way to reset your password without wiping your data.
+                  It will not be shown again.
+                </p>
+                <div className="flex items-center gap-[8px]">
+                  <code className="glass-chip rounded-[8px] px-[12px] py-[9px] text-[13px] font-mono text-ledger-text-primary flex-1 text-center">
+                    {createdRecoveryCode}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!createdRecoveryCode) return
+                      try {
+                        await navigator.clipboard.writeText(createdRecoveryCode)
+                        setCreatedCodeCopied(true)
+                        setTimeout(() => setCreatedCodeCopied(false), 1500)
+                      } catch { /* clipboard unavailable */ }
+                    }}
+                    className="glass-chip rounded-[8px] px-[10px] py-[9px] text-[12px] text-ledger-text-secondary hover:text-white transition-colors flex items-center gap-[5px]"
+                  >
+                    <Copy className="w-[12px] h-[12px]" strokeWidth={2} />
+                    {createdCodeCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onAccountCreated?.(accountName.trim())}
+                  className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold transition-opacity"
+                >
+                  I've saved it
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {category === 'account' && !localOnly && (
         <div className="flex flex-col gap-[16px]">
           <div className="glass-card p-[22px]">
             <div className="flex items-center justify-between gap-[16px]">
