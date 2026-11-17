@@ -8,8 +8,8 @@ positive means spending faster than the month is passing (on track to overrun),
 negative means comfortably under pace.
 
 Reuses get_budget_items() so budget spend numbers match the app exactly, and
-mirrors the app's spending rules for the trailing-week recap (excludes removed,
-pending, hidden, and transfer/loan-payment categories; applies user_split_pct).
+uses Overview's spending predicate for the trailing-week recap. Pending,
+removed, and hidden rows stay filtered in that query; user_split_pct still applies.
 
 Pure and side-effect-free except for read-only DB queries; sending lives in
 send_weekly_summary() at the bottom, which is the scheduler/route entrypoint.
@@ -22,15 +22,11 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.analytics_shared import (
-    category_key_for_spending_rules,
-    is_excluded_from_spending,
-    month_bounds,
-)
-from app.txn_classifier import classify_orm_transaction
+from app.analytics_shared import month_bounds
 from app.email_sender import get_resend_api_key, send_email
 from app.models import Transaction, User
 from app.routes.budgets import get_budget_items, is_planned_budget_line
+from app.services.analytics_service import _is_consumptive_spend
 
 logger = logging.getLogger("ledger")
 
@@ -114,8 +110,8 @@ def _format_category(raw: str) -> str:
 def _spend_in_window(db: Session, start: date, end: date) -> tuple[float, dict[str, float]]:
     """
     Total effective spend and per-display-category spend for [start, end).
-    Mirrors the app's spending rules (positive amounts, exclude transfers/
-    loan payments/pending/removed/hidden, apply user split).
+    Spending uses the same predicate as Overview. This query still drops
+    pending, removed, and hidden rows; user_split_pct still applies.
     """
     txns = (
         db.query(Transaction)
@@ -132,11 +128,7 @@ def _spend_in_window(db: Session, start: date, end: date) -> tuple[float, dict[s
     total = 0.0
     by_category: dict[str, float] = {}
     for t in txns:
-        if is_excluded_from_spending(
-            category_key_for_spending_rules(t.category_user, t.category_plaid, t.category_plaid_detailed)
-        ):
-            continue
-        if classify_orm_transaction(t) == "investments":
+        if not _is_consumptive_spend(t):
             continue
         eff = float(t.amount) * float(t.user_split_pct or 1)
         total += eff

@@ -15,13 +15,10 @@ from app.analytics_shared import (
     CATEGORY_COLORS,
     _exclusion_key,
     category_key_for_income_rules,
-    category_key_for_spending_rules,
     cash_flow_spending_bucket,
     cash_flow_spending_group,
     display_label_for_key,
     display_rollup_category,
-    is_excluded_from_income,
-    is_excluded_from_spending,
     month_bounds,
 )
 from app.enrichment import parse_enrichment_json
@@ -439,8 +436,7 @@ def build_trends(db: Session, months: int = 6) -> TrendsData:
             bucket = spend_by_month.setdefault(mk, {})
             bucket[category] = bucket.get(category, 0.0) + _effective_amount(txn)
         elif amount < 0:
-            category = _income_category_key(txn)
-            if is_excluded_from_income(category):
+            if classify_orm_transaction(txn) != "income":
                 continue
             income_by_month[mk] = income_by_month.get(mk, 0.0) + abs(amount)
 
@@ -1187,17 +1183,13 @@ def _fetch_transaction_rows(
 
 
 def _is_consumptive_spend(txn: Transaction) -> bool:
-    """True for outflows that belong on the Overview pie and spending KPIs.
+    """True when Cash Flow would count this row as spending.
 
-    Investment / retirement funding is a cash-flow allocation, not spend —
-    `is_excluded_from_spending` deliberately lets those through so Cash Flow
-    can show them as an Investments sink.
+    Overview, trends, and the weekly recap share this predicate so a matched
+    transfer, savings move, or investment funding cannot land on the donut
+    while Cash Flow drops it or parks it on an allocation node.
     """
-    if float(txn.amount) <= 0:
-        return False
-    if is_excluded_from_spending(_spending_category_key(txn)):
-        return False
-    return classify_orm_transaction(txn) != "investments"
+    return classify_orm_transaction(txn) == "spending"
 
 
 def _aggregate_spending(
@@ -1247,12 +1239,8 @@ def _aggregate_spending(
 def _aggregate_income(rows: list[tuple[Transaction, str | None, str | None, str | None]]) -> float:
     total_income = 0.0
     for txn, _, _, _ in rows:
-        if float(txn.amount) >= 0:
+        if classify_orm_transaction(txn) != "income":
             continue
-
-        if is_excluded_from_income(_income_category_key(txn)):
-            continue
-
         total_income += abs(float(txn.amount))
 
     return round(total_income, 2)
@@ -1371,14 +1359,6 @@ def _income_source_category(txn: Transaction) -> str:
 
 def _income_category_key(txn: Transaction) -> str:
     return category_key_for_income_rules(
-        txn.category_user,
-        txn.category_plaid,
-        txn.category_plaid_detailed,
-    )
-
-
-def _spending_category_key(txn: Transaction) -> str:
-    return category_key_for_spending_rules(
         txn.category_user,
         txn.category_plaid,
         txn.category_plaid_detailed,
