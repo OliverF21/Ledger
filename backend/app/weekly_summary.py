@@ -30,7 +30,7 @@ from app.analytics_shared import (
 from app.txn_classifier import classify_orm_transaction
 from app.email_sender import get_resend_api_key, send_email
 from app.models import Transaction, User
-from app.routes.budgets import get_budget_items
+from app.routes.budgets import get_budget_items, is_planned_budget_line
 
 logger = logging.getLogger("ledger")
 
@@ -176,7 +176,8 @@ def compute_weekly_summary(db: Session, bdb: Session, today: date | None = None)
     misc_spent = 0.0
     for b in budget_items:
         # Virtual Misc. has no limit — include in totals, skip pace ranking.
-        if b.virtual:
+        # Recurring lines are virtual too, but they have a real limit.
+        if not is_planned_budget_line(b.virtual, b.recurring):
             misc_spent += b.spent
             continue
         used_pct = (b.spent / b.limit * 100) if b.limit > 0 else 0.0

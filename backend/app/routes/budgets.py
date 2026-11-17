@@ -12,6 +12,7 @@ GET reads spending sums from ledger.db (read-only) and combines with limits
 from budgets.db in Python.
 """
 
+import zlib
 from datetime import date
 from typing import List, Optional
 
@@ -38,6 +39,7 @@ from app.budgets_db import Budget, get_budgets_db
 from app.database import get_db
 from app.errors import log_and_raise
 from app.models import Transaction
+from app.subscriptions import normalize_merchant, recurring_budget_lines
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
@@ -56,6 +58,14 @@ class BudgetItem(BaseModel):
     spent: float
     color: str
     virtual: bool = False
+    # Automatic envelope for a detected subscription. Virtual (not stored, not
+    # editable) but unlike Misc. it has a real limit and counts toward the total.
+    recurring: bool = False
+
+
+def is_planned_budget_line(virtual: bool, recurring: bool = False) -> bool:
+    """Misc. is unplanned spend. Recurring lines reserve their expected amount."""
+    return not virtual or recurring
 
 
 class BudgetsResponse(BaseModel):
@@ -116,7 +126,57 @@ def carry_forward_budgets(bdb: Session, month_key: str) -> list[Budget]:
     return copied
 
 
-def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetItem]:
+def _budget_scope(budget: Budget) -> tuple[str, str]:
+    """Return ('key', pfc_primary) or ('name', display label) for spend matching."""
+    if budget.category_key:
+        return "key", normalize_category_key(budget.category_key)
+    # Name-only budgets whose label is a PFC primary (e.g. "Travel")
+    # should match all leaf spend under that primary — not only rows
+    # whose display_category string equals the label exactly.
+    resolved = normalize_category_key(resolve_category_to_pfc_key(budget.category_name))
+    primary_label = CATEGORY_KEY_LABELS.get(resolved, "")
+    if (
+        resolved
+        and (resolved in PLAID_PFC_PRIMARIES or resolved in KNOWN_CATEGORY_KEYS)
+        and primary_label
+        and primary_label.lower() == (budget.category_name or "").strip().lower()
+    ):
+        return "key", resolved
+    return "name", budget.category_name
+
+
+def _recurring_already_budgeted(
+    parent_key: str | None,
+    category: str,
+    tracked_keys: set[str],
+    tracked_names: set[str],
+) -> bool:
+    """True when a category budget already captures this series' spend.
+
+    Pulling it out again would reserve the same dollars twice.
+    """
+    if parent_key and normalize_category_key(parent_key) in tracked_keys:
+        return True
+    if category and category in tracked_names:
+        return True
+    resolved = normalize_category_key(resolve_category_to_pfc_key(category or ""))
+    return bool(resolved) and resolved in tracked_keys
+
+
+def _recurring_item_id(merchant_key: str, used: set[int]) -> int:
+    candidate = -1000 - (zlib.crc32(merchant_key.encode("utf-8")) % 2_000_000_000)
+    while candidate in used or candidate == MISC_BUDGET_ID:
+        candidate -= 1
+    used.add(candidate)
+    return candidate
+
+
+def get_budget_items(
+    bdb: Session,
+    ldb: Session,
+    month_key: str,
+    as_of: date | None = None,
+) -> list[BudgetItem]:
     """
     Per-category budget items (limit + pre-computed spent) for a given month.
     Limits come from budgets.db; spending sums come from ledger.db (read-only).
@@ -124,13 +184,40 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
 
     Spend that does not match any tracked budget lands in a virtual Misc. bucket
     so overall budget progress reflects all consumptive spending.
+
+    Detected recurring charges that are not already inside a category budget
+    become their own lines, limited to the amount expected that month, so
+    subscriptions count toward the plan without a manual setup step.
     """
+    today = as_of or date.today()
     budgets = carry_forward_budgets(bdb, month_key)
-    if not budgets:
-        return []
 
     year, mon = int(month_key[:4]), int(month_key[5:7])
     start, end = month_bounds(year, mon)
+
+    scopes = [(b, *_budget_scope(b)) for b in budgets]
+    tracked_keys = {value for _b, kind, value in scopes if kind == "key"}
+    tracked_names = {value for _b, kind, value in scopes if kind == "name"}
+    # A budget the user named after the merchant ("Netflix") already is that
+    # subscription's envelope — don't add a second automatic line.
+    named_by_key = {
+        normalize_merchant(value): value
+        for _b, kind, value in scopes
+        if kind == "name" and normalize_merchant(value)
+    }
+
+    automatic = []
+    named_recurring: dict[str, str] = {}
+    for line in recurring_budget_lines(ldb, start, end, as_of=today):
+        if _recurring_already_budgeted(line.parent_key, line.category, tracked_keys, tracked_names):
+            continue
+        named = named_by_key.get(line.merchant_key)
+        if named:
+            named_recurring[line.merchant_key] = named
+            continue
+        automatic.append(line)
+    if not budgets and not automatic:
+        return []
 
     # Load all expense transactions for the month from ledger.db (read-only).
     # Positive amounts = debits/expenses in Plaid convention.
@@ -147,9 +234,13 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
         .all()
     )
 
-    # Two spending maps — use effective amount (respects user split)
+    # Two spending maps — use effective amount (respects user split).
+    # Merchants with an automatic recurring line are kept out of category and
+    # Misc. totals so the same charge is not counted twice.
+    automatic_keys = {line.merchant_key for line in automatic}
     spent_by_plaid_parent: dict[str, float] = {}
     spent_by_display: dict[str, float] = {}
+    recurring_spent: dict[str, float] = {line.merchant_key: 0.0 for line in automatic}
     eligible: list[tuple[float, str | None, str]] = []
 
     for t in txns:
@@ -158,6 +249,15 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
         ):
             continue
         eff = float(t.amount) * float(t.user_split_pct or 1)
+        merchant_key = normalize_merchant(t.merchant or "")
+        if merchant_key in named_recurring:
+            display = named_recurring[merchant_key]
+            spent_by_display[display] = spent_by_display.get(display, 0.0) + eff
+            eligible.append((eff, None, display))
+            continue
+        if merchant_key in automatic_keys:
+            recurring_spent[merchant_key] = recurring_spent.get(merchant_key, 0.0) + eff
+            continue
         display = t.display_category or "Uncategorized"
         spent_by_display[display] = spent_by_display.get(display, 0.0) + eff
         parent = budget_parent_key(t.category_user, t.category_plaid, t.category_plaid_detailed)
@@ -166,30 +266,11 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
         eligible.append((eff, parent, display))
 
     budget_items: list[BudgetItem] = []
-    tracked_keys: set[str] = set()
-    tracked_names: set[str] = set()
-    for b in budgets:
-        if b.category_key:
-            key = normalize_category_key(b.category_key)
-            tracked_keys.add(key)
-            spent = spent_by_plaid_parent.get(key, 0.0)
+    for b, kind, value in scopes:
+        if kind == "key":
+            spent = spent_by_plaid_parent.get(value, 0.0)
         else:
-            # Name-only budgets whose label is a PFC primary (e.g. "Travel")
-            # should match all leaf spend under that primary — not only rows
-            # whose display_category string equals the label exactly.
-            resolved = normalize_category_key(resolve_category_to_pfc_key(b.category_name))
-            primary_label = CATEGORY_KEY_LABELS.get(resolved, "")
-            if (
-                resolved
-                and (resolved in PLAID_PFC_PRIMARIES or resolved in KNOWN_CATEGORY_KEYS)
-                and primary_label
-                and primary_label.lower() == (b.category_name or "").strip().lower()
-            ):
-                tracked_keys.add(resolved)
-                spent = spent_by_plaid_parent.get(resolved, 0.0)
-            else:
-                tracked_names.add(b.category_name)
-                spent = spent_by_display.get(b.category_name, 0.0)
+            spent = spent_by_display.get(value, 0.0)
         budget_items.append(BudgetItem(
             id=b.id,
             category=b.category_name,
@@ -198,22 +279,39 @@ def get_budget_items(bdb: Session, ldb: Session, month_key: str) -> list[BudgetI
             color=b.color or CATEGORY_COLORS[0],
         ))
 
-    misc_spent = 0.0
-    for eff, parent, display in eligible:
-        if parent and parent in tracked_keys:
-            continue
-        if display in tracked_names:
-            continue
-        misc_spent += eff
+    # Misc. only exists once the user is actually budgeting. With no category
+    # budgets, the plan is just the recurring charges detected below.
+    if budgets:
+        misc_spent = 0.0
+        for eff, parent, display in eligible:
+            if parent and parent in tracked_keys:
+                continue
+            if display in tracked_names:
+                continue
+            misc_spent += eff
 
-    if misc_spent > 0:
+        if misc_spent > 0:
+            budget_items.append(BudgetItem(
+                id=MISC_BUDGET_ID,
+                category=MISC_BUDGET_CATEGORY,
+                limit=0.0,
+                spent=round(misc_spent, 2),
+                color=MISC_BUDGET_COLOR,
+                virtual=True,
+            ))
+
+    used_ids = {item.id for item in budget_items}
+    for line in automatic:
+        item_id = _recurring_item_id(line.merchant_key, used_ids)
+        color_index = zlib.crc32(line.merchant_key.encode("utf-8")) % len(CATEGORY_COLORS)
         budget_items.append(BudgetItem(
-            id=MISC_BUDGET_ID,
-            category=MISC_BUDGET_CATEGORY,
-            limit=0.0,
-            spent=round(misc_spent, 2),
-            color=MISC_BUDGET_COLOR,
+            id=item_id,
+            category=line.merchant or line.category or "Recurring",
+            limit=line.expected_amount,
+            spent=round(recurring_spent.get(line.merchant_key, 0.0), 2),
+            color=CATEGORY_COLORS[color_index],
             virtual=True,
+            recurring=True,
         ))
     return budget_items
 
@@ -238,8 +336,15 @@ async def get_budgets(
 
         budget_items = get_budget_items(bdb, ldb, month_key)
 
-        # Virtual Misc. has no limit; don't inflate total_limit with a $0 row.
-        total_limit = round(sum(bi.limit for bi in budget_items if not bi.virtual), 2)
+        # Virtual Misc. has no limit. Recurring lines do, and they are part of the plan.
+        total_limit = round(
+            sum(
+                bi.limit
+                for bi in budget_items
+                if is_planned_budget_line(bi.virtual, bi.recurring)
+            ),
+            2,
+        )
         total_spent = round(sum(bi.spent for bi in budget_items), 2)
 
         return BudgetsResponse(

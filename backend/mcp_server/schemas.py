@@ -148,6 +148,7 @@ class BudgetVsActualItemResult(BaseModel):
     over_budget: bool
     color: str
     virtual: bool = False
+    recurring: bool = False
 
 
 class BudgetVsActualResult(BaseModel):
