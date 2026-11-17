@@ -15,7 +15,7 @@ import Setup from './pages/Setup'
 import { useProposals } from './hooks/useAdvisor'
 import { useAccounts } from './hooks/useAccounts'
 import { useStartupSync } from './hooks/useSync'
-import { apiFetchTimeout, getToken, clearToken } from './api/client'
+import { apiFetchTimeout, getToken, clearToken, resumeLocalSession } from './api/client'
 import { LedgerLoader } from './components/ui/LedgerLoader'
 import ToastHost from './components/ToastHost'
 import { VALID_SCREENS, type ScreenType } from './utils/screens'
@@ -101,6 +101,7 @@ function App() {
   )
   const [auth, setAuth] = useState<AuthState>('loading')
   const [userName, setUserName] = useState('')
+  const [localOnly, setLocalOnly] = useState(false)
   const [setupNeeded, setSetupNeeded] = useState<boolean | null>(null)
 
   // Pending AI advisor proposals — lifted so the sidebar badge and the Advisor
@@ -112,29 +113,58 @@ function App() {
   useStartupSync(auth === 'authenticated' && setupNeeded === false)
 
   // Fetch the current user's display name; sets auth based on token validity.
-  const loadMe = useCallback(() => {
-    apiFetchTimeout('/api/auth/me')
-      .then(async r => {
+  // A no-account install whose token is missing or expired gets a new one
+  // from this computer before the login screen is shown.
+  const loadMe = useCallback((allowResume = true) => {
+    void (async () => {
+      try {
+        let r = await apiFetchTimeout('/api/auth/me')
+        if (r.status === 401 && allowResume && await resumeLocalSession()) {
+          r = await apiFetchTimeout('/api/auth/me')
+        }
         if (!r.ok) { setAuth('unauthenticated'); return }
         const data = await r.json().catch(() => ({}))
         setUserName(data.name || '')
+        setLocalOnly(!!data.local_only)
         setAuth('authenticated')
-      })
-      .catch(() => setAuth('unauthenticated'))
+      } catch {
+        setAuth('unauthenticated')
+      }
+    })()
   }, [])
 
-  // Validate any stored token on boot; 401 clears it.
+  // Validate any stored token on boot. With no token, try the no-account
+  // session first so quitting the app or clearing storage does not lock
+  // anyone out of an install that never had a password.
   useEffect(() => {
-    if (!getToken()) { setAuth('unauthenticated'); return }
-    loadMe()
+    let cancelled = false
+    ;(async () => {
+      if (!getToken()) {
+        const ok = await resumeLocalSession()
+        if (cancelled) return
+        if (!ok) { setAuth('unauthenticated'); return }
+      }
+      if (!cancelled) loadMe()
+    })()
+    return () => { cancelled = true }
   }, [loadMe])
 
-  // apiFetch dispatches this when any call 401s (expired session).
+  // apiFetch dispatches this when a 401 cannot be renewed (password accounts).
   useEffect(() => {
-    const onUnauth = () => setAuth('unauthenticated')
+    let cancelled = false
+    const onUnauth = () => {
+      resumeLocalSession().then(ok => {
+        if (cancelled) return
+        if (ok) loadMe(false)
+        else setAuth('unauthenticated')
+      })
+    }
     window.addEventListener('ledger:unauthorized', onUnauth)
-    return () => window.removeEventListener('ledger:unauthorized', onUnauth)
-  }, [])
+    return () => {
+      cancelled = true
+      window.removeEventListener('ledger:unauthorized', onUnauth)
+    }
+  }, [loadMe])
 
   useEffect(() => {
     if (window.location.hash.replace('#', '') === 'subscriptions') {
@@ -245,6 +275,11 @@ function App() {
             accounts={linkedAccounts.accounts}
             loadingAccounts={linkedAccounts.loading}
             onAccountsChange={linkedAccounts.refetch}
+            localOnly={localOnly}
+            onAccountCreated={(name) => {
+              setLocalOnly(false)
+              if (name) setUserName(name)
+            }}
           />
         )
     }
@@ -261,7 +296,7 @@ function App() {
         <Sidebar
           activeScreen={activeScreen}
           onScreenChange={navigate}
-          onSignOut={signOut}
+          onSignOut={localOnly ? undefined : signOut}
           advisorCount={advisor.pendingCount}
           accounts={linkedAccounts.accounts}
           open={railOpen}

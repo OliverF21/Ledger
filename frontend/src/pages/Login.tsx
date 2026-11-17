@@ -9,12 +9,13 @@ const GLOW = '#e8eef8'
 
 interface SetupStatus {
   account_exists: boolean
+  local_only?: boolean
   plaid_env: string
   plaid_ok: boolean
   missing_plaid_vars: string[]
 }
 
-type Phase = 'checking' | 'blocked' | 'setup' | 'login' | 'reset-choice' | 'reset' | 'reset-email-code' | 'reveal-code'
+type Phase = 'checking' | 'blocked' | 'setup' | 'login' | 'local-only' | 'reset-choice' | 'reset' | 'reset-email-code' | 'reveal-code'
 
 export default function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [phase, setPhase] = useState<Phase>('checking')
@@ -49,7 +50,9 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
         // Missing Plaid keys no longer block the app — they're configured in the
         // first-run wizard / Settings (BYOK). 'blocked' now means only that the
         // backend is unreachable (see .catch below).
-        setPhase(s.account_exists ? 'login' : 'setup')
+        if (s.account_exists) setPhase('login')
+        else if (s.local_only) setPhase('local-only')
+        else setPhase('setup')
       })
       .catch(() => {
         setError('Could not reach the backend. Is it running?')
@@ -137,6 +140,46 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
     }
   }
 
+  const continueWithoutAccount = async () => {
+    setError(null)
+    setSubmitting(true)
+    try {
+      const res = await apiFetch('/api/auth/continue-without-account', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(typeof data.detail === 'string' ? data.detail : 'Could not continue without an account.')
+        setSubmitting(false)
+        return
+      }
+      // Always remembered. There is no password to type next time, and a
+      // missing token is replaced from this computer.
+      setToken(data.token, true)
+      onAuthenticated()
+    } catch {
+      setError('Could not reach the backend. Is it running?')
+      setSubmitting(false)
+    }
+  }
+
+  const reopenWithoutAccount = async () => {
+    setError(null)
+    setSubmitting(true)
+    try {
+      const res = await apiFetch('/api/auth/local-session', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(typeof data.detail === 'string' ? data.detail : 'Could not open Ledger on this computer.')
+        setSubmitting(false)
+        return
+      }
+      setToken(data.token, true)
+      onAuthenticated()
+    } catch {
+      setError('Could not reach the backend. Is it running?')
+      setSubmitting(false)
+    }
+  }
+
   const continueFromReveal = () => {
     if (pendingToken) setToken(pendingToken, rememberAccount, username)
     onAuthenticated()
@@ -173,6 +216,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
             <div className="text-[13px] text-ledger-text-faint mb-[24px]">
               {phase === 'blocked' ? 'Connection problem'
                 : phase === 'setup' ? 'Create your account'
+                : phase === 'local-only' ? 'This computer'
                 : phase === 'reset-choice' ? 'Reset your password'
                 : phase === 'reset' ? 'Reset your password'
                 : phase === 'reset-email-code' ? 'Enter your reset code'
@@ -279,9 +323,21 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                 </button>
 
                 {phase === 'setup' && (
-                  <div className="text-[11.5px] text-ledger-text-faintest text-center mt-[2px]">
-                    This is a single-user app. Your account secures this dashboard.
-                  </div>
+                  <>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => { if (!submitting) continueWithoutAccount() }}
+                      className="w-full glass-chip py-[11px] rounded-[10px] text-[13px] font-semibold text-ledger-text-primary hover:bg-ledger-inset transition-colors disabled:opacity-40"
+                    >
+                      Continue without an account
+                    </button>
+                    <div className="text-[11.5px] text-ledger-text-faintest text-center mt-[2px] leading-[1.5]">
+                      No password and no login screen. If the session expires, Ledger
+                      signs you back in on this computer. You can add a password later
+                      in Settings.
+                    </div>
+                  </>
                 )}
 
                 {phase === 'login' && (
@@ -304,6 +360,24 @@ export default function Login({ onAuthenticated }: { onAuthenticated: () => void
                   </button>
                 )}
               </form>
+            )}
+
+            {phase === 'local-only' && (
+              <div className="w-full flex flex-col gap-[12px]">
+                <div className="text-[12.5px] text-ledger-text-secondary leading-[1.5]">
+                  This install has no account. On this computer Ledger opens without a
+                  password, including after the session expires.
+                </div>
+                {error && <div className="text-[12.5px] text-ledger-negative">{error}</div>}
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => { if (!submitting) reopenWithoutAccount() }}
+                  className="w-full py-[11px] rounded-[10px] solid-cta text-[13px] font-semibold disabled:opacity-40 transition-opacity"
+                >
+                  {submitting ? 'Please wait…' : 'Open Ledger'}
+                </button>
+              </div>
             )}
 
             {/* Choice screen: email code vs recovery code, shown only when

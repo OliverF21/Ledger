@@ -55,12 +55,19 @@ budget proposals.
 
 Ledger is single-user (hardcoded `user_id=1`).
 
-1. **First run**: `GET /api/setup/status` — if no password is set, the UI shows
-   registration (`POST /api/auth/register`).
-2. **Login**: `POST /api/auth/login` returns a Fernet-signed session token.
-3. **API calls**: `src/api/client.ts` attaches `Authorization: Bearer <token>`.
-   Tokens expire after `SESSION_TTL_DAYS` (default 30).
-4. **Optional automation**: set `API_KEY` in backend env; pass `X-API-Key` header.
+1. **First run**: `GET /api/setup/status`. If no password is set and the install
+   is not already open without an account, the UI offers registration
+   (`POST /api/auth/register`) or **Continue without an account**
+   (`POST /api/auth/continue-without-account`, loopback only).
+2. **No account**: nothing is stored to type later. `POST /api/auth/local-session`
+   (loopback only) issues a fresh token whenever the saved one is missing or
+   expired, and the login screen stays hidden. Sign out is hidden. A password
+   can be added later with `POST /api/auth/enable-account` (current session).
+3. **Login**: `POST /api/auth/login` returns a Fernet-signed session token.
+4. **API calls**: `src/api/client.ts` attaches `Authorization: Bearer <token>`.
+   Tokens expire after `SESSION_TTL_DAYS` (default 30). A no-account install
+   replaces an expired token from this computer instead of showing login.
+5. **Optional automation**: set `API_KEY` in backend env; pass `X-API-Key` header.
    Leave unset to disable that path. No frontend build-time secret is required.
 
 Session signing uses a key derived from `ENCRYPTION_KEY` unless `AUTH_TOKEN_KEY`

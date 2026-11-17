@@ -20,6 +20,7 @@ Passwords are hashed with stdlib hashlib.scrypt — no third-party deps.
 import base64
 import hashlib
 import hmac
+import ipaddress
 import logging
 import os
 
@@ -200,6 +201,34 @@ def is_valid_email(email: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# ── Loopback (no-account mode) ──────────────────────────────────────────────
+
+def is_loopback_host(host: str | None) -> bool:
+    """True when the peer is this machine.
+
+    No-account mode issues a session to anyone who can reach the API, so it
+    only answers loopback. `localhost` counts because some local clients send
+    the name. IPv4-mapped IPv6 (`::ffff:127.0.0.1`) counts too.
+    """
+    if not host:
+        return False
+    value = host.strip().lower()
+    if value.startswith("[") and "]" in value:
+        value = value[1:value.index("]")]
+    if "%" in value:
+        value = value.split("%", 1)[0]
+    if value == "localhost":
+        return True
+    try:
+        addr = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        addr = mapped
+    return bool(addr.is_loopback)
 
 
 # ── Request dependency ──────────────────────────────────────────────────────

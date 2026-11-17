@@ -35,7 +35,7 @@ Start in **Sandbox** (fake banks, no real money). When you're ready for a real a
 
 ### 3. First launch
 
-1. Open Ledger and create a local username/password. There's no cloud account.
+1. Open Ledger. Create a local username and password, or continue without an account. There's no cloud account. Without an account, Ledger opens straight in on this computer, including after the session expires. You can add a password later under **Settings → Account**.
 2. Paste the **client_id** and **Sandbox secret** into the setup wizard.
 3. Optional: add a **recovery email** if you want password reset by email. That needs a free [Resend](https://resend.com/api-keys) key (wizard, or **Settings → Recovery email** later).
 4. Link a bank. In Sandbox, any test institution works with `user_good` / `pass_good` ([sandbox credentials](https://plaid.com/docs/sandbox/test-credentials/)).
