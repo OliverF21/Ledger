@@ -22,7 +22,7 @@ from app.plaid_service import PlaidService
 from app.security import decrypt_token
 from app.services.investment_service import (
     _build_investment_history,
-    _history_change,
+    _portfolio_period_change,
     account_gross_holdings,
     investment_net_equity_total,
     scaled_holding_market_value,
@@ -145,18 +145,28 @@ class HistoryResponse(BaseModel):
 @router.get("/history", response_model=HistoryResponse)
 async def get_history(months: int = Query(6, ge=1, le=24), db: Session = Depends(get_db)):
     """
-    Portfolio value over time. Uses daily BalanceSnapshot rows when they
-    already span the requested window; otherwise marks current holdings to
-    market (Plaid does not provide historical balances).
+    Portfolio value over time, plus the capital gain on that window.
+
+    Uses daily BalanceSnapshot rows when they already span the requested
+    window; otherwise marks current holdings to market (Plaid does not
+    provide historical balances). change_amount is the dollar gain and
+    change_pct is the time-weighted return. Deposits and withdrawals are
+    not gains. The mark-to-market fallback prices today's holdings, so it
+    has no deposit jumps to remove.
     """
     try:
         accounts = _investment_accounts(db)
         account_ids = [a.id for a in accounts]
         live_total = investment_net_equity_total(accounts)
-        points = _build_investment_history(
+        points, from_balance_snapshots = _build_investment_history(
             db, account_ids=account_ids, months=months, live_total=live_total
         )
-        change_amount, change_pct = _history_change(points)
+        change_amount, change_pct = _portfolio_period_change(
+            db,
+            account_ids,
+            points,
+            from_balance_snapshots=from_balance_snapshots,
+        )
         return HistoryResponse(
             snapshots=[HistoryPoint(date=p.date, total=p.total) for p in points],
             change_amount=change_amount,

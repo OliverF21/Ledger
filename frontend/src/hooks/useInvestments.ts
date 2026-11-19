@@ -111,7 +111,9 @@ export interface HistoryPoint {
 
 export interface InvestmentsHistory {
   snapshots: HistoryPoint[]
+  /** Dollar capital gain over the window. Deposits and withdrawals are excluded. */
   change_amount: number
+  /** Time-weighted period return, in percent. Not annualized. */
   change_pct: number
 }
 

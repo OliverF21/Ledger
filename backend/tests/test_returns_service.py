@@ -8,7 +8,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models import Account, BalanceSnapshot, Base, InvestmentTransaction, Item, User
-from app.services.returns_service import build_cagr, build_mwr_xirr, build_twr_series, external_cash_flows
+from app.services.returns_service import (
+    CashFlow,
+    build_cagr,
+    build_mwr_xirr,
+    build_twr_series,
+    external_cash_flows,
+    linked_period_return,
+)
 
 
 @pytest.fixture
@@ -181,3 +188,55 @@ def test_xirr_includes_withdrawal_on_last_snapshot_date(db_session, account):
 
     rate = build_mwr_xirr(db_session, [account.id], d0, d1)
     assert rate == pytest.approx(10.0, abs=0.5)
+
+
+def test_linked_period_return_excludes_deposit_and_keeps_market_gain():
+    d0, d_mid, d1 = date(2026, 1, 1), date(2026, 3, 1), date(2026, 6, 1)
+    gain, pct = linked_period_return(
+        [(d0, 1000.0), (d_mid, 2000.0), (d1, 2200.0)],
+        [CashFlow(date=d_mid, amount=1000.0)],
+    )
+    # $1000 of the jump is the deposit. The other $200 is the investment gain.
+    # First interval return is 0; second is 10%.
+    assert gain == pytest.approx(200.0, abs=0.01)
+    assert pct == pytest.approx(10.0, abs=0.01)
+
+
+def test_linked_period_return_last_day_deposit_is_not_a_gain():
+    d0, d1 = date(2026, 1, 1), date(2026, 6, 1)
+    gain, pct = linked_period_return(
+        [(d0, 1000.0), (d1, 1100.0)],
+        [CashFlow(date=d1, amount=100.0)],
+    )
+    assert gain == pytest.approx(0.0, abs=0.01)
+    assert pct == pytest.approx(0.0, abs=0.01)
+
+
+def test_linked_period_return_adds_back_a_withdrawal():
+    d0, d1 = date(2026, 1, 1), date(2026, 6, 1)
+    gain, pct = linked_period_return(
+        [(d0, 1000.0), (d1, 1000.0)],
+        [CashFlow(date=d1, amount=-100.0)],
+    )
+    assert gain == pytest.approx(100.0, abs=0.01)
+    assert pct == pytest.approx(10.0, abs=0.01)
+
+
+def test_linked_period_return_counts_a_flow_between_snapshots():
+    d0, d1 = date(2026, 1, 1), date(2026, 6, 1)
+    gain, pct = linked_period_return(
+        [(d0, 1000.0), (d1, 2100.0)],
+        [CashFlow(date=date(2026, 3, 1), amount=1000.0)],
+    )
+    assert gain == pytest.approx(100.0, abs=0.01)
+    assert pct == pytest.approx(10.0, abs=0.01)
+
+
+def test_linked_period_return_ignores_a_flow_already_inside_the_start_balance():
+    d0, d1 = date(2026, 1, 1), date(2026, 6, 1)
+    gain, pct = linked_period_return(
+        [(d0, 1500.0), (d1, 1650.0)],
+        [CashFlow(date=d0, amount=500.0)],
+    )
+    assert gain == pytest.approx(150.0, abs=0.01)
+    assert pct == pytest.approx(10.0, abs=0.01)
