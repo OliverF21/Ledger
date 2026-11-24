@@ -154,7 +154,7 @@ const BUDGETS: MockBudget[] = [
   { id: -1204, category: 'iCloud+', limit: 9.99, spent: 9.99, color: '#a196fa', virtual: true, recurring: true, merchant_key: 'icloud+' },
 ]
 
-const dismissedRecurring = new Set<string>()
+const dismissedRecurring = new Map<string, string>()
 
 function visibleBudgets() {
   return BUDGETS.filter(b => {
@@ -162,6 +162,12 @@ function visibleBudgets() {
     const key = (b.merchant_key || b.category || '').trim().toLowerCase()
     return !dismissedRecurring.has(key)
   })
+}
+
+function removedRecurring() {
+  return [...dismissedRecurring.entries()]
+    .map(([merchant_key, merchant]) => ({ merchant_key, merchant }))
+    .sort((a, b) => a.merchant.localeCompare(b.merchant))
 }
 
 const TOTAL_ASSETS = 250330.87
@@ -452,6 +458,7 @@ function routes(url: URL): unknown | undefined {
         budgets,
         total_limit: budgets.reduce((s, b) => s + b.limit, 0),
         total_spent: budgets.reduce((s, b) => s + b.spent, 0),
+        removed_recurring: removedRecurring(),
       }
     }
 
@@ -632,7 +639,16 @@ export function installMockApi(): void {
     if (url.pathname === '/api/budgets/recurring' && method === 'DELETE') {
       const key = (url.searchParams.get('merchant_key') || '').trim().toLowerCase()
       if (!key) return jsonResponse({ detail: 'merchant_key is required' }, 400)
-      dismissedRecurring.add(key)
+      const name = (url.searchParams.get('merchant_name') || key).trim()
+      dismissedRecurring.set(key, name || key)
+      await new Promise(resolve => setTimeout(resolve, 90))
+      return jsonResponse({ success: true }, 200)
+    }
+
+    if (url.pathname === '/api/budgets/recurring/restore' && method === 'POST') {
+      const key = (url.searchParams.get('merchant_key') || '').trim().toLowerCase()
+      if (!key) return jsonResponse({ detail: 'merchant_key is required' }, 400)
+      dismissedRecurring.delete(key)
       await new Promise(resolve => setTimeout(resolve, 90))
       return jsonResponse({ success: true }, 200)
     }

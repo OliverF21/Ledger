@@ -91,6 +91,7 @@ class DismissedRecurringBudget(BudgetsBase):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, nullable=False, default=1)
     merchant_key = Column(String(512), nullable=False)
+    merchant_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -174,6 +175,25 @@ BudgetsSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=budge
 def init_budgets_db():
     """Create budgets, dismissed recurring lines, proposals, and goals if needed."""
     BudgetsBase.metadata.create_all(bind=budgets_engine)
+    _ensure_dismissed_recurring_columns()
+
+
+def _ensure_dismissed_recurring_columns():
+    """Add columns introduced after dismissed_recurring_budgets was first created.
+
+    create_all() does not alter an existing table. SQLite only, matching ledger.db.
+    """
+    if budgets_engine.dialect.name != "sqlite":
+        return
+    with budgets_engine.begin() as conn:
+        rows = conn.exec_driver_sql("PRAGMA table_info(dismissed_recurring_budgets)").fetchall()
+        if not rows:
+            return
+        names = {row[1] for row in rows}
+        if "merchant_name" not in names:
+            conn.exec_driver_sql(
+                "ALTER TABLE dismissed_recurring_budgets ADD COLUMN merchant_name VARCHAR(255)"
+            )
 
 
 def get_budgets_db() -> Session:

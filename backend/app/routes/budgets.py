@@ -6,6 +6,7 @@ Budget endpoints.
 - PUT /budgets/{id}           : update budget limit
 - DELETE /budgets/{id}        : remove a stored budget
 - DELETE /budgets/recurring   : remove an automatically detected budget
+- POST /budgets/recurring/restore : put a removed automatic budget back on the plan
 
 Budgets are stored in budgets.db (separate from ledger.db) so Defender/AV
 scanning the main transaction DB never blocks budget writes.
@@ -71,11 +72,18 @@ def is_planned_budget_line(virtual: bool, recurring: bool = False) -> bool:
     return not virtual or recurring
 
 
+class RemovedRecurringItem(BaseModel):
+    merchant_key: str
+    merchant: str
+
+
 class BudgetsResponse(BaseModel):
     month: str
     budgets: list[BudgetItem]
     total_limit: float
     total_spent: float
+    # Detected subscriptions the user took off the plan. Empty until they remove one.
+    removed_recurring: list[RemovedRecurringItem] = []
 
 
 # ── GET /budgets ──────────────────────────────────────────────────────────────
@@ -176,16 +184,27 @@ def dismissed_recurring_keys(bdb: Session) -> set[str]:
     return {key for (key,) in rows if key}
 
 
-def dismiss_recurring_merchant(bdb: Session, merchant_key: str) -> str:
+def _recurring_merchant_label(merchant_key: str, merchant_name: str | None) -> str:
+    label = (merchant_name or merchant_key or "").strip()
+    return label[:255]
+
+
+def dismiss_recurring_merchant(
+    bdb: Session,
+    merchant_key: str,
+    merchant_name: str | None = None,
+) -> str:
     """Remember that this detected subscription should not get its own budget line.
 
     Idempotent. Returns the normalized merchant key that was stored.
     """
-    key = normalize_merchant(merchant_key)
+    raw = (merchant_key or "").strip()
+    key = normalize_merchant(raw)
     if not key:
         raise HTTPException(status_code=400, detail="merchant_key is required")
     if len(key) > 512:
         raise HTTPException(status_code=400, detail="merchant_key is too long")
+    label = _recurring_merchant_label(raw, merchant_name) or key
 
     existing = (
         bdb.query(DismissedRecurringBudget)
@@ -196,11 +215,52 @@ def dismiss_recurring_merchant(bdb: Session, merchant_key: str) -> str:
         .first()
     )
     if existing:
+        if label and not existing.merchant_name:
+            existing.merchant_name = label
+            bdb.commit()
         return key
 
-    bdb.add(DismissedRecurringBudget(user_id=1, merchant_key=key))
+    bdb.add(DismissedRecurringBudget(user_id=1, merchant_key=key, merchant_name=label))
     bdb.commit()
     return key
+
+
+def restore_recurring_merchant(bdb: Session, merchant_key: str) -> None:
+    """Put a removed subscription back on the automatic plan. Idempotent."""
+    key = normalize_merchant(merchant_key)
+    if not key:
+        raise HTTPException(status_code=400, detail="merchant_key is required")
+
+    existing = (
+        bdb.query(DismissedRecurringBudget)
+        .filter(
+            DismissedRecurringBudget.user_id == 1,
+            DismissedRecurringBudget.merchant_key == key,
+        )
+        .first()
+    )
+    if not existing:
+        return
+    bdb.delete(existing)
+    bdb.commit()
+
+
+def list_removed_recurring(bdb: Session) -> list[RemovedRecurringItem]:
+    rows = (
+        bdb.query(DismissedRecurringBudget)
+        .filter(DismissedRecurringBudget.user_id == 1)
+        .all()
+    )
+    items = [
+        RemovedRecurringItem(
+            merchant_key=row.merchant_key,
+            merchant=(row.merchant_name or row.merchant_key or "").strip(),
+        )
+        for row in rows
+        if row.merchant_key
+    ]
+    items.sort(key=lambda item: item.merchant.lower())
+    return items
 
 
 def _recurring_item_id(merchant_key: str, used: set[int]) -> int:
@@ -398,6 +458,7 @@ async def get_budgets(
             budgets=budget_items,
             total_limit=total_limit,
             total_spent=total_spent,
+            removed_recurring=list_removed_recurring(bdb),
         )
 
     except Exception as e:
@@ -531,15 +592,33 @@ async def update_budget(budget_id: int, req: UpdateBudgetRequest, bdb: Session =
 @router.delete("/recurring")
 async def delete_recurring_budget(
     merchant_key: str = Query(..., min_length=1, max_length=512),
+    merchant_name: Optional[str] = Query(None, max_length=255),
     bdb: Session = Depends(get_budgets_db),
 ):
     """Drop an automatically detected subscription from the budget plan.
 
     The line is not a stored budget row, so this records the merchant and
     later months will not recreate it. The charges remain ordinary spend.
+    POST /budgets/recurring/restore puts the line back.
     """
     try:
-        dismiss_recurring_merchant(bdb, merchant_key)
+        dismiss_recurring_merchant(bdb, merchant_key, merchant_name=merchant_name)
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        bdb.rollback()
+        log_and_raise(e)
+
+
+@router.post("/recurring/restore")
+async def restore_recurring_budget(
+    merchant_key: str = Query(..., min_length=1, max_length=512),
+    bdb: Session = Depends(get_budgets_db),
+):
+    """Put a removed automatic subscription back on the budget plan."""
+    try:
+        restore_recurring_merchant(bdb, merchant_key)
         return {"success": True}
     except HTTPException:
         raise

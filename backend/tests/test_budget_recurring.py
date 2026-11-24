@@ -16,6 +16,8 @@ from app.routes.budgets import (
     dismiss_recurring_merchant,
     get_budget_items,
     is_planned_budget_line,
+    list_removed_recurring,
+    restore_recurring_merchant,
 )
 
 
@@ -408,6 +410,36 @@ def test_dismissed_recurring_budget_stays_removed(sessions):
     august = get_budget_items(bdb, ldb, "2026-08", as_of=date(2026, 7, 20))
     assert all(item.category != "Netflix" for item in august)
     assert any(item.category == "Spotify" and item.recurring for item in august)
+
+
+def test_restoring_a_removed_recurring_budget_puts_it_back(sessions):
+    ldb, bdb, checking = sessions
+    ldb.add_all(
+        [
+            _netflix(checking, date(2026, 5, 1)),
+            _netflix(checking, date(2026, 6, 1)),
+            _netflix(checking, date(2026, 7, 1)),
+        ]
+    )
+    ldb.commit()
+
+    dismiss_recurring_merchant(bdb, "Netflix", merchant_name="Netflix")
+    hidden = get_budget_items(bdb, ldb, "2026-07", as_of=date(2026, 7, 20))
+    assert hidden == []
+    assert [(item.merchant_key, item.merchant) for item in list_removed_recurring(bdb)] == [
+        ("netflix", "Netflix")
+    ]
+
+    restore_recurring_merchant(bdb, "NETFLIX")
+    items = get_budget_items(bdb, ldb, "2026-07", as_of=date(2026, 7, 20))
+    assert [item.category for item in items] == ["Netflix"]
+    assert items[0].recurring is True
+    assert items[0].spent == 15.0
+    assert list_removed_recurring(bdb) == []
+
+    # Restoring a merchant that is already on the plan does nothing.
+    restore_recurring_merchant(bdb, "netflix")
+    assert list_removed_recurring(bdb) == []
 
 
 def test_dismissed_recurring_still_counts_on_a_merchant_named_budget(sessions):

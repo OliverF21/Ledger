@@ -139,6 +139,40 @@ def test_delete_recurring_budget_rejects_blank_merchant(client):
     assert res.status_code == 400
 
 
+def test_restore_recurring_budget_puts_it_back_on_the_plan(client):
+    removed = client.delete(
+        "/api/budgets/recurring?merchant_key=Netflix&merchant_name=Netflix",
+        headers=_auth_headers(),
+    )
+    assert removed.status_code == 200
+
+    listed = client.get("/api/budgets?month=2026-07", headers=_auth_headers())
+    assert listed.status_code == 200
+    assert listed.json()["removed_recurring"] == [
+        {"merchant_key": "netflix", "merchant": "Netflix"}
+    ]
+
+    restored = client.post(
+        "/api/budgets/recurring/restore?merchant_key=NETFLIX",
+        headers=_auth_headers(),
+    )
+    assert restored.status_code == 200
+    assert restored.json()["success"] is True
+
+    listed_after = client.get("/api/budgets?month=2026-07", headers=_auth_headers())
+    assert listed_after.json()["removed_recurring"] == []
+
+    # A second restore is a no-op.
+    again = client.post(
+        "/api/budgets/recurring/restore?merchant_key=netflix",
+        headers=_auth_headers(),
+    )
+    assert again.status_code == 200
+
+    blank = client.post("/api/budgets/recurring/restore?merchant_key=%20%20", headers=_auth_headers())
+    assert blank.status_code == 400
+
+
 def test_budgets_carry_forward_into_empty_month(client):
     """A new month with no rows should inherit the prior month's limits."""
     created = client.post(
