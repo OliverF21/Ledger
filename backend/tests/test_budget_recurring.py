@@ -9,9 +9,14 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.budgets_db import Budget, BudgetsBase
+from app.budgets_db import Budget, BudgetsBase, DismissedRecurringBudget
 from app.models import Account, Base, Item, Transaction, User
-from app.routes.budgets import MISC_BUDGET_CATEGORY, get_budget_items, is_planned_budget_line
+from app.routes.budgets import (
+    MISC_BUDGET_CATEGORY,
+    dismiss_recurring_merchant,
+    get_budget_items,
+    is_planned_budget_line,
+)
 
 
 @pytest.fixture()
@@ -317,6 +322,122 @@ def test_weekly_series_reserves_each_occurrence(sessions):
     assert transit.recurring is True
     assert transit.limit == 50.0
     assert transit.spent == 50.0
+
+
+def test_dismissed_recurring_budget_stays_removed(sessions):
+    """Removing a detected line keeps it off later months and returns the spend to Misc."""
+    ldb, bdb, checking = sessions
+    ldb.add_all(
+        [
+            _netflix(checking, date(2026, 5, 1)),
+            _netflix(checking, date(2026, 6, 1)),
+            _netflix(checking, date(2026, 7, 1)),
+            _charge(
+                checking,
+                "Spotify",
+                "11.00",
+                date(2026, 5, 4),
+                category_plaid="ENTERTAINMENT",
+                category_plaid_detailed="ENTERTAINMENT_MUSIC_AND_AUDIO",
+            ),
+            _charge(
+                checking,
+                "Spotify",
+                "11.00",
+                date(2026, 6, 4),
+                category_plaid="ENTERTAINMENT",
+                category_plaid_detailed="ENTERTAINMENT_MUSIC_AND_AUDIO",
+            ),
+            _charge(
+                checking,
+                "Spotify",
+                "11.00",
+                date(2026, 7, 4),
+                category_plaid="ENTERTAINMENT",
+                category_plaid_detailed="ENTERTAINMENT_MUSIC_AND_AUDIO",
+            ),
+            _charge(
+                checking,
+                "Cafe",
+                "40.00",
+                date(2026, 7, 2),
+                category_plaid="FOOD_AND_DRINK",
+                category_plaid_detailed="FOOD_AND_DRINK_RESTAURANT",
+            ),
+            _charge(
+                checking,
+                "Uber",
+                "25.00",
+                date(2026, 7, 3),
+                category_plaid="TRANSPORTATION",
+                category_plaid_detailed="TRANSPORTATION_TAXIS_AND_RIDE_SHARES",
+            ),
+        ]
+    )
+    ldb.commit()
+    bdb.add(
+        Budget(
+            user_id=1,
+            month="2026-07",
+            category_name="Food & Drink",
+            category_key="FOOD_AND_DRINK",
+            limit=Decimal("100.00"),
+            color="#4fc4c4",
+        )
+    )
+    bdb.commit()
+
+    assert dismiss_recurring_merchant(bdb, "Netflix") == "netflix"
+    assert dismiss_recurring_merchant(bdb, " NETFLIX ") == "netflix"
+    assert bdb.query(DismissedRecurringBudget).count() == 1
+
+    items = get_budget_items(bdb, ldb, "2026-07", as_of=date(2026, 7, 20))
+    by_name = {item.category: item for item in items}
+
+    assert "Netflix" not in by_name
+    assert by_name["Food & Drink"].spent == 40.0
+    spotify = by_name["Spotify"]
+    assert spotify.recurring is True
+    assert spotify.merchant_key == "spotify"
+    assert spotify.limit == 11.0
+    assert spotify.spent == 11.0
+    # Netflix is no longer its own line, so the charge sits with other untracked spend.
+    assert by_name[MISC_BUDGET_CATEGORY].spent == 40.0
+    assert _planned_limit(items) == 111.0
+
+    august = get_budget_items(bdb, ldb, "2026-08", as_of=date(2026, 7, 20))
+    assert all(item.category != "Netflix" for item in august)
+    assert any(item.category == "Spotify" and item.recurring for item in august)
+
+
+def test_dismissed_recurring_still_counts_on_a_merchant_named_budget(sessions):
+    ldb, bdb, checking = sessions
+    ldb.add_all(
+        [
+            _netflix(checking, date(2026, 5, 1)),
+            _netflix(checking, date(2026, 6, 1)),
+            _netflix(checking, date(2026, 7, 1)),
+        ]
+    )
+    ldb.commit()
+    bdb.add(
+        Budget(
+            user_id=1,
+            month="2026-07",
+            category_name="Netflix",
+            category_key=None,
+            limit=Decimal("20.00"),
+            color="#e7705f",
+        )
+    )
+    bdb.commit()
+    dismiss_recurring_merchant(bdb, "netflix")
+
+    items = get_budget_items(bdb, ldb, "2026-07", as_of=date(2026, 7, 20))
+    assert [item.category for item in items] == ["Netflix"]
+    assert items[0].recurring is False
+    assert items[0].spent == 15.0
+    assert items[0].limit == 20.0
 
 
 def test_recurring_line_shows_over_when_the_charge_runs_high(sessions):

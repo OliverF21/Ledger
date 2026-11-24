@@ -21,6 +21,7 @@ interface BudgetItem {
   color: string
   virtual?: boolean
   recurring?: boolean
+  merchant_key?: string | null
 }
 
 interface BudgetsData {
@@ -281,8 +282,8 @@ export default function Budgets() {
   const focusTimer = useRef<number | null>(null)
   const { subscriptions, loading: subsLoading } = useSubscriptions()
 
-  const fetchBudgets = (checkOnboarding = false) => {
-    setLoading(true)
+  const fetchBudgets = (checkOnboarding = false, quiet = false) => {
+    if (!quiet) setLoading(true)
     apiFetch(`/api/budgets?month=${selectedMonth}`)
       .then(r => r.json())
       .then(d => {
@@ -291,8 +292,12 @@ export default function Budgets() {
           setShowOnboarding(true)
         }
       })
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (!quiet) setData(null)
+      })
+      .finally(() => {
+        if (!quiet) setLoading(false)
+      })
   }
 
   useEffect(() => { fetchBudgets(true) }, [selectedMonth])
@@ -303,11 +308,20 @@ export default function Budgets() {
     }
   }, [])
 
-  const handleDelete = async (id: number) => {
-    setDeletingId(id)
+  const handleDelete = async (budget: BudgetItem) => {
+    setDeletingId(budget.id)
     setDeleteError(null)
     try {
-      const res = await apiFetch(`/api/budgets/${id}`, { method: 'DELETE' })
+      const recurring = Boolean(budget.recurring)
+      if (recurring && !budget.merchant_key) {
+        throw new Error('Failed to remove budget')
+      }
+      const res = recurring
+        ? await apiFetch(
+            `/api/budgets/recurring?merchant_key=${encodeURIComponent(budget.merchant_key || '')}`,
+            { method: 'DELETE' },
+          )
+        : await apiFetch(`/api/budgets/${budget.id}`, { method: 'DELETE' })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.detail || 'Failed to remove budget')
@@ -315,7 +329,7 @@ export default function Budgets() {
       setConfirmingDeleteId(null)
       setData(prev => {
         if (!prev) return prev
-        const remainingBudgets = prev.budgets.filter(b => b.id !== id)
+        const remainingBudgets = prev.budgets.filter(b => b.id !== budget.id)
         return {
           ...prev,
           budgets: remainingBudgets,
@@ -323,6 +337,9 @@ export default function Budgets() {
           total_spent: remainingBudgets.reduce((sum, b) => sum + b.spent, 0),
         }
       })
+      // Detected lines aren't stored rows. Refetch so their spend lands in
+      // Misc or a category budget instead of vanishing from the month.
+      if (recurring) fetchBudgets(false, true)
     } catch (e: any) {
       setDeleteError(e.message || 'Failed to remove budget')
       fetchBudgets()
@@ -624,16 +641,18 @@ export default function Budgets() {
                         <div className="flex items-baseline justify-between gap-[10px]">
                           <span className="flex items-center gap-[6px] min-w-0">
                             <span className="text-[13.5px] font-semibold truncate">{formatCategory(budget.category)}</span>
-                            {!isVirtual && !isRecurring && (
+                            {!misc && (
                               <span className="flex items-center shrink-0">
-                                <button
-                                  type="button"
-                                  title="Edit budget"
-                                  onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
-                                  className="p-[3px] text-ledger-text-faintest hover:text-ledger-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded"
-                                >
-                                  <Pencil className="w-[12px] h-[12px]" strokeWidth={2} />
-                                </button>
+                                {!isRecurring && (
+                                  <button
+                                    type="button"
+                                    title="Edit budget"
+                                    onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
+                                    className="p-[3px] text-ledger-text-faintest hover:text-ledger-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded"
+                                  >
+                                    <Pencil className="w-[12px] h-[12px]" strokeWidth={2} />
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   title="Remove budget"
@@ -665,7 +684,11 @@ export default function Budgets() {
 
                     {!misc && confirmingDeleteId === budget.id && (
                       <div className="flex items-center justify-between gap-[10px] mt-[10px] ml-[48px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
-                        <span className="text-[12px] text-ledger-text-secondary">Remove this budget?</span>
+                        <span className="text-[12px] text-ledger-text-secondary">
+                          {isRecurring
+                            ? 'Remove this automatic budget? This merchant stays off the plan.'
+                            : 'Remove this budget?'}
+                        </span>
                         <div className="flex items-center gap-[8px] shrink-0">
                           <button
                             type="button"
@@ -676,7 +699,7 @@ export default function Budgets() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDelete(budget.id)}
+                            onClick={() => handleDelete(budget)}
                             disabled={deletingId === budget.id}
                             className="text-[12px] font-semibold text-ledger-negative hover:opacity-80 transition-opacity disabled:opacity-40"
                           >

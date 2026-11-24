@@ -4,7 +4,8 @@ Budget endpoints.
 - GET /budgets/suggest        : income-based budget suggestions from spending history
 - POST /budgets               : create a budget
 - PUT /budgets/{id}           : update budget limit
-- DELETE /budgets/{id}        : remove budget
+- DELETE /budgets/{id}        : remove a stored budget
+- DELETE /budgets/recurring   : remove an automatically detected budget
 
 Budgets are stored in budgets.db (separate from ledger.db) so Defender/AV
 scanning the main transaction DB never blocks budget writes.
@@ -35,7 +36,7 @@ from app.analytics_shared import (
     normalize_category_key,
     resolve_category_to_pfc_key,
 )
-from app.budgets_db import Budget, get_budgets_db
+from app.budgets_db import Budget, DismissedRecurringBudget, get_budgets_db
 from app.database import get_db
 from app.errors import log_and_raise
 from app.models import Transaction
@@ -58,9 +59,11 @@ class BudgetItem(BaseModel):
     spent: float
     color: str
     virtual: bool = False
-    # Automatic envelope for a detected subscription. Virtual (not stored, not
-    # editable) but unlike Misc. it has a real limit and counts toward the total.
+    # Automatic envelope for a detected subscription. Virtual (not stored)
+    # but unlike Misc. it has a real limit and counts toward the total.
+    # The user can remove it; that choice is stored by merchant_key.
     recurring: bool = False
+    merchant_key: Optional[str] = None
 
 
 def is_planned_budget_line(virtual: bool, recurring: bool = False) -> bool:
@@ -163,6 +166,43 @@ def _recurring_already_budgeted(
     return bool(resolved) and resolved in tracked_keys
 
 
+def dismissed_recurring_keys(bdb: Session) -> set[str]:
+    """Merchants the user removed from the automatic plan."""
+    rows = (
+        bdb.query(DismissedRecurringBudget.merchant_key)
+        .filter(DismissedRecurringBudget.user_id == 1)
+        .all()
+    )
+    return {key for (key,) in rows if key}
+
+
+def dismiss_recurring_merchant(bdb: Session, merchant_key: str) -> str:
+    """Remember that this detected subscription should not get its own budget line.
+
+    Idempotent. Returns the normalized merchant key that was stored.
+    """
+    key = normalize_merchant(merchant_key)
+    if not key:
+        raise HTTPException(status_code=400, detail="merchant_key is required")
+    if len(key) > 512:
+        raise HTTPException(status_code=400, detail="merchant_key is too long")
+
+    existing = (
+        bdb.query(DismissedRecurringBudget)
+        .filter(
+            DismissedRecurringBudget.user_id == 1,
+            DismissedRecurringBudget.merchant_key == key,
+        )
+        .first()
+    )
+    if existing:
+        return key
+
+    bdb.add(DismissedRecurringBudget(user_id=1, merchant_key=key))
+    bdb.commit()
+    return key
+
+
 def _recurring_item_id(merchant_key: str, used: set[int]) -> int:
     candidate = -1000 - (zlib.crc32(merchant_key.encode("utf-8")) % 2_000_000_000)
     while candidate in used or candidate == MISC_BUDGET_ID:
@@ -188,9 +228,12 @@ def get_budget_items(
     Detected recurring charges that are not already inside a category budget
     become their own lines, limited to the amount expected that month, so
     subscriptions count toward the plan without a manual setup step.
+    A merchant the user has removed stays off that list; its charges then
+    count like any other untracked spend.
     """
     today = as_of or date.today()
     budgets = carry_forward_budgets(bdb, month_key)
+    dismissed = dismissed_recurring_keys(bdb)
 
     year, mon = int(month_key[:4]), int(month_key[5:7])
     start, end = month_bounds(year, mon)
@@ -214,6 +257,8 @@ def get_budget_items(
         named = named_by_key.get(line.merchant_key)
         if named:
             named_recurring[line.merchant_key] = named
+            continue
+        if line.merchant_key in dismissed:
             continue
         automatic.append(line)
     if not budgets and not automatic:
@@ -312,6 +357,7 @@ def get_budget_items(
             color=CATEGORY_COLORS[color_index],
             virtual=True,
             recurring=True,
+            merchant_key=line.merchant_key,
         ))
     return budget_items
 
@@ -477,6 +523,26 @@ async def update_budget(budget_id: int, req: UpdateBudgetRequest, bdb: Session =
         budget.limit = req.limit
         bdb.commit()
         return BudgetMutateResponse(success=True, id=budget.id)
+    except Exception as e:
+        bdb.rollback()
+        log_and_raise(e)
+
+
+@router.delete("/recurring")
+async def delete_recurring_budget(
+    merchant_key: str = Query(..., min_length=1, max_length=512),
+    bdb: Session = Depends(get_budgets_db),
+):
+    """Drop an automatically detected subscription from the budget plan.
+
+    The line is not a stored budget row, so this records the merchant and
+    later months will not recreate it. The charges remain ordinary spend.
+    """
+    try:
+        dismiss_recurring_merchant(bdb, merchant_key)
+        return {"success": True}
+    except HTTPException:
+        raise
     except Exception as e:
         bdb.rollback()
         log_and_raise(e)
