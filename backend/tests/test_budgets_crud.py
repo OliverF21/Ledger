@@ -15,7 +15,7 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app import auth  # noqa: E402
-from app.budgets_db import Budget, BudgetsBase, get_budgets_db  # noqa: E402
+from app.budgets_db import BudgetsBase, DismissedRecurringBudget, get_budgets_db  # noqa: E402
 from app.database import Base as LedgerBase, get_db  # noqa: E402
 
 
@@ -59,6 +59,7 @@ def client(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     with TestClient(main.app) as c:
+        c.budgets_session = BudgetsSession  # type: ignore[attr-defined]
         yield c
     # Without this, these two overrides (bound to this test's throwaway
     # tmp_path engines) stay registered on `main.app` after the test ends.
@@ -108,6 +109,68 @@ def test_delete_budget_removes_row(client):
 def test_delete_missing_budget_returns_404(client):
     res = client.delete("/api/budgets/9999", headers=_auth_headers())
     assert res.status_code == 404
+
+
+def test_delete_recurring_budget_persists_by_merchant(client):
+    first = client.delete(
+        "/api/budgets/recurring?merchant_key=Netflix",
+        headers=_auth_headers(),
+    )
+    assert first.status_code == 200
+    assert first.json()["success"] is True
+
+    # A second remove, under a different spelling, is the same merchant.
+    second = client.delete(
+        "/api/budgets/recurring?merchant_key=NETFLIX",
+        headers=_auth_headers(),
+    )
+    assert second.status_code == 200
+
+    db = client.budgets_session()
+    try:
+        rows = db.query(DismissedRecurringBudget).all()
+        assert [row.merchant_key for row in rows] == ["netflix"]
+    finally:
+        db.close()
+
+
+def test_delete_recurring_budget_rejects_blank_merchant(client):
+    res = client.delete("/api/budgets/recurring?merchant_key=%20%20", headers=_auth_headers())
+    assert res.status_code == 400
+
+
+def test_restore_recurring_budget_puts_it_back_on_the_plan(client):
+    removed = client.delete(
+        "/api/budgets/recurring?merchant_key=Netflix&merchant_name=Netflix",
+        headers=_auth_headers(),
+    )
+    assert removed.status_code == 200
+
+    listed = client.get("/api/budgets?month=2026-07", headers=_auth_headers())
+    assert listed.status_code == 200
+    assert listed.json()["removed_recurring"] == [
+        {"merchant_key": "netflix", "merchant": "Netflix"}
+    ]
+
+    restored = client.post(
+        "/api/budgets/recurring/restore?merchant_key=NETFLIX",
+        headers=_auth_headers(),
+    )
+    assert restored.status_code == 200
+    assert restored.json()["success"] is True
+
+    listed_after = client.get("/api/budgets?month=2026-07", headers=_auth_headers())
+    assert listed_after.json()["removed_recurring"] == []
+
+    # A second restore is a no-op.
+    again = client.post(
+        "/api/budgets/recurring/restore?merchant_key=netflix",
+        headers=_auth_headers(),
+    )
+    assert again.status_code == 200
+
+    blank = client.post("/api/budgets/recurring/restore?merchant_key=%20%20", headers=_auth_headers())
+    assert blank.status_code == 400
 
 
 def test_budgets_carry_forward_into_empty_month(client):

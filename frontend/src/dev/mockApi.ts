@@ -132,7 +132,18 @@ const INVESTMENT_ACTIVITY = [
   { name: 'Buy BTC', ticker: 'BTC', type: 'buy', subtype: 'buy', amount: 2500, quantity: 0.031, price: 80645, day: 96 },
 ].map((t, i) => ({ id: i + 1, account_name: 'Schwab Brokerage', ...t, date: isoDaysAgo(t.day) }))
 
-const BUDGETS = [
+type MockBudget = {
+  id: number
+  category: string
+  limit: number
+  spent: number
+  color: string
+  virtual?: boolean
+  recurring?: boolean
+  merchant_key?: string
+}
+
+const BUDGETS: MockBudget[] = [
   { id: 1, category: 'FOOD_AND_DRINK', limit: 800, spent: 742.18, color: '#63cfcc' },
   { id: 2, category: 'ENTERTAINMENT', limit: 450, spent: 512.6, color: '#f4907f' },
   { id: 3, category: 'GENERAL_MERCHANDISE', limit: 600, spent: 562.4, color: '#e6bd79' },
@@ -140,8 +151,24 @@ const BUDGETS = [
   { id: 5, category: 'RENT_AND_UTILITIES', limit: 2100, spent: 1850, color: '#82a9f2' },
   { id: 6, category: 'PERSONAL_CARE', limit: 300, spent: 268.3, color: '#74d8a8' },
   // iCloud+ isn't inside a category budget, so the API reserves it automatically.
-  { id: -1204, category: 'iCloud+', limit: 9.99, spent: 9.99, color: '#a196fa', virtual: true, recurring: true },
+  { id: -1204, category: 'iCloud+', limit: 9.99, spent: 9.99, color: '#a196fa', virtual: true, recurring: true, merchant_key: 'icloud+' },
 ]
+
+const dismissedRecurring = new Map<string, string>()
+
+function visibleBudgets() {
+  return BUDGETS.filter(b => {
+    if (!b.recurring) return true
+    const key = (b.merchant_key || b.category || '').trim().toLowerCase()
+    return !dismissedRecurring.has(key)
+  })
+}
+
+function removedRecurring() {
+  return [...dismissedRecurring.entries()]
+    .map(([merchant_key, merchant]) => ({ merchant_key, merchant }))
+    .sort((a, b) => a.merchant.localeCompare(b.merchant))
+}
 
 const TOTAL_ASSETS = 250330.87
 const TOTAL_LIABILITIES = 1420.45
@@ -424,13 +451,16 @@ function routes(url: URL): unknown | undefined {
       return { transactions: TRANSACTIONS.slice(0, limit), total: TRANSACTIONS.length, has_more: false }
     }
 
-    case '/api/budgets':
+    case '/api/budgets': {
+      const budgets = visibleBudgets()
       return {
         month: url.searchParams.get('month') ?? monthValue(0),
-        budgets: BUDGETS,
-        total_limit: BUDGETS.reduce((s, b) => s + b.limit, 0),
-        total_spent: BUDGETS.reduce((s, b) => s + b.spent, 0),
+        budgets,
+        total_limit: budgets.reduce((s, b) => s + b.limit, 0),
+        total_spent: budgets.reduce((s, b) => s + b.spent, 0),
+        removed_recurring: removedRecurring(),
       }
+    }
 
     case '/api/goals':
       return { goals: GOALS }
@@ -604,6 +634,23 @@ export function installMockApi(): void {
       }
       await new Promise(resolve => setTimeout(resolve, 90))
       return jsonResponse({ token: 'demo-session-token', username }, 200)
+    }
+
+    if (url.pathname === '/api/budgets/recurring' && method === 'DELETE') {
+      const key = (url.searchParams.get('merchant_key') || '').trim().toLowerCase()
+      if (!key) return jsonResponse({ detail: 'merchant_key is required' }, 400)
+      const name = (url.searchParams.get('merchant_name') || key).trim()
+      dismissedRecurring.set(key, name || key)
+      await new Promise(resolve => setTimeout(resolve, 90))
+      return jsonResponse({ success: true }, 200)
+    }
+
+    if (url.pathname === '/api/budgets/recurring/restore' && method === 'POST') {
+      const key = (url.searchParams.get('merchant_key') || '').trim().toLowerCase()
+      if (!key) return jsonResponse({ detail: 'merchant_key is required' }, 400)
+      dismissedRecurring.delete(key)
+      await new Promise(resolve => setTimeout(resolve, 90))
+      return jsonResponse({ success: true }, 200)
     }
 
     const body = routes(url)

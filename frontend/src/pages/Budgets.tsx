@@ -21,6 +21,12 @@ interface BudgetItem {
   color: string
   virtual?: boolean
   recurring?: boolean
+  merchant_key?: string | null
+}
+
+interface RemovedRecurring {
+  merchant_key: string
+  merchant: string
 }
 
 interface BudgetsData {
@@ -28,6 +34,7 @@ interface BudgetsData {
   budgets: BudgetItem[]
   total_limit: number
   total_spent: number
+  removed_recurring?: RemovedRecurring[]
 }
 
 function fmt(n: number) {
@@ -277,12 +284,13 @@ export default function Budgets() {
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [restoringKey, setRestoringKey] = useState<string | null>(null)
   const [focusId, setFocusId] = useState<number | null>(null)
   const focusTimer = useRef<number | null>(null)
   const { subscriptions, loading: subsLoading } = useSubscriptions()
 
-  const fetchBudgets = (checkOnboarding = false) => {
-    setLoading(true)
+  const fetchBudgets = (checkOnboarding = false, quiet = false) => {
+    if (!quiet) setLoading(true)
     apiFetch(`/api/budgets?month=${selectedMonth}`)
       .then(r => r.json())
       .then(d => {
@@ -291,8 +299,12 @@ export default function Budgets() {
           setShowOnboarding(true)
         }
       })
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (!quiet) setData(null)
+      })
+      .finally(() => {
+        if (!quiet) setLoading(false)
+      })
   }
 
   useEffect(() => { fetchBudgets(true) }, [selectedMonth])
@@ -303,11 +315,23 @@ export default function Budgets() {
     }
   }, [])
 
-  const handleDelete = async (id: number) => {
-    setDeletingId(id)
+  const handleDelete = async (budget: BudgetItem) => {
+    setDeletingId(budget.id)
     setDeleteError(null)
     try {
-      const res = await apiFetch(`/api/budgets/${id}`, { method: 'DELETE' })
+      const recurring = Boolean(budget.recurring)
+      if (recurring && !budget.merchant_key) {
+        throw new Error('Failed to remove budget')
+      }
+      const res = recurring
+        ? await apiFetch(
+            `/api/budgets/recurring?${new URLSearchParams({
+              merchant_key: budget.merchant_key || '',
+              merchant_name: budget.category,
+            })}`,
+            { method: 'DELETE' },
+          )
+        : await apiFetch(`/api/budgets/${budget.id}`, { method: 'DELETE' })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.detail || 'Failed to remove budget')
@@ -315,19 +339,50 @@ export default function Budgets() {
       setConfirmingDeleteId(null)
       setData(prev => {
         if (!prev) return prev
-        const remainingBudgets = prev.budgets.filter(b => b.id !== id)
+        const remainingBudgets = prev.budgets.filter(b => b.id !== budget.id)
+        const removed = prev.removed_recurring ?? []
+        const removedRecurring = budget.recurring && budget.merchant_key
+          ? [
+              ...removed.filter(item => item.merchant_key !== budget.merchant_key),
+              { merchant_key: budget.merchant_key, merchant: budget.category },
+            ]
+          : removed
         return {
           ...prev,
           budgets: remainingBudgets,
+          removed_recurring: removedRecurring,
           total_limit: remainingBudgets.reduce((sum, b) => sum + b.limit, 0),
           total_spent: remainingBudgets.reduce((sum, b) => sum + b.spent, 0),
         }
       })
+      // Detected lines aren't stored rows. Refetch so their spend lands in
+      // Misc or a category budget instead of vanishing from the month.
+      if (recurring) fetchBudgets(false, true)
     } catch (e: any) {
       setDeleteError(e.message || 'Failed to remove budget')
       fetchBudgets()
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleRestore = async (item: RemovedRecurring) => {
+    setRestoringKey(item.merchant_key)
+    setDeleteError(null)
+    try {
+      const res = await apiFetch(
+        `/api/budgets/recurring/restore?merchant_key=${encodeURIComponent(item.merchant_key)}`,
+        { method: 'POST' },
+      )
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || 'Failed to add budget back')
+      }
+      fetchBudgets(false, true)
+    } catch (e: any) {
+      setDeleteError(e.message || 'Failed to add budget back')
+    } finally {
+      setRestoringKey(null)
     }
   }
 
@@ -341,6 +396,9 @@ export default function Budgets() {
   }
 
   const budgets = data?.budgets ?? []
+  const removedRecurring = [...(data?.removed_recurring ?? [])].sort((a, b) =>
+    a.merchant.localeCompare(b.merchant),
+  )
   const totalBudget = data?.total_limit ?? 0
   const totalSpent = data?.total_spent ?? 0
   const remaining = totalBudget - totalSpent
@@ -581,7 +639,7 @@ export default function Budgets() {
 
           {loading && !data ? (
             <div className="text-[13px] text-ledger-text-faint py-[24px] text-center">Loading…</div>
-          ) : budgets.length === 0 ? (
+          ) : budgets.length === 0 && removedRecurring.length === 0 ? (
             <div className="py-[28px] text-center">
               <div className="text-[14px] font-semibold mb-[6px]">No budgets for this month</div>
               <div className="text-[13px] text-ledger-text-faint mb-[14px]">
@@ -624,16 +682,18 @@ export default function Budgets() {
                         <div className="flex items-baseline justify-between gap-[10px]">
                           <span className="flex items-center gap-[6px] min-w-0">
                             <span className="text-[13.5px] font-semibold truncate">{formatCategory(budget.category)}</span>
-                            {!isVirtual && !isRecurring && (
+                            {!misc && (
                               <span className="flex items-center shrink-0">
-                                <button
-                                  type="button"
-                                  title="Edit budget"
-                                  onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
-                                  className="p-[3px] text-ledger-text-faintest hover:text-ledger-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded"
-                                >
-                                  <Pencil className="w-[12px] h-[12px]" strokeWidth={2} />
-                                </button>
+                                {!isRecurring && (
+                                  <button
+                                    type="button"
+                                    title="Edit budget"
+                                    onClick={() => { setConfirmingDeleteId(null); setEditing(budget) }}
+                                    className="p-[3px] text-ledger-text-faintest hover:text-ledger-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded"
+                                  >
+                                    <Pencil className="w-[12px] h-[12px]" strokeWidth={2} />
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   title="Remove budget"
@@ -665,7 +725,11 @@ export default function Budgets() {
 
                     {!misc && confirmingDeleteId === budget.id && (
                       <div className="flex items-center justify-between gap-[10px] mt-[10px] ml-[48px] px-[10px] py-[8px] rounded-[8px] border border-ledger-border-subtle bg-ledger-inset/60">
-                        <span className="text-[12px] text-ledger-text-secondary">Remove this budget?</span>
+                        <span className="text-[12px] text-ledger-text-secondary">
+                          {isRecurring
+                            ? 'Remove this automatic budget? You can add it back below.'
+                            : 'Remove this budget?'}
+                        </span>
                         <div className="flex items-center gap-[8px] shrink-0">
                           <button
                             type="button"
@@ -676,7 +740,7 @@ export default function Budgets() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDelete(budget.id)}
+                            onClick={() => handleDelete(budget)}
                             disabled={deletingId === budget.id}
                             className="text-[12px] font-semibold text-ledger-negative hover:opacity-80 transition-opacity disabled:opacity-40"
                           >
@@ -716,6 +780,26 @@ export default function Budgets() {
                   </div>
                 )
               })}
+              {removedRecurring.length > 0 && (
+                <div className={budgets.length > 0 ? 'pt-[8px] border-t border-white/[0.06]' : ''}>
+                  <p className="text-[12px] text-ledger-text-faint mb-[10px]">Removed from the plan</p>
+                  <div className="flex flex-col gap-[8px]">
+                    {removedRecurring.map(item => (
+                      <div key={item.merchant_key} className="flex items-center justify-between gap-[12px]">
+                        <span className="text-[13px] font-medium truncate">{formatCategory(item.merchant)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRestore(item)}
+                          disabled={restoringKey === item.merchant_key}
+                          className="glass-chip shrink-0 px-[10px] py-[5px] text-[12px] font-semibold text-ledger-text-primary hover:opacity-80 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                        >
+                          {restoringKey === item.merchant_key ? 'Adding…' : 'Add back'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </GlassCard>
